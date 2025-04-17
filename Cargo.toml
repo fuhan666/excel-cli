@@ -1,0 +1,12 @@
+[package]
+name = "sheet-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.26.0"
+crossterm = "0.27.0"
+calamine = "0.22.1"
+anyhow = "1.0.79"
+clap = { version = "4.5.0", features = ["derive"] }
+simple_excel_writer = "0.2.0"
