@@ -1,7 +1,8 @@
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::excel::Workbook;
+use crate::json_export::{export_json, HeaderDirection};
 
 pub enum InputMode {
     Normal,
@@ -366,7 +367,7 @@ impl AppState {
                 let sheet = self.workbook.get_current_sheet();
 
                 // Track how many columns changed for status message
-                let mut changed_columns = 0;
+                let mut _changed_columns = 0;
 
                 for col_idx in 1..=sheet.max_cols {
                     // Calculate actual content width
@@ -378,7 +379,7 @@ impl AppState {
                     // Track if width changed
                     if self.column_widths[col_idx] != new_width {
                         self.column_widths[col_idx] = new_width;
-                        changed_columns += 1;
+                        _changed_columns += 1;
                     }
                 }
 
@@ -477,7 +478,62 @@ impl AppState {
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
-        self.status_message = "Commands: :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :help".to_string();
+        self.status_message = "Commands: :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json, :ej, :help".to_string();
+    }
+
+    // Handle JSON export command
+    fn handle_json_export_command(&mut self, cmd: &str) {
+        // Parse command
+        let parts: Vec<&str> = if cmd.starts_with("export json ") {
+            cmd.strip_prefix("export json ").unwrap().split_whitespace().collect()
+        } else if cmd.starts_with("ej ") {
+            cmd.strip_prefix("ej ").unwrap().split_whitespace().collect()
+        } else {
+            self.status_message = "Invalid JSON export command".to_string();
+            return;
+        };
+
+        // Check if we have enough arguments
+        if parts.len() < 3 {
+            self.status_message = "Usage: :export json [filename] [h|v] [rows]".to_string();
+            return;
+        }
+
+        // Extract arguments
+        let filename = parts[0];
+        let direction_str = parts[1];
+        let header_count_str = parts[2];
+
+        // Parse header direction
+        let direction = match HeaderDirection::from_str(direction_str) {
+            Some(dir) => dir,
+            None => {
+                self.status_message = format!("Invalid header direction: {}. Use 'h' or 'v'", direction_str);
+                return;
+            }
+        };
+
+        // Parse header count
+        let header_count = match header_count_str.parse::<usize>() {
+            Ok(count) => count,
+            Err(_) => {
+                self.status_message = format!("Invalid header count: {}", header_count_str);
+                return;
+            }
+        };
+
+        // Create path
+        let path = Path::new(filename);
+
+        // Export to JSON
+        match export_json(self.workbook.get_current_sheet(), direction, header_count, path) {
+            Ok(_) => {
+                self.status_message = format!("Successfully exported to {}", filename);
+            },
+            Err(e) => {
+                self.status_message = format!("Failed to export JSON: {}", e);
+            }
+        }
     }
 
     // Execute command
@@ -559,9 +615,19 @@ impl AppState {
                     }
                 }
             }
+            // JSON export command
+            else if cmd.starts_with("export json ") || cmd.starts_with("ej ") {
+                let cmd_str = cmd.to_string(); // Clone the command string to avoid borrowing issues
+                self.handle_json_export_command(&cmd_str);
+            }
             // Help command
             else if cmd == "help" {
-                self.status_message = "Column width commands: :cw fit, :cw fit all, :cw min, :cw min all, :cw [number]".to_string();
+                self.status_message = format!(
+                    "Commands:\n\
+                     :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
+                     :export json [filename] [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
+                     :ej [filename] [h|v] [rows] - Shorthand for export json"
+                );
             }
             // Unknown command
             else {
