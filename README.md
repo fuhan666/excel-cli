@@ -10,6 +10,7 @@ A terminal-based Excel viewer and editor written in Rust, offering a smooth oper
 - Jump to specific cells
 - View and create formulas
 - Save changes back to Excel files
+- Export data to JSON format
 
 ## Installation
 
@@ -68,6 +69,17 @@ Enter command mode by pressing `:`. Available commands:
 - `:cw min` - Minimize current column width (max 15 or content width)
 - `:cw min all` - Minimize all column widths (max 15 or content width)
 - `:cw [number]` - Set current column width to specified value
+
+### JSON Export Commands
+
+- `:export json [filename] [h|v] [rows]` - Export data to JSON format
+  - `filename` - The name of the output JSON file
+  - `h|v` - Header direction: `h` for horizontal (top rows), `v` for vertical (left columns)
+  - `rows` - Number of header rows (for horizontal) or columns (for vertical)
+- `:ej [filename] [h|v] [rows]` - Shorthand for export json command
+
+### Other Commands
+
 - `:help` - Show available commands
 
 ## Exiting
@@ -84,6 +96,7 @@ Enter command mode by pressing `:`. Available commands:
 - crossterm for terminal input handling
 - calamine library for reading Excel files
 - simple_excel_writer for writing Excel files
+- serde_json for JSON serialization
 
 ## License
 

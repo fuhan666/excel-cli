@@ -5,6 +5,7 @@ use std::path::PathBuf;
 mod app;
 mod excel;
 mod ui;
+mod json_export;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -16,15 +17,15 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     // Open Excel file
     let workbook = excel::open_workbook(&cli.file_path)?;
-    
+
     // Create application state
     let app_state = app::AppState::new(workbook, cli.file_path)?;
-    
+
     // Run UI
     ui::run_app(app_state)?;
-    
+
     Ok(())
 }
