@@ -37,7 +37,7 @@ sheet-cli path/to/your/file.xlsx
 
 - `h`, `j`, `k`, `l` or arrow keys: Move selection (1 cell)
 - `H`, `J`, `K`, `L`: Move selection (5 cells)
-- `e`: Edit current cell
+- `i`: Edit current cell
 - `g`: Go to specific cell (enter cell reference like A1, B2, etc.)
 - `y`: Copy current cell content
 - `d`: Cut current cell content
