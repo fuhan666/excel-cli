@@ -1,14 +1,14 @@
 use anyhow::{Context, Result};
+use chrono::{Duration, NaiveDate, NaiveDateTime};
+use indexmap::IndexMap;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use chrono::{NaiveDate, NaiveDateTime, Duration};
-use indexmap::IndexMap;
 
-use crate::excel::{Sheet, CellType, DataTypeInfo};
+use crate::excel::{CellType, DataTypeInfo, Sheet};
 
 /// Header direction
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -66,7 +66,7 @@ fn excel_date_to_iso_string(excel_date: f64) -> String {
 
         let datetime = NaiveDateTime::new(
             date,
-            chrono::NaiveTime::from_hms_opt(hours, minutes, secs).unwrap()
+            chrono::NaiveTime::from_hms_opt(hours, minutes, secs).unwrap(),
         );
 
         // Return ISO format
@@ -96,7 +96,7 @@ fn process_cell_value(cell: &crate::excel::Cell) -> Value {
                 } else {
                     json!(f)
                 }
-            },
+            }
             DataTypeInfo::Int(i) => json!(i),
 
             // For DateTime, convert to ISO string format
@@ -108,7 +108,7 @@ fn process_cell_value(cell: &crate::excel::Cell) -> Value {
                     // Fallback to the displayed value if conversion fails
                     json!(cell.value)
                 }
-            },
+            }
             DataTypeInfo::DateTimeIso(s) => json!(s),
 
             // For Boolean, return as JSON boolean
@@ -136,7 +136,7 @@ fn process_cell_value(cell: &crate::excel::Cell) -> Value {
                 } else {
                     json!(cell.value)
                 }
-            },
+            }
             CellType::Boolean => {
                 // Try to parse as boolean
                 if cell.value.to_lowercase() == "true" {
@@ -146,7 +146,7 @@ fn process_cell_value(cell: &crate::excel::Cell) -> Value {
                 } else {
                     json!(cell.value)
                 }
-            },
+            }
             CellType::Date => {
                 // Try to convert to ISO date string if it's a number
                 if let Ok(excel_date) = cell.value.parse::<f64>() {
@@ -159,7 +159,7 @@ fn process_cell_value(cell: &crate::excel::Cell) -> Value {
                     // Keep as is if it's not a valid number
                     json!(cell.value)
                 }
-            },
+            }
             CellType::Empty => Value::Null,
             _ => json!(cell.value), // Text, etc.
         }
@@ -177,7 +177,8 @@ fn export_horizontal_json(sheet: &Sheet, header_rows: usize, path: &Path) -> Res
     let headers = extract_horizontal_headers(sheet, header_rows)?;
 
     // Create ordered header list sorted by column index
-    let mut ordered_headers: Vec<(usize, String)> = headers.iter()
+    let mut ordered_headers: Vec<(usize, String)> = headers
+        .iter()
         .map(|(col_idx, header)| (*col_idx, header.clone()))
         .collect();
     ordered_headers.sort_by_key(|(col_idx, _)| *col_idx);
@@ -222,7 +223,8 @@ fn export_vertical_json(sheet: &Sheet, header_cols: usize, path: &Path) -> Resul
     let headers = extract_vertical_headers(sheet, header_cols)?;
 
     // Create ordered header list sorted by row index
-    let mut ordered_headers: Vec<(usize, String)> = headers.iter()
+    let mut ordered_headers: Vec<(usize, String)> = headers
+        .iter()
         .map(|(row_idx, header)| (*row_idx, header.clone()))
         .collect();
     ordered_headers.sort_by_key(|(row_idx, _)| *row_idx);
@@ -367,12 +369,12 @@ fn extract_vertical_headers(sheet: &Sheet, header_cols: usize) -> Result<HashMap
 /// Write data to JSON file
 fn write_json_to_file<T: Serialize>(data: &T, path: &Path) -> Result<()> {
     // Create file
-    let mut file = File::create(path)
-        .with_context(|| format!("Failed to create file: {}", path.display()))?;
+    let mut file =
+        File::create(path).with_context(|| format!("Failed to create file: {}", path.display()))?;
 
     // Serialize to formatted JSON
-    let json_string = serde_json::to_string_pretty(data)
-        .context("Failed to serialize data to JSON")?;
+    let json_string =
+        serde_json::to_string_pretty(data).context("Failed to serialize data to JSON")?;
 
     // Write to file
     file.write_all(json_string.as_bytes())
@@ -382,7 +384,12 @@ fn write_json_to_file<T: Serialize>(data: &T, path: &Path) -> Result<()> {
 }
 
 /// Export JSON file
-pub fn export_json(sheet: &Sheet, direction: HeaderDirection, header_count: usize, path: &Path) -> Result<()> {
+pub fn export_json(
+    sheet: &Sheet,
+    direction: HeaderDirection,
+    header_count: usize,
+    path: &Path,
+) -> Result<()> {
     match direction {
         HeaderDirection::Horizontal => export_horizontal_json(sheet, header_count, path),
         HeaderDirection::Vertical => export_vertical_json(sheet, header_count, path),

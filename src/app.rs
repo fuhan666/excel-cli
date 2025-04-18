@@ -9,13 +9,13 @@ pub enum InputMode {
     Editing,
     Goto,
     Confirm,
-    Command
+    Command,
 }
 
 pub struct AppState {
     pub workbook: Workbook,
     pub file_path: PathBuf,
-    pub selected_cell: (usize, usize),  // (row, col)
+    pub selected_cell: (usize, usize), // (row, col)
     pub start_row: usize,
     pub start_col: usize,
     pub visible_rows: usize,
@@ -24,7 +24,7 @@ pub struct AppState {
     pub input_buffer: String,
     pub status_message: String,
     pub should_quit: bool,
-    pub column_widths: Vec<usize>,  // Store width for each column
+    pub column_widths: Vec<usize>, // Store width for each column
 }
 
 impl AppState {
@@ -37,11 +37,11 @@ impl AppState {
         Ok(Self {
             workbook,
             file_path,
-            selected_cell: (1, 1),  // Excel uses 1-based indexing
+            selected_cell: (1, 1), // Excel uses 1-based indexing
             start_row: 1,
             start_col: 1,
-            visible_rows: 30,  // Default values, will be adjusted based on window size
-            visible_cols: 15,  // Default values, will be adjusted based on window size
+            visible_rows: 30, // Default values, will be adjusted based on window size
+            visible_cols: 15, // Default values, will be adjusted based on window size
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             status_message: String::new(),
@@ -91,10 +91,7 @@ impl AppState {
 
     pub fn start_editing(&mut self) {
         self.input_mode = InputMode::Editing;
-        self.input_buffer = self.get_cell_content(
-            self.selected_cell.0,
-            self.selected_cell.1
-        );
+        self.input_buffer = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
     }
 
     pub fn start_goto(&mut self) {
@@ -112,7 +109,7 @@ impl AppState {
             self.workbook.set_cell_value(
                 self.selected_cell.0,
                 self.selected_cell.1,
-                self.input_buffer.clone()
+                self.input_buffer.clone(),
             )?;
             self.input_mode = InputMode::Normal;
             self.input_buffer = String::new();
@@ -157,7 +154,7 @@ impl AppState {
             Ok(_) => {
                 self.status_message = "File saved".to_string();
                 self.should_quit = true;
-            },
+            }
             Err(e) => {
                 self.status_message = format!("Save failed: {}", e);
                 self.input_mode = InputMode::Normal;
@@ -213,10 +210,14 @@ impl AppState {
                         self.ensure_column_visible(column);
                     }
 
-                    self.status_message = format!("Column {} width adjusted from {} to {}",
-                        index_to_col_name(column), old_width, self.column_widths[column]);
+                    self.status_message = format!(
+                        "Column {} width adjusted from {} to {}",
+                        index_to_col_name(column),
+                        old_width,
+                        self.column_widths[column]
+                    );
                 }
-            },
+            }
             // Adjust all columns
             None => {
                 for col_idx in 1..=sheet.max_cols {
@@ -318,7 +319,7 @@ impl AppState {
     // Adjust column width to a reasonable minimum (max 15 or actual content width)
     pub fn shrink_column_width(&mut self, col: Option<usize>) {
         let max_width = 15; // Maximum column width limit
-        let min_width = 5;  // Minimum column width
+        let min_width = 5; // Minimum column width
 
         match col {
             // Minimize specific column
@@ -358,10 +359,14 @@ impl AppState {
                         self.ensure_column_visible(column);
                     }
 
-                    self.status_message = format!("Column {} width minimized from {} to {}",
-                        index_to_col_name(column), current_width, new_width);
+                    self.status_message = format!(
+                        "Column {} width minimized from {} to {}",
+                        index_to_col_name(column),
+                        current_width,
+                        new_width
+                    );
                 }
-            },
+            }
             // Minimize all columns
             None => {
                 let sheet = self.workbook.get_current_sheet();
@@ -412,10 +417,6 @@ impl AppState {
             }
         }
     }
-
-
-
-
 
     // Ensure specified column is visible while trying to maintain current view
     pub fn ensure_column_visible(&mut self, column: usize) {
@@ -485,9 +486,15 @@ impl AppState {
     fn handle_json_export_command(&mut self, cmd: &str) {
         // Parse command
         let parts: Vec<&str> = if cmd.starts_with("export json ") {
-            cmd.strip_prefix("export json ").unwrap().split_whitespace().collect()
+            cmd.strip_prefix("export json ")
+                .unwrap()
+                .split_whitespace()
+                .collect()
         } else if cmd.starts_with("ej ") {
-            cmd.strip_prefix("ej ").unwrap().split_whitespace().collect()
+            cmd.strip_prefix("ej ")
+                .unwrap()
+                .split_whitespace()
+                .collect()
         } else {
             self.status_message = "Invalid JSON export command".to_string();
             return;
@@ -508,7 +515,10 @@ impl AppState {
         let direction = match HeaderDirection::from_str(direction_str) {
             Some(dir) => dir,
             None => {
-                self.status_message = format!("Invalid header direction: {}. Use 'h' or 'v'", direction_str);
+                self.status_message = format!(
+                    "Invalid header direction: {}. Use 'h' or 'v'",
+                    direction_str
+                );
                 return;
             }
         };
@@ -526,10 +536,15 @@ impl AppState {
         let path = Path::new(filename);
 
         // Export to JSON
-        match export_json(self.workbook.get_current_sheet(), direction, header_count, path) {
+        match export_json(
+            self.workbook.get_current_sheet(),
+            direction,
+            header_count,
+            path,
+        ) {
             Ok(_) => {
                 self.status_message = format!("Successfully exported to {}", filename);
-            },
+            }
             Err(e) => {
                 self.status_message = format!("Failed to export JSON: {}", e);
             }
@@ -548,19 +563,19 @@ impl AppState {
                         // Auto-adjust current column width
                         "fit" => {
                             self.auto_adjust_column_width(Some(self.selected_cell.1));
-                        },
+                        }
                         // Auto-adjust all column widths
                         "fit all" => {
                             self.auto_adjust_column_width(None);
-                        },
+                        }
                         // Minimize current column width
                         "min" => {
                             self.shrink_column_width(Some(self.selected_cell.1));
-                        },
+                        }
                         // Minimize all column widths
                         "min all" => {
                             self.shrink_column_width(None);
-                        },
+                        }
                         // Try to parse subcommand as a number to set current column width
                         _ => {
                             if let Ok(width) = subcmd.parse::<usize>() {
@@ -605,8 +620,12 @@ impl AppState {
                                         self.ensure_column_visible(column);
                                     }
 
-                                    self.status_message = format!("Column {} width changed from {} to {}",
-                                        index_to_col_name(column), old_width, width);
+                                    self.status_message = format!(
+                                        "Column {} width changed from {} to {}",
+                                        index_to_col_name(column),
+                                        old_width,
+                                        width
+                                    );
                                 }
                             } else {
                                 self.status_message = format!("Unknown column command: {}", subcmd);

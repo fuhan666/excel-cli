@@ -13,7 +13,7 @@ use ratatui::{
 };
 use std::{io, time::Duration};
 
-use crate::app::{AppState, InputMode, index_to_col_name};
+use crate::app::{index_to_col_name, AppState, InputMode};
 
 pub fn run_app(mut app_state: AppState) -> Result<()> {
     // Setup terminal
@@ -103,9 +103,9 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),  // Title
-            Constraint::Min(1),     // Spreadsheet
-            Constraint::Length(1),  // Status bar
+            Constraint::Length(1), // Title
+            Constraint::Min(1),    // Spreadsheet
+            Constraint::Length(1), // Status bar
         ])
         .split(f.size());
 
@@ -116,8 +116,8 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
         app_state.workbook.get_current_sheet_name()
     );
 
-    let title_widget = Paragraph::new(title)
-        .style(Style::default().bg(Color::Blue).fg(Color::White));
+    let title_widget =
+        Paragraph::new(title).style(Style::default().bg(Color::Blue).fg(Color::White));
 
     f.render_widget(title_widget, chunks[0]);
 
@@ -141,7 +141,9 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
     // Calculate column constraints using actual widths without scaling
     let mut col_constraints = vec![Constraint::Length(5)]; // Row number column
     col_constraints.extend(
-        visible_cols.iter().map(|col| Constraint::Length(app_state.get_column_width(*col) as u16))
+        visible_cols
+            .iter()
+            .map(|col| Constraint::Length(app_state.get_column_width(*col) as u16)),
     );
 
     // Prepare header
@@ -155,99 +157,108 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
     };
 
     // Prepare row data
-    let rows = visible_rows.iter().map(|row| {
-        let row_header = Cell::from(row.to_string())
-            .style(Style::default().bg(Color::Blue).fg(Color::White));
+    let rows = visible_rows
+        .iter()
+        .map(|row| {
+            let row_header = Cell::from(row.to_string())
+                .style(Style::default().bg(Color::Blue).fg(Color::White));
 
-        let row_cells = visible_cols.iter().map(|col| {
-            let content = if app_state.selected_cell == (*row, *col) && matches!(app_state.input_mode, InputMode::Editing) {
-                let buf = &app_state.input_buffer;
-                let col_width = app_state.get_column_width(*col);
+            let row_cells = visible_cols
+                .iter()
+                .map(|col| {
+                    let content = if app_state.selected_cell == (*row, *col)
+                        && matches!(app_state.input_mode, InputMode::Editing)
+                    {
+                        let buf = &app_state.input_buffer;
+                        let col_width = app_state.get_column_width(*col);
 
-                // For editing, we need to account for Unicode character widths
-                let display_width = buf.chars().fold(0, |acc, c| {
-                    acc + if c.is_ascii() { 1 } else { 2 }
-                });
+                        // For editing, we need to account for Unicode character widths
+                        let display_width = buf
+                            .chars()
+                            .fold(0, |acc, c| acc + if c.is_ascii() { 1 } else { 2 });
 
-                if display_width > col_width.saturating_sub(2) {
-                    // Calculate how many characters to skip by considering Unicode widths
-                    let mut cumulative_width = 0;
-                    let chars_to_show = buf.chars().rev()
-                        .take_while(|&c| {
-                            let char_width = if c.is_ascii() { 1 } else { 2 };
-                            if cumulative_width + char_width <= col_width.saturating_sub(2) {
-                                cumulative_width += char_width;
-                                true
-                            } else {
-                                false
-                            }
-                        })
-                        .collect::<Vec<_>>();
+                        if display_width > col_width.saturating_sub(2) {
+                            // Calculate how many characters to skip by considering Unicode widths
+                            let mut cumulative_width = 0;
+                            let chars_to_show = buf
+                                .chars()
+                                .rev()
+                                .take_while(|&c| {
+                                    let char_width = if c.is_ascii() { 1 } else { 2 };
+                                    if cumulative_width + char_width <= col_width.saturating_sub(2)
+                                    {
+                                        cumulative_width += char_width;
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                })
+                                .collect::<Vec<_>>();
 
-                    // Reverse back to correct order
-                    chars_to_show.into_iter().rev().collect()
-                } else {
-                    buf.clone()
-                }
-            } else {
-                // For normal display, truncate with ellipsis if needed
-                let content = app_state.get_cell_content(*row, *col);
-                let col_width = app_state.get_column_width(*col);
-
-                // Calculate display width of content
-                let display_width = content.chars().fold(0, |acc, c| {
-                    acc + if c.is_ascii() { 1 } else { 2 }
-                });
-
-                if display_width > col_width {
-                    // Truncate with ellipsis
-                    let mut result = String::new();
-                    let mut current_width = 0;
-
-                    for c in content.chars() {
-                        let char_width = if c.is_ascii() { 1 } else { 2 };
-                        if current_width + char_width + 1 <= col_width { // +1 for ellipsis
-                            result.push(c);
-                            current_width += char_width;
+                            // Reverse back to correct order
+                            chars_to_show.into_iter().rev().collect()
                         } else {
-                            break;
+                            buf.clone()
                         }
-                    }
+                    } else {
+                        // For normal display, truncate with ellipsis if needed
+                        let content = app_state.get_cell_content(*row, *col);
+                        let col_width = app_state.get_column_width(*col);
 
-                    if !content.is_empty() && result.len() < content.len() {
-                        result.push('…'); // Add ellipsis
-                    }
+                        // Calculate display width of content
+                        let display_width = content
+                            .chars()
+                            .fold(0, |acc, c| acc + if c.is_ascii() { 1 } else { 2 });
 
-                    result
-                } else {
-                    content
-                }
-            };
+                        if display_width > col_width {
+                            // Truncate with ellipsis
+                            let mut result = String::new();
+                            let mut current_width = 0;
 
-            // Set cell style
-            let style = if app_state.selected_cell == (*row, *col) {
-                Style::default().bg(Color::DarkGray).fg(Color::White)
-            } else {
-                Style::default()
-            };
+                            for c in content.chars() {
+                                let char_width = if c.is_ascii() { 1 } else { 2 };
+                                if current_width + char_width + 1 <= col_width {
+                                    // +1 for ellipsis
+                                    result.push(c);
+                                    current_width += char_width;
+                                } else {
+                                    break;
+                                }
+                            }
 
-            Cell::from(content).style(style)
-        }).collect::<Vec<_>>();
+                            if !content.is_empty() && result.len() < content.len() {
+                                result.push('…'); // Add ellipsis
+                            }
 
-        let mut cells = vec![row_header];
-        cells.extend(row_cells);
+                            result
+                        } else {
+                            content
+                        }
+                    };
 
-        Row::new(cells)
-    }).collect::<Vec<_>>();
+                    // Set cell style
+                    let style = if app_state.selected_cell == (*row, *col) {
+                        Style::default().bg(Color::DarkGray).fg(Color::White)
+                    } else {
+                        Style::default()
+                    };
+
+                    Cell::from(content).style(style)
+                })
+                .collect::<Vec<_>>();
+
+            let mut cells = vec![row_header];
+            cells.extend(row_cells);
+
+            Row::new(cells)
+        })
+        .collect::<Vec<_>>();
 
     // Create table
-    let table = Table::new(
-        std::iter::once(header_cells).chain(rows),
-        col_constraints,
-    )
-    .block(Block::default().borders(Borders::ALL))
-    .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-    .highlight_symbol(">> ");
+    let table = Table::new(std::iter::once(header_cells).chain(rows), col_constraints)
+        .block(Block::default().borders(Borders::ALL))
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(">> ");
 
     f.render_widget(table, area);
 }
@@ -263,24 +274,22 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                     cell_reference(app_state.selected_cell)
                 )
             }
-        },
+        }
         InputMode::Editing => {
             format!(
                 " Editing cell {}: {}",
                 cell_reference(app_state.selected_cell),
                 app_state.input_buffer
             )
-        },
+        }
         InputMode::Goto => {
             format!(" Go to cell: {}", app_state.input_buffer)
-        },
-        InputMode::Confirm => {
-            app_state.status_message.clone()
-        },
+        }
+        InputMode::Confirm => app_state.status_message.clone(),
 
         InputMode::Command => {
             format!(":{}", app_state.input_buffer)
-        },
+        }
     };
 
     let status_style = Style::default().bg(Color::Green).fg(Color::White);
@@ -299,8 +308,6 @@ fn handle_key_event(app_state: &mut AppState, key_code: KeyCode) {
         InputMode::Command => handle_command_mode(app_state, key_code),
     }
 }
-
-
 
 // Handle keyboard events in command mode
 fn handle_command_mode(app_state: &mut AppState, key_code: KeyCode) {
@@ -344,7 +351,7 @@ fn handle_editing_mode(app_state: &mut AppState, key_code: KeyCode) {
             if let Err(e) = app_state.confirm_edit() {
                 app_state.status_message = format!("Error: {}", e);
             }
-        },
+        }
         KeyCode::Esc => app_state.cancel_input(),
         KeyCode::Backspace => app_state.delete_char_from_input(),
         KeyCode::Char(c) => app_state.add_char_to_input(c),

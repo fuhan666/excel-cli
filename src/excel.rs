@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use calamine::{open_workbook_auto, DataType, Reader};
-use std::path::Path;
 use simple_excel_writer as excel;
+use std::path::Path;
 
 pub struct Workbook {
     sheets: Vec<Sheet>,
@@ -72,8 +72,18 @@ impl Cell {
         Self::new_with_type(value, is_formula, cell_type, None)
     }
 
-    pub fn new_with_type(value: String, is_formula: bool, cell_type: CellType, original_type: Option<DataTypeInfo>) -> Self {
-        Self { value, is_formula, cell_type, original_type }
+    pub fn new_with_type(
+        value: String,
+        is_formula: bool,
+        cell_type: CellType,
+        original_type: Option<DataTypeInfo>,
+    ) -> Self {
+        Self {
+            value,
+            is_formula,
+            cell_type,
+            original_type,
+        }
     }
 
     pub fn empty() -> Self {
@@ -96,7 +106,9 @@ pub fn open_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
     let mut sheets = Vec::new();
 
     for name in &sheet_names {
-        let range = workbook.worksheet_range(name).context(format!("Unable to read worksheet: {}", name))?;
+        let range = workbook
+            .worksheet_range(name)
+            .context(format!("Unable to read worksheet: {}", name))?;
         let sheet = create_sheet_from_range(name, range?);
         sheets.push(sheet);
     }
@@ -123,55 +135,43 @@ fn create_sheet_from_range(name: &str, range: calamine::Range<DataType>) -> Shee
         for (col_idx, cell) in row.iter().enumerate() {
             // Extract value, cell_type, and original_type from the DataType
             let (value, cell_type, original_type) = match cell {
-                DataType::Empty => (
-                    String::new(),
-                    CellType::Empty,
-                    Some(DataTypeInfo::Empty)
-                ),
-                DataType::String(s) => (
-                    s.to_string(),
-                    CellType::Text,
-                    Some(DataTypeInfo::String)
-                ),
+                DataType::Empty => (String::new(), CellType::Empty, Some(DataTypeInfo::Empty)),
+                DataType::String(s) => (s.to_string(), CellType::Text, Some(DataTypeInfo::String)),
                 DataType::Float(f) => (
                     f.to_string(),
                     CellType::Number,
-                    Some(DataTypeInfo::Float(*f))
+                    Some(DataTypeInfo::Float(*f)),
                 ),
-                DataType::Int(i) => (
-                    i.to_string(),
-                    CellType::Number,
-                    Some(DataTypeInfo::Int(*i))
-                ),
+                DataType::Int(i) => (i.to_string(), CellType::Number, Some(DataTypeInfo::Int(*i))),
                 DataType::Bool(b) => (
                     b.to_string(),
                     CellType::Boolean,
-                    Some(DataTypeInfo::Bool(*b))
+                    Some(DataTypeInfo::Bool(*b)),
                 ),
                 DataType::Error(e) => (
                     format!("Error: {:?}", e),
                     CellType::Text,
-                    Some(DataTypeInfo::Error)
+                    Some(DataTypeInfo::Error),
                 ),
                 DataType::DateTime(dt) => (
                     format!("{}", dt),
                     CellType::Date,
-                    Some(DataTypeInfo::DateTime(*dt))
+                    Some(DataTypeInfo::DateTime(*dt)),
                 ),
                 DataType::Duration(d) => (
                     format!("{}", d),
                     CellType::Text,
-                    Some(DataTypeInfo::Duration(*d))
+                    Some(DataTypeInfo::Duration(*d)),
                 ),
                 DataType::DateTimeIso(s) => (
                     s.to_string(),
                     CellType::Date,
-                    Some(DataTypeInfo::DateTimeIso(s.to_string()))
+                    Some(DataTypeInfo::DateTimeIso(s.to_string())),
                 ),
                 DataType::DurationIso(s) => (
                     s.to_string(),
                     CellType::Text,
-                    Some(DataTypeInfo::DurationIso(s.to_string()))
+                    Some(DataTypeInfo::DurationIso(s.to_string())),
                 ),
             };
 
@@ -179,7 +179,8 @@ fn create_sheet_from_range(name: &str, range: calamine::Range<DataType>) -> Shee
             // Roughly determine by checking if value starts with '='
             let is_formula = value.starts_with('=');
 
-            data[row_idx + 1][col_idx + 1] = Cell::new_with_type(value, is_formula, cell_type, original_type);
+            data[row_idx + 1][col_idx + 1] =
+                Cell::new_with_type(value, is_formula, cell_type, original_type);
         }
     }
 
@@ -197,8 +198,9 @@ impl Workbook {
     }
 
     pub fn set_cell_value(&mut self, row: usize, col: usize, value: String) -> Result<()> {
-        if row >= self.sheets[self.current_sheet_index].data.len() ||
-           col >= self.sheets[self.current_sheet_index].data[0].len() {
+        if row >= self.sheets[self.current_sheet_index].data.len()
+            || col >= self.sheets[self.current_sheet_index].data[0].len()
+        {
             anyhow::bail!("Cell coordinates out of range");
         }
 

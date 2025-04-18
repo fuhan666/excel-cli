@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 mod app;
 mod excel;
-mod ui;
 mod json_export;
+mod ui;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
