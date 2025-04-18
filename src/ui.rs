@@ -120,7 +120,16 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
             .style(Style::default().bg(Color::Blue).fg(Color::White));
         
         let row_cells = visible_cols.iter().map(|col| {
-            let content = app_state.get_cell_content(*row, *col);
+            let content = if app_state.selected_cell == (*row, *col) && matches!(app_state.input_mode, InputMode::Editing) {
+                let buf = &app_state.input_buffer;
+                if buf.len() > 14 {
+                    buf.chars().skip(buf.len() - 14).collect()
+                } else {
+                    buf.clone()
+                }
+            } else {
+                app_state.get_cell_content(*row, *col)
+            };
             
             // Set cell style
             let style = if app_state.selected_cell == (*row, *col) {
