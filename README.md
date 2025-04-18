@@ -38,6 +38,7 @@ sheet-cli path/to/your/file.xlsx
 - `H`, `J`, `K`, `L`: Move selection (5 cells)
 - `e`: Edit current cell
 - `g`: Go to specific cell (enter cell reference like A1, B2, etc.)
+- `:`: Enter command mode
 - `q`: Quit application
 
 ## Edit Mode
@@ -55,6 +56,19 @@ In goto mode:
 - Enter a cell reference (e.g., A1, B10, Z52)
 - `Enter`: Confirm and jump to the cell
 - `Esc`: Cancel
+
+## Command Mode
+
+Enter command mode by pressing `:`. Available commands:
+
+### Column Width Commands
+
+- `:cw fit` - Auto-adjust current column width to fit content
+- `:cw fit all` - Auto-adjust all column widths to fit content
+- `:cw min` - Minimize current column width (max 15 or content width)
+- `:cw min all` - Minimize all column widths (max 15 or content width)
+- `:cw [number]` - Set current column width to specified value
+- `:help` - Show available commands
 
 ## Exiting
 

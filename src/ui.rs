@@ -13,7 +13,7 @@ use ratatui::{
 };
 use std::{io, time::Duration};
 
-use crate::app::{AppState, InputMode};
+use crate::app::{AppState, InputMode, index_to_col_name};
 
 pub fn run_app(mut app_state: AppState) -> Result<()> {
     // Setup terminal
@@ -22,11 +22,11 @@ pub fn run_app(mut app_state: AppState) -> Result<()> {
     stdout.execute(EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    
+
     // Main loop
     while !app_state.should_quit {
         terminal.draw(|f| ui(f, &mut app_state))?;
-        
+
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
@@ -35,12 +35,12 @@ pub fn run_app(mut app_state: AppState) -> Result<()> {
             }
         }
     }
-    
+
     // Restore terminal
     disable_raw_mode()?;
     terminal.backend_mut().execute(LeaveAlternateScreen)?;
     terminal.show_cursor()?;
-    
+
     Ok(())
 }
 
@@ -48,14 +48,54 @@ pub fn run_app(mut app_state: AppState) -> Result<()> {
 fn update_visible_area(app_state: &mut AppState, area: Rect) {
     // Calculate displayable rows: subtract header and borders
     let visible_rows = (area.height as usize).saturating_sub(3);
-    
-    // Calculate displayable columns: consider column width (15) + row number column (5) + borders
-    let total_width = area.width as usize;
-    let visible_cols = ((total_width.saturating_sub(5 + 2)) / 15).max(1); // At least 1 column
-    
-    // Update values in AppState
+
+    // Update visible rows
     app_state.visible_rows = visible_rows;
-    app_state.visible_cols = visible_cols;
+
+    // Calculate visible columns based on actual column widths
+    let total_width = area.width as usize;
+    let available_width = total_width.saturating_sub(5 + 2); // 5 for row numbers, 2 for borders
+
+    let mut width_used = 0;
+    let mut visible_cols = 0;
+
+    // Use existing method to ensure the selected column is visible
+    // This method tries to maintain the current visible area
+    app_state.ensure_column_visible(app_state.selected_cell.1);
+
+    for col_idx in app_state.start_col.. {
+        let col_width = app_state.get_column_width(col_idx);
+
+        // Always show the first column, even if it's very wide
+        if col_idx == app_state.start_col {
+            width_used += col_width;
+            visible_cols += 1;
+
+            // If the first column already exceeds available width, don't show other columns
+            if width_used >= available_width {
+                break;
+            }
+        }
+        // For columns other than the first, use normal logic
+        else {
+            // If we can fully fit this column
+            if width_used + col_width <= available_width {
+                width_used += col_width;
+                visible_cols += 1;
+            }
+            // Excel-like behavior: include a partially visible column if there's space
+            else if width_used < available_width {
+                // Include this column even though it's only partially visible
+                visible_cols += 1;
+                break;
+            } else {
+                break;
+            }
+        }
+    }
+
+    // Ensure at least one column is visible
+    app_state.visible_cols = visible_cols.max(1);
 }
 
 fn ui(f: &mut Frame, app_state: &mut AppState) {
@@ -68,25 +108,25 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
             Constraint::Length(1),  // Status bar
         ])
         .split(f.size());
-    
+
     // Draw title
     let title = format!(
-        " {} - Sheet: {} ", 
-        app_state.file_path.display(), 
+        " {} - Sheet: {} ",
+        app_state.file_path.display(),
         app_state.workbook.get_current_sheet_name()
     );
-    
+
     let title_widget = Paragraph::new(title)
         .style(Style::default().bg(Color::Blue).fg(Color::White));
-    
+
     f.render_widget(title_widget, chunks[0]);
-    
+
     // Calculate visible rows and columns based on window size
     update_visible_area(app_state, chunks[1]);
-    
+
     // Draw spreadsheet
     draw_spreadsheet(f, app_state, chunks[1]);
-    
+
     // Draw status bar
     draw_status_bar(f, app_state, chunks[2]);
 }
@@ -97,13 +137,13 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
         .collect::<Vec<_>>();
     let visible_cols = (app_state.start_col..=(app_state.start_col + app_state.visible_cols - 1))
         .collect::<Vec<_>>();
-    
-    // Calculate column constraints
+
+    // Calculate column constraints using actual widths without scaling
     let mut col_constraints = vec![Constraint::Length(5)]; // Row number column
     col_constraints.extend(
-        visible_cols.iter().map(|_| Constraint::Length(15))
+        visible_cols.iter().map(|col| Constraint::Length(app_state.get_column_width(*col) as u16))
     );
-    
+
     // Prepare header
     let header_cells = {
         let mut cells = vec![Cell::from("")]; // Empty top-left cell
@@ -113,40 +153,93 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
         }));
         Row::new(cells).height(1)
     };
-    
+
     // Prepare row data
     let rows = visible_rows.iter().map(|row| {
         let row_header = Cell::from(row.to_string())
             .style(Style::default().bg(Color::Blue).fg(Color::White));
-        
+
         let row_cells = visible_cols.iter().map(|col| {
             let content = if app_state.selected_cell == (*row, *col) && matches!(app_state.input_mode, InputMode::Editing) {
                 let buf = &app_state.input_buffer;
-                if buf.len() > 14 {
-                    buf.chars().skip(buf.len() - 14).collect()
+                let col_width = app_state.get_column_width(*col);
+
+                // For editing, we need to account for Unicode character widths
+                let display_width = buf.chars().fold(0, |acc, c| {
+                    acc + if c.is_ascii() { 1 } else { 2 }
+                });
+
+                if display_width > col_width.saturating_sub(2) {
+                    // Calculate how many characters to skip by considering Unicode widths
+                    let mut cumulative_width = 0;
+                    let chars_to_show = buf.chars().rev()
+                        .take_while(|&c| {
+                            let char_width = if c.is_ascii() { 1 } else { 2 };
+                            if cumulative_width + char_width <= col_width.saturating_sub(2) {
+                                cumulative_width += char_width;
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
+                    // Reverse back to correct order
+                    chars_to_show.into_iter().rev().collect()
                 } else {
                     buf.clone()
                 }
             } else {
-                app_state.get_cell_content(*row, *col)
+                // For normal display, truncate with ellipsis if needed
+                let content = app_state.get_cell_content(*row, *col);
+                let col_width = app_state.get_column_width(*col);
+
+                // Calculate display width of content
+                let display_width = content.chars().fold(0, |acc, c| {
+                    acc + if c.is_ascii() { 1 } else { 2 }
+                });
+
+                if display_width > col_width {
+                    // Truncate with ellipsis
+                    let mut result = String::new();
+                    let mut current_width = 0;
+
+                    for c in content.chars() {
+                        let char_width = if c.is_ascii() { 1 } else { 2 };
+                        if current_width + char_width + 1 <= col_width { // +1 for ellipsis
+                            result.push(c);
+                            current_width += char_width;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if !content.is_empty() && result.len() < content.len() {
+                        result.push('…'); // Add ellipsis
+                    }
+
+                    result
+                } else {
+                    content
+                }
             };
-            
+
             // Set cell style
             let style = if app_state.selected_cell == (*row, *col) {
                 Style::default().bg(Color::DarkGray).fg(Color::White)
             } else {
                 Style::default()
             };
-            
+
             Cell::from(content).style(style)
         }).collect::<Vec<_>>();
-        
+
         let mut cells = vec![row_header];
         cells.extend(row_cells);
-        
+
         Row::new(cells)
     }).collect::<Vec<_>>();
-    
+
     // Create table
     let table = Table::new(
         std::iter::once(header_cells).chain(rows),
@@ -155,7 +248,7 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
     .block(Block::default().borders(Borders::ALL))
     .highlight_style(Style::default().add_modifier(Modifier::BOLD))
     .highlight_symbol(">> ");
-    
+
     f.render_widget(table, area);
 }
 
@@ -166,14 +259,14 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 app_state.status_message.clone()
             } else {
                 format!(
-                    " Cell: {} | hjkl=move(1) HJKL=move(5) e=edit g=goto q=quit", 
+                    " Cell: {} | hjkl=move(1) HJKL=move(5) e=edit g=goto :=command q=quit",
                     cell_reference(app_state.selected_cell)
                 )
             }
         },
         InputMode::Editing => {
             format!(
-                " Editing cell {}: {}", 
+                " Editing cell {}: {}",
                 cell_reference(app_state.selected_cell),
                 app_state.input_buffer
             )
@@ -184,11 +277,15 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
         InputMode::Confirm => {
             app_state.status_message.clone()
         },
+
+        InputMode::Command => {
+            format!(":{}", app_state.input_buffer)
+        },
     };
-    
+
     let status_style = Style::default().bg(Color::Green).fg(Color::White);
     let status_widget = Paragraph::new(status).style(status_style);
-    
+
     f.render_widget(status_widget, area);
 }
 
@@ -199,6 +296,21 @@ fn handle_key_event(app_state: &mut AppState, key_code: KeyCode) {
         InputMode::Editing => handle_editing_mode(app_state, key_code),
         InputMode::Goto => handle_goto_mode(app_state, key_code),
         InputMode::Confirm => handle_confirm_mode(app_state, key_code),
+        InputMode::Command => handle_command_mode(app_state, key_code),
+    }
+}
+
+
+
+// Handle keyboard events in command mode
+fn handle_command_mode(app_state: &mut AppState, key_code: KeyCode) {
+    match key_code {
+        KeyCode::Enter => app_state.execute_command(),
+        KeyCode::Esc => app_state.cancel_input(),
+        KeyCode::Backspace => app_state.delete_char_from_input(),
+        // Allow any character input for commands
+        KeyCode::Char(c) => app_state.add_char_to_input(c),
+        _ => {}
     }
 }
 
@@ -215,6 +327,9 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Char('L') => app_state.move_cursor(0, 5),
         KeyCode::Char('e') => app_state.start_editing(),
         KeyCode::Char('g') => app_state.start_goto(),
+        // Enter command mode
+        KeyCode::Char(':') => app_state.start_command_mode(),
+
         KeyCode::Left => app_state.move_cursor(0, -1),
         KeyCode::Right => app_state.move_cursor(0, 1),
         KeyCode::Up => app_state.move_cursor(-1, 0),
@@ -262,23 +377,3 @@ fn handle_confirm_mode(app_state: &mut AppState, key_code: KeyCode) {
 fn cell_reference(cell: (usize, usize)) -> String {
     format!("{}{}", index_to_col_name(cell.1), cell.0)
 }
-
-// Convert column index to column name, e.g. 1->A, 2->B, 27->AA
-fn index_to_col_name(index: usize) -> String {
-    let mut name = String::new();
-    let mut idx = index;
-    
-    while idx > 0 {
-        // Convert to 0-based for calculation
-        idx -= 1;
-        let remainder = idx % 26;
-        name.insert(0, (b'A' + remainder as u8) as char);
-        idx /= 26;
-    }
-    
-    if name.is_empty() {
-        name = "A".to_string();
-    }
-    
-    name
-} 
