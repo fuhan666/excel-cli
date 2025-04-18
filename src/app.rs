@@ -161,6 +161,19 @@ impl AppState {
         }
     }
 
+    // Save without exiting
+    pub fn save(&mut self) -> Result<()> {
+        match self.workbook.save() {
+            Ok(_) => {
+                self.status_message = "File saved".to_string();
+            }
+            Err(e) => {
+                self.status_message = format!("Save failed: {}", e);
+            }
+        }
+        Ok(())
+    }
+
     pub fn exit_without_saving(&mut self) {
         self.should_quit = true;
     }
@@ -371,7 +384,7 @@ impl AppState {
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
-        self.status_message = "Commands: :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json, :ej, :help".to_string();
+        self.status_message = "Commands: :w, :wq, :q, :q!, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json, :ej, :help".to_string();
     }
 
     // Handle JSON export command
@@ -448,79 +461,108 @@ impl AppState {
         if let InputMode::Command = self.input_mode {
             let cmd = self.input_buffer.trim();
 
-            // Handle column width commands
-            if cmd.starts_with("cw ") {
-                if let Some(subcmd) = cmd.strip_prefix("cw ") {
-                    match subcmd {
-                        // Auto-adjust current column width
-                        "fit" => {
-                            self.auto_adjust_column_width(Some(self.selected_cell.1));
-                        }
-                        // Auto-adjust all column widths
-                        "fit all" => {
-                            self.auto_adjust_column_width(None);
-                        }
-                        // Minimize current column width
-                        "min" => {
-                            self.shrink_column_width(Some(self.selected_cell.1));
-                        }
-                        // Minimize all column widths
-                        "min all" => {
-                            self.shrink_column_width(None);
-                        }
-                        // Try to parse subcommand as a number to set current column width
-                        _ => {
-                            if let Ok(width) = subcmd.parse::<usize>() {
-                                let min_width = 5;
-                                let max_width = 100;
-                                let column = self.selected_cell.1;
+            // Handle Vim-style save and exit commands
+            match cmd {
+                // Save and continue editing
+                "w" => {
+                    if let Err(e) = self.save() {
+                        self.status_message = format!("Save failed: {}", e);
+                    }
+                }
+                // Save and quit
+                "wq" | "x" => {
+                    self.save_and_exit();
+                }
+                // Quit without saving
+                "q" => {
+                    if self.workbook.is_modified() {
+                        self.status_message = "File modified. Use :q! to force quit without saving".to_string();
+                    } else {
+                        self.should_quit = true;
+                    }
+                }
+                // Force quit without saving
+                "q!" => {
+                    self.exit_without_saving();
+                }
+                // Handle column width commands
+                _ if cmd.starts_with("cw ") => {
+                    if let Some(subcmd) = cmd.strip_prefix("cw ") {
+                        match subcmd {
+                            // Auto-adjust current column width
+                            "fit" => {
+                                self.auto_adjust_column_width(Some(self.selected_cell.1));
+                            }
+                            // Auto-adjust all column widths
+                            "fit all" => {
+                                self.auto_adjust_column_width(None);
+                            }
+                            // Minimize current column width
+                            "min" => {
+                                self.shrink_column_width(Some(self.selected_cell.1));
+                            }
+                            // Minimize all column widths
+                            "min all" => {
+                                self.shrink_column_width(None);
+                            }
+                            // Try to parse subcommand as a number to set current column width
+                            _ => {
+                                if let Ok(width) = subcmd.parse::<usize>() {
+                                    let min_width = 5;
+                                    let max_width = 100;
+                                    let column = self.selected_cell.1;
 
-                                // Ensure width is within reasonable range
-                                let width = width.max(min_width).min(max_width);
+                                    // Ensure width is within reasonable range
+                                    let width = width.max(min_width).min(max_width);
 
-                                if column < self.column_widths.len() {
-                                    // Record original width for status message
-                                    let old_width = self.column_widths[column];
+                                    if column < self.column_widths.len() {
+                                        // Record original width for status message
+                                        let old_width = self.column_widths[column];
 
-                                    // Record starting column to detect changes (unused but kept for future use)
-                                    let _original_start_col = self.start_col;
+                                        // Record starting column to detect changes (unused but kept for future use)
+                                        let _original_start_col = self.start_col;
 
-                                    // Set new column width
-                                    self.column_widths[column] = width;
+                                        // Set new column width
+                                        self.column_widths[column] = width;
 
-                                    self.ensure_column_visible(column);
+                                        self.ensure_column_visible(column);
 
-                                    self.status_message = format!(
-                                        "Column {} width changed from {} to {}",
-                                        index_to_col_name(column),
-                                        old_width,
-                                        width
-                                    );
+                                        self.status_message = format!(
+                                            "Column {} width changed from {} to {}",
+                                            index_to_col_name(column),
+                                            old_width,
+                                            width
+                                        );
+                                    }
+                                } else {
+                                    self.status_message = format!("Unknown column command: {}", subcmd);
                                 }
-                            } else {
-                                self.status_message = format!("Unknown column command: {}", subcmd);
                             }
                         }
                     }
                 }
-            }
-            // JSON export command
-            else if cmd.starts_with("export json ") || cmd.starts_with("ej ") {
-                let cmd_str = cmd.to_string(); // Clone the command string to avoid borrowing issues
-                self.handle_json_export_command(&cmd_str);
-            }
-            // Help command
-            else if cmd == "help" {
-                self.status_message = format!(
-                    "Commands:\n\
-                     :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
-                     :export json [filename] [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
-                     :ej [filename] [h|v] [rows] - Shorthand for export json"
-                );
-            }
-            // Unknown command
-            else {
-                self.status_message = format!("Unknown command: {}", cmd);
+                // JSON export command
+                _ if cmd.starts_with("export json ") || cmd.starts_with("ej ") => {
+                    let cmd_str = cmd.to_string(); // Clone the command string to avoid borrowing issues
+                    self.handle_json_export_command(&cmd_str);
+                }
+                // Help command
+                "help" => {
+                    self.status_message = format!(
+                        "Commands:\n\
+                         :w - Save file\n\
+                         :wq, :x - Save and quit\n\
+                         :q - Quit (will warn if unsaved changes)\n\
+                         :q! - Force quit without saving\n\
+                         :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
+                         :export json [filename] [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
+                         :ej [filename] [h|v] [rows] - Shorthand for export json"
+                    );
+                }
+                // Unknown command
+                _ => {
+                    self.status_message = format!("Unknown command: {}", cmd);
+                }
             }
 
             self.input_mode = InputMode::Normal;

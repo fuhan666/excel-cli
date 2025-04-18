@@ -39,8 +39,7 @@ sheet-cli path/to/your/file.xlsx
 - `H`, `J`, `K`, `L`: Move selection (5 cells)
 - `e`: Edit current cell
 - `g`: Go to specific cell (enter cell reference like A1, B2, etc.)
-- `:`: Enter command mode
-- `q`: Quit application
+- `:`: Enter command mode (for Vim-style commands)
 
 ## Edit Mode
 
@@ -78,16 +77,16 @@ Enter command mode by pressing `:`. Available commands:
   - `rows` - Number of header rows (for horizontal) or columns (for vertical)
 - `:ej [filename] [h|v] [rows]` - Shorthand for export json command
 
+### Vim-style Commands
+
+- `:w` - Save file without exiting
+- `:wq` or `:x` - Save and exit
+- `:q` - Quit (will warn if there are unsaved changes)
+- `:q!` - Force quit without saving
+
 ### Other Commands
 
 - `:help` - Show available commands
-
-## Exiting
-
-- If you've made changes, you'll be prompted to save
-- `y`: Save and exit
-- `n`: Exit without saving
-- `c` or `Esc`: Cancel exit
 
 ## Technical Stack
 

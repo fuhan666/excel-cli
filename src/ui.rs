@@ -236,7 +236,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 app_state.status_message.clone()
             } else {
                 format!(
-                    " Cell: {} | hjkl=move(1) HJKL=move(5) e=edit g=goto :=command q=quit",
+                    " Cell: {} | hjkl=move(1) HJKL=move(5) e=edit g=goto :=command",
                     cell_reference(app_state.selected_cell)
                 )
             }
@@ -286,7 +286,6 @@ fn handle_command_mode(app_state: &mut AppState, key_code: KeyCode) {
 
 fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
     match key_code {
-        KeyCode::Char('q') => app_state.exit(),
         KeyCode::Char('h') => app_state.move_cursor(0, -1),
         KeyCode::Char('j') => app_state.move_cursor(1, 0),
         KeyCode::Char('k') => app_state.move_cursor(-1, 0),
