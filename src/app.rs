@@ -63,15 +63,14 @@ impl AppState {
     }
 
     fn handle_scrolling(&mut self) {
-        // Handle row scrolling
         if self.selected_cell.0 < self.start_row {
             self.start_row = self.selected_cell.0;
-        } else if self.selected_cell.0 >= self.start_row + self.visible_rows {
+        }
+        else if self.selected_cell.0 >= self.start_row + self.visible_rows {
             self.start_row = self.selected_cell.0 - self.visible_rows + 1;
         }
 
-        // Use the ensure_column_visible method to handle column scrolling
-        self.ensure_column_visible(self.selected_cell.1);
+        self.handle_column_scrolling();
     }
 
     pub fn get_cell_content(&self, row: usize, col: usize) -> String {
@@ -186,29 +185,7 @@ impl AppState {
                     let width = self.calculate_column_width(column);
                     self.column_widths[column] = width.max(default_min_width);
 
-                    // First check if the column is already visible, if so no adjustment needed
-                    let mut is_visible = false;
-                    let mut visible_width = 0;
-
-                    for col in self.start_col.. {
-                        visible_width += self.get_column_width(col);
-
-                        // If current column is already visible, mark and stop
-                        if col == column {
-                            is_visible = true;
-                            break;
-                        }
-
-                        // If we've exceeded the visible area, stop
-                        if visible_width > self.visible_cols * 10 {
-                            break;
-                        }
-                    }
-
-                    // Only adjust when the column is not visible
-                    if !is_visible {
-                        self.ensure_column_visible(column);
-                    }
+                    self.ensure_column_visible(column);
 
                     self.status_message = format!(
                         "Column {} width adjusted from {} to {}",
@@ -225,30 +202,8 @@ impl AppState {
                     self.column_widths[col_idx] = width.max(default_min_width);
                 }
 
-                // First check if the current column is already visible, if so no adjustment needed
                 let column = self.selected_cell.1;
-                let mut is_visible = false;
-                let mut visible_width = 0;
-
-                for col in self.start_col.. {
-                    visible_width += self.get_column_width(col);
-
-                    // If current column is already visible, mark and stop
-                    if col == column {
-                        is_visible = true;
-                        break;
-                    }
-
-                    // If we've exceeded the visible area, stop
-                    if visible_width > self.visible_cols * 10 {
-                        break;
-                    }
-                }
-
-                // Only adjust when the column is not visible
-                if !is_visible {
-                    self.ensure_column_visible(column);
-                }
+                self.ensure_column_visible(column);
 
                 self.status_message = "All column widths adjusted".to_string();
             }
@@ -335,29 +290,7 @@ impl AppState {
                     let new_width = content_width.min(max_width).max(min_width);
                     self.column_widths[column] = new_width;
 
-                    // Check if column is already visible before adjusting
-                    let mut is_visible = false;
-                    let mut visible_width = 0;
-
-                    for col in self.start_col.. {
-                        visible_width += self.get_column_width(col);
-
-                        // If column is already visible, mark and stop
-                        if col == column {
-                            is_visible = true;
-                            break;
-                        }
-
-                        // If we've exceeded visible area, stop
-                        if visible_width > self.visible_cols * 10 {
-                            break;
-                        }
-                    }
-
-                    // Only adjust if column is not visible
-                    if !is_visible {
-                        self.ensure_column_visible(column);
-                    }
+                    self.ensure_column_visible(column);
 
                     self.status_message = format!(
                         "Column {} width minimized from {} to {}",
@@ -388,91 +321,50 @@ impl AppState {
                     }
                 }
 
-                // Check if current column is already visible before adjusting
                 let column = self.selected_cell.1;
-                let mut is_visible = false;
-                let mut visible_width = 0;
-
-                for col in self.start_col.. {
-                    visible_width += self.get_column_width(col);
-
-                    // If column is already visible, mark and stop
-                    if col == column {
-                        is_visible = true;
-                        break;
-                    }
-
-                    // If we've exceeded visible area, stop
-                    if visible_width > self.visible_cols * 10 {
-                        break;
-                    }
-                }
-
-                // Only adjust if column is not visible
-                if !is_visible {
-                    self.ensure_column_visible(column);
-                }
+                self.ensure_column_visible(column);
 
                 self.status_message = "Minimized the width of all columns".to_string();
             }
         }
     }
 
-    // Ensure specified column is visible while trying to maintain current view
-    pub fn ensure_column_visible(&mut self, column: usize) {
-        // If column is before current visible area, make it the starting column
-        if column < self.start_col {
-            self.start_col = column;
-            return; // Already adjusted starting column, return immediately
+    fn handle_column_scrolling(&mut self) {
+        let target_col = self.selected_cell.1;
+
+        if target_col < self.start_col {
+            self.start_col = target_col;
+            return;
         }
 
-        // Check if column is already in visible area
-        // Calculate current visible columns
-        let mut visible_cols = Vec::new();
-        let mut width_sum = 0;
+        let mut current_col = self.start_col;
+        let mut visible_cols = 0;
 
-        // Use actual screen width instead of approximation
-        // Each column needs at least 5 characters width, plus row numbers and borders
-        let approx_available_width = self.visible_cols * 5 + 10; // Safer approximation
-
-        // Calculate which columns are visible
-        for col in self.start_col.. {
-            let col_width = self.get_column_width(col);
-
-            // Always show the first column, even if it's very wide
-            if col == self.start_col {
-                visible_cols.push(col);
-                width_sum += col_width;
-
-                // If first column already exceeds available width, still show it
-                if width_sum >= approx_available_width {
-                    break;
-                }
-            } else {
-                // If we can fully show this column
-                if width_sum + col_width <= approx_available_width {
-                    visible_cols.push(col);
-                    width_sum += col_width;
-                }
-                // If we can partially show this column
-                else if width_sum < approx_available_width {
-                    visible_cols.push(col);
-                    break;
-                } else {
-                    break;
-                }
-            }
-
-            // If we've calculated up to the target column, we can stop
-            if col >= column {
-                // Target column is already visible, no need to adjust starting column
+        while visible_cols < self.visible_cols {
+            if current_col == target_col {
                 return;
             }
+
+            visible_cols += 1;
+            current_col += 1;
         }
 
-        // If we get here, the target column is not in the visible area
-        // Make the target column the starting column
-        self.start_col = column;
+        self.start_col = target_col - self.visible_cols + 1;
+        self.start_col = self.start_col.max(1);
+    }
+
+    pub fn ensure_column_visible(&mut self, column: usize) {
+        if column < self.start_col {
+            self.start_col = column;
+            return;
+        }
+
+        let last_visible_col = self.start_col + self.visible_cols - 1;
+
+        if column > last_visible_col {
+            self.start_col = column - self.visible_cols + 1;
+            self.start_col = self.start_col.max(1);
+        }
     }
 
     // Enter command mode
@@ -596,29 +488,7 @@ impl AppState {
                                     // Set new column width
                                     self.column_widths[column] = width;
 
-                                    // Check if column is already visible before adjusting
-                                    let mut is_visible = false;
-                                    let mut visible_width = 0;
-
-                                    for col in self.start_col.. {
-                                        visible_width += self.get_column_width(col);
-
-                                        // If column is already visible, mark and stop
-                                        if col == column {
-                                            is_visible = true;
-                                            break;
-                                        }
-
-                                        // If we've exceeded visible area, stop
-                                        if visible_width > self.visible_cols * 10 {
-                                            break;
-                                        }
-                                    }
-
-                                    // Only adjust if column is not visible
-                                    if !is_visible {
-                                        self.ensure_column_visible(column);
-                                    }
+                                    self.ensure_column_visible(column);
 
                                     self.status_message = format!(
                                         "Column {} width changed from {} to {}",
