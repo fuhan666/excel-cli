@@ -58,24 +58,39 @@ fn update_visible_area(app_state: &mut AppState, area: Rect) {
 
     let mut width_used = 0;
     let mut visible_cols = 0;
-    let mut include_partial = false;
+
+    // Use existing method to ensure the selected column is visible
+    // This method tries to maintain the current visible area
+    app_state.ensure_column_visible(app_state.selected_cell.1);
 
     for col_idx in app_state.start_col.. {
         let col_width = app_state.get_column_width(col_idx);
 
-        // If we can fully fit this column
-        if width_used + col_width <= available_width {
+        // Always show the first column, even if it's very wide
+        if col_idx == app_state.start_col {
             width_used += col_width;
             visible_cols += 1;
+
+            // If the first column already exceeds available width, don't show other columns
+            if width_used >= available_width {
+                break;
+            }
         }
-        // Excel-like behavior: include a partially visible column if there's space
-        else if width_used < available_width && !include_partial {
-            // Include this column even though it's only partially visible
-            visible_cols += 1;
-            include_partial = true; // Only include one partial column
-            break;
-        } else {
-            break;
+        // For columns other than the first, use normal logic
+        else {
+            // If we can fully fit this column
+            if width_used + col_width <= available_width {
+                width_used += col_width;
+                visible_cols += 1;
+            }
+            // Excel-like behavior: include a partially visible column if there's space
+            else if width_used < available_width {
+                // Include this column even though it's only partially visible
+                visible_cols += 1;
+                break;
+            } else {
+                break;
+            }
         }
     }
 
@@ -244,7 +259,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 app_state.status_message.clone()
             } else {
                 format!(
-                    " Cell: {} | hjkl=move(1) HJKL=move(5) e=edit g=goto w=adjust column width W=adjust all widths q=quit",
+                    " Cell: {} | hjkl=move(1) HJKL=move(5) e=edit g=goto :=command q=quit",
                     cell_reference(app_state.selected_cell)
                 )
             }
@@ -262,6 +277,10 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
         InputMode::Confirm => {
             app_state.status_message.clone()
         },
+
+        InputMode::Command => {
+            format!(":{}", app_state.input_buffer)
+        },
     };
 
     let status_style = Style::default().bg(Color::Green).fg(Color::White);
@@ -277,6 +296,21 @@ fn handle_key_event(app_state: &mut AppState, key_code: KeyCode) {
         InputMode::Editing => handle_editing_mode(app_state, key_code),
         InputMode::Goto => handle_goto_mode(app_state, key_code),
         InputMode::Confirm => handle_confirm_mode(app_state, key_code),
+        InputMode::Command => handle_command_mode(app_state, key_code),
+    }
+}
+
+
+
+// Handle keyboard events in command mode
+fn handle_command_mode(app_state: &mut AppState, key_code: KeyCode) {
+    match key_code {
+        KeyCode::Enter => app_state.execute_command(),
+        KeyCode::Esc => app_state.cancel_input(),
+        KeyCode::Backspace => app_state.delete_char_from_input(),
+        // Allow any character input for commands
+        KeyCode::Char(c) => app_state.add_char_to_input(c),
+        _ => {}
     }
 }
 
@@ -293,8 +327,9 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Char('L') => app_state.move_cursor(0, 5),
         KeyCode::Char('e') => app_state.start_editing(),
         KeyCode::Char('g') => app_state.start_goto(),
-        KeyCode::Char('w') => app_state.auto_adjust_column_width(Some(app_state.selected_cell.1)),
-        KeyCode::Char('W') => app_state.auto_adjust_column_width(None),
+        // Enter command mode
+        KeyCode::Char(':') => app_state.start_command_mode(),
+
         KeyCode::Left => app_state.move_cursor(0, -1),
         KeyCode::Right => app_state.move_cursor(0, 1),
         KeyCode::Up => app_state.move_cursor(-1, 0),
