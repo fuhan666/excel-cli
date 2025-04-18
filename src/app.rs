@@ -25,6 +25,7 @@ pub struct AppState {
     pub status_message: String,
     pub should_quit: bool,
     pub column_widths: Vec<usize>, // Store width for each column
+    pub clipboard: Option<String>, // Store copied/cut cell content
 }
 
 impl AppState {
@@ -47,6 +48,7 @@ impl AppState {
             status_message: String::new(),
             should_quit: false,
             column_widths,
+            clipboard: None,
         })
     }
 
@@ -181,6 +183,44 @@ impl AppState {
     pub fn cancel_exit(&mut self) {
         self.input_mode = InputMode::Normal;
         self.status_message = String::new();
+    }
+
+    // Copy current cell content to clipboard
+    pub fn copy_cell(&mut self) {
+        let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
+        self.clipboard = Some(content);
+        self.status_message = "Cell content copied".to_string();
+    }
+
+    // Cut current cell content to clipboard
+    pub fn cut_cell(&mut self) -> Result<()> {
+        let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
+        self.clipboard = Some(content);
+
+        // Clear the cell
+        self.workbook.set_cell_value(
+            self.selected_cell.0,
+            self.selected_cell.1,
+            String::new(),
+        )?;
+
+        self.status_message = "Cell content cut".to_string();
+        Ok(())
+    }
+
+    // Paste clipboard content to current cell
+    pub fn paste_cell(&mut self) -> Result<()> {
+        if let Some(content) = &self.clipboard {
+            self.workbook.set_cell_value(
+                self.selected_cell.0,
+                self.selected_cell.1,
+                content.clone(),
+            )?;
+            self.status_message = "Content pasted".to_string();
+        } else {
+            self.status_message = "Clipboard is empty".to_string();
+        }
+        Ok(())
     }
 
     pub fn auto_adjust_column_width(&mut self, col: Option<usize>) {
@@ -384,7 +424,7 @@ impl AppState {
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
-        self.status_message = "Commands: :w, :wq, :q, :q!, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json, :ej, :help".to_string();
+        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json, :ej, :help".to_string();
     }
 
     // Handle JSON export command
@@ -546,6 +586,22 @@ impl AppState {
                     let cmd_str = cmd.to_string(); // Clone the command string to avoid borrowing issues
                     self.handle_json_export_command(&cmd_str);
                 }
+                // Copy command
+                "y" => {
+                    self.copy_cell();
+                }
+                // Cut command
+                "d" => {
+                    if let Err(e) = self.cut_cell() {
+                        self.status_message = format!("Cut failed: {}", e);
+                    }
+                }
+                // Paste command (using Vim's Ex mode paste command)
+                "put" | "pu" => {
+                    if let Err(e) = self.paste_cell() {
+                        self.status_message = format!("Paste failed: {}", e);
+                    }
+                }
                 // Help command
                 "help" => {
                     self.status_message = format!(
@@ -554,6 +610,9 @@ impl AppState {
                          :wq, :x - Save and quit\n\
                          :q - Quit (will warn if unsaved changes)\n\
                          :q! - Force quit without saving\n\
+                         :y - Copy current cell\n\
+                         :d - Cut current cell\n\
+                         :put, :pu - Paste to current cell\n\
                          :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
                          :export json [filename] [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
                          :ej [filename] [h|v] [rows] - Shorthand for export json"

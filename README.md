@@ -39,6 +39,9 @@ sheet-cli path/to/your/file.xlsx
 - `H`, `J`, `K`, `L`: Move selection (5 cells)
 - `e`: Edit current cell
 - `g`: Go to specific cell (enter cell reference like A1, B2, etc.)
+- `y`: Copy current cell content
+- `d`: Cut current cell content
+- `p`: Paste clipboard content to current cell
 - `:`: Enter command mode (for Vim-style commands)
 
 ## Edit Mode
@@ -83,6 +86,9 @@ Enter command mode by pressing `:`. Available commands:
 - `:wq` or `:x` - Save and exit
 - `:q` - Quit (will warn if there are unsaved changes)
 - `:q!` - Force quit without saving
+- `:y` - Copy current cell content
+- `:d` - Cut current cell content
+- `:put` or `:pu` - Paste clipboard content to current cell
 
 ### Other Commands
 

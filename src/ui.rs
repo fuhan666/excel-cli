@@ -236,7 +236,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 app_state.status_message.clone()
             } else {
                 format!(
-                    " Cell: {} | hjkl=move(1) HJKL=move(5) e=edit g=goto :=command",
+                    " Cell: {} | hjkl=move(1) HJKL=move(5) e=edit g=goto y=copy d=cut p=paste :=command",
                     cell_reference(app_state.selected_cell)
                 )
             }
@@ -296,6 +296,18 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Char('L') => app_state.move_cursor(0, 5),
         KeyCode::Char('e') => app_state.start_editing(),
         KeyCode::Char('g') => app_state.start_goto(),
+        // Vim-style copy, cut, paste
+        KeyCode::Char('y') => app_state.copy_cell(),
+        KeyCode::Char('d') => {
+            if let Err(e) = app_state.cut_cell() {
+                app_state.status_message = format!("Cut failed: {}", e);
+            }
+        },
+        KeyCode::Char('p') => {
+            if let Err(e) = app_state.paste_cell() {
+                app_state.status_message = format!("Paste failed: {}", e);
+            }
+        },
         // Enter command mode
         KeyCode::Char(':') => app_state.start_command_mode(),
 
