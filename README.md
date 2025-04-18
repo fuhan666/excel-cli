@@ -49,6 +49,10 @@ sheet-cli path/to/your/file.xlsx
 - `y`: Copy current cell content
 - `d`: Cut current cell content
 - `p`: Paste clipboard content to current cell
+- `/`: Start forward search
+- `?`: Start backward search
+- `n`: Jump to next search result
+- `N`: Jump to previous search result
 - `:`: Enter command mode (for Vim-style commands)
 
 ## Edit Mode
@@ -58,6 +62,18 @@ In edit mode:
 - `Enter`: Confirm edit
 - `Esc`: Cancel edit
 - Formulas can be entered by starting with `=`
+
+## Search Mode
+
+Enter search mode by pressing `/` (forward search) or `?` (backward search):
+
+- Type your search query
+- `Enter`: Execute search and jump to the first match
+- `Esc`: Cancel search
+- `n`: Jump to next match (after search is executed)
+- `N`: Jump to previous match (after search is executed)
+- Search results are highlighted in yellow
+- Search uses row-first, column-second order (searches through each row from left to right, then moves to the next row)
 
 ## Command Mode
 
@@ -92,6 +108,7 @@ Enter command mode by pressing `:`. Available commands:
 
 ### Other Commands
 
+- `:nohlsearch` or `:noh` - Disable search highlighting
 - `:help` - Show available commands
 
 ## Technical Stack

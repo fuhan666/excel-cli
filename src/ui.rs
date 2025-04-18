@@ -204,8 +204,12 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
                         }
                     };
 
+                    // Determine cell style based on selection and search results
                     let style = if app_state.selected_cell == (*row, *col) {
                         Style::default().bg(Color::DarkGray).fg(Color::White)
+                    } else if app_state.highlight_enabled && app_state.search_results.contains(&(*row, *col)) {
+                        // Highlight search results only if highlighting is enabled
+                        Style::default().bg(Color::Yellow).fg(Color::Black)
                     } else {
                         Style::default()
                     };
@@ -236,7 +240,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 app_state.status_message.clone()
             } else {
                 format!(
-                    " Cell: {} | hjkl=move(1) 0=first-col ^=first-non-empty $=last-col gg=first-row G=last-row Ctrl+arrows=jump i=edit y=copy d=cut p=paste :=command",
+                    " Cell: {} | hjkl=move(1) 0=first-col ^=first-non-empty $=last-col gg=first-row G=last-row Ctrl+arrows=jump i=edit y=copy d=cut p=paste /=search ?=rev-search n=next N=prev :=command",
                     cell_reference(app_state.selected_cell)
                 )
             }
@@ -253,6 +257,14 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
 
         InputMode::Command => {
             format!(":{}", app_state.input_buffer)
+        }
+
+        InputMode::SearchForward => {
+            format!("/{}|_", app_state.input_buffer)
+        }
+
+        InputMode::SearchBackward => {
+            format!("?{}|_", app_state.input_buffer)
         }
     };
 
@@ -274,6 +286,8 @@ fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
         InputMode::Editing => handle_editing_mode(app_state, key.code),
         InputMode::Confirm => handle_confirm_mode(app_state, key.code),
         InputMode::Command => handle_command_mode(app_state, key.code),
+        InputMode::SearchForward => handle_search_mode(app_state, key.code),
+        InputMode::SearchBackward => handle_search_mode(app_state, key.code),
     }
 }
 
@@ -381,6 +395,42 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
             app_state.g_pressed = false;
             app_state.start_command_mode();
         },
+        // Start forward search
+        KeyCode::Char('/') => {
+            app_state.g_pressed = false;
+            app_state.start_search_forward();
+        },
+        // Start backward search
+        KeyCode::Char('?') => {
+            app_state.g_pressed = false;
+            app_state.start_search_backward();
+        },
+        // Jump to next search result
+        KeyCode::Char('n') => {
+            app_state.g_pressed = false;
+            if !app_state.search_results.is_empty() {
+                app_state.jump_to_next_search_result();
+            } else if !app_state.search_query.is_empty() {
+                // Re-run the last search if we have a query but no results
+                app_state.search_results = app_state.find_all_matches(&app_state.search_query);
+                if !app_state.search_results.is_empty() {
+                    app_state.jump_to_next_search_result();
+                }
+            }
+        },
+        // Jump to previous search result
+        KeyCode::Char('N') => {
+            app_state.g_pressed = false;
+            if !app_state.search_results.is_empty() {
+                app_state.jump_to_prev_search_result();
+            } else if !app_state.search_query.is_empty() {
+                // Re-run the last search if we have a query but no results
+                app_state.search_results = app_state.find_all_matches(&app_state.search_query);
+                if !app_state.search_results.is_empty() {
+                    app_state.jump_to_prev_search_result();
+                }
+            }
+        },
 
         KeyCode::Left => {
             app_state.g_pressed = false;
@@ -425,6 +475,19 @@ fn handle_confirm_mode(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Char('y') | KeyCode::Char('Y') => app_state.save_and_exit(),
         KeyCode::Char('n') | KeyCode::Char('N') => app_state.exit_without_saving(),
         KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => app_state.cancel_exit(),
+        _ => {}
+    }
+}
+
+fn handle_search_mode(app_state: &mut AppState, key_code: KeyCode) {
+    match key_code {
+        KeyCode::Enter => app_state.execute_search(),
+        KeyCode::Esc => {
+            app_state.input_mode = InputMode::Normal;
+            app_state.input_buffer = String::new();
+        },
+        KeyCode::Backspace => app_state.delete_char_from_input(),
+        KeyCode::Char(c) => app_state.add_char_to_input(c),
         _ => {}
     }
 }
