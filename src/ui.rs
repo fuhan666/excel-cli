@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
@@ -30,7 +30,7 @@ pub fn run_app(mut app_state: AppState) -> Result<()> {
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    handle_key_event(&mut app_state, key.code);
+                    handle_key_event(&mut app_state, key);
                 }
             }
         }
@@ -236,7 +236,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 app_state.status_message.clone()
             } else {
                 format!(
-                    " Cell: {} | hjkl=move(1) HJKL=move(5) i=edit g=goto y=copy d=cut p=paste :=command",
+                    " Cell: {} | hjkl=move(1) 0=first-col ^=first-non-empty $=last-col gg=first-row G=last-row Ctrl+arrows=jump i=edit y=copy d=cut p=paste :=command",
                     cell_reference(app_state.selected_cell)
                 )
             }
@@ -248,9 +248,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 app_state.input_buffer
             )
         }
-        InputMode::Goto => {
-            format!(" Go to cell: {}", app_state.input_buffer)
-        }
+
         InputMode::Confirm => app_state.status_message.clone(),
 
         InputMode::Command => {
@@ -264,13 +262,36 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
     f.render_widget(status_widget, area);
 }
 
-fn handle_key_event(app_state: &mut AppState, key_code: KeyCode) {
+fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
     match app_state.input_mode {
-        InputMode::Normal => handle_normal_mode(app_state, key_code),
-        InputMode::Editing => handle_editing_mode(app_state, key_code),
-        InputMode::Goto => handle_goto_mode(app_state, key_code),
-        InputMode::Confirm => handle_confirm_mode(app_state, key_code),
-        InputMode::Command => handle_command_mode(app_state, key_code),
+        InputMode::Normal => {
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                handle_ctrl_key(app_state, key.code);
+            } else {
+                handle_normal_mode(app_state, key.code);
+            }
+        },
+        InputMode::Editing => handle_editing_mode(app_state, key.code),
+        InputMode::Confirm => handle_confirm_mode(app_state, key.code),
+        InputMode::Command => handle_command_mode(app_state, key.code),
+    }
+}
+
+fn handle_ctrl_key(app_state: &mut AppState, key_code: KeyCode) {
+    match key_code {
+        KeyCode::Left => {
+            app_state.jump_to_prev_non_empty_cell_left();
+        },
+        KeyCode::Right => {
+            app_state.jump_to_prev_non_empty_cell_right();
+        },
+        KeyCode::Up => {
+            app_state.jump_to_prev_non_empty_cell_up();
+        },
+        KeyCode::Down => {
+            app_state.jump_to_prev_non_empty_cell_down();
+        },
+        _ => {}
     }
 }
 
@@ -286,36 +307,100 @@ fn handle_command_mode(app_state: &mut AppState, key_code: KeyCode) {
 
 fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
     match key_code {
-        KeyCode::Char('h') => app_state.move_cursor(0, -1),
-        KeyCode::Char('j') => app_state.move_cursor(1, 0),
-        KeyCode::Char('k') => app_state.move_cursor(-1, 0),
-        KeyCode::Char('l') => app_state.move_cursor(0, 1),
-        KeyCode::Char('H') => app_state.move_cursor(0, -5),
-        KeyCode::Char('J') => app_state.move_cursor(5, 0),
-        KeyCode::Char('K') => app_state.move_cursor(-5, 0),
-        KeyCode::Char('L') => app_state.move_cursor(0, 5),
-        KeyCode::Char('i') => app_state.start_editing(),
-        KeyCode::Char('g') => app_state.start_goto(),
+        KeyCode::Char('h') => {
+            app_state.g_pressed = false;
+            app_state.move_cursor(0, -1);
+        },
+        KeyCode::Char('j') => {
+            app_state.g_pressed = false;
+            app_state.move_cursor(1, 0);
+        },
+        KeyCode::Char('k') => {
+            app_state.g_pressed = false;
+            app_state.move_cursor(-1, 0);
+        },
+        KeyCode::Char('l') => {
+            app_state.g_pressed = false;
+            app_state.move_cursor(0, 1);
+        },
+
+        KeyCode::Char('i') => {
+            app_state.g_pressed = false;
+            app_state.start_editing();
+        },
+        // Handle 'g' key for 'gg' command
+        KeyCode::Char('g') => {
+            if app_state.g_pressed {
+                // Second 'g' pressed - jump to first row
+                app_state.jump_to_first_row();
+                app_state.g_pressed = false;
+            } else {
+                // First 'g' pressed - set flag
+                app_state.g_pressed = true;
+            }
+        },
+        // Handle 'G' key to jump to last row
+        KeyCode::Char('G') => {
+            app_state.g_pressed = false;
+            app_state.jump_to_last_row();
+        },
+        // Handle '0' key to jump to first column
+        KeyCode::Char('0') => {
+            app_state.g_pressed = false;
+            app_state.jump_to_first_column();
+        },
+        // Handle '^' key to jump to first non-empty column
+        KeyCode::Char('^') => {
+            app_state.g_pressed = false;
+            app_state.jump_to_first_non_empty_column();
+        },
+        // Handle '$' key to jump to last column
+        KeyCode::Char('$') => {
+            app_state.g_pressed = false;
+            app_state.jump_to_last_column();
+        },
         // Vim-style copy, cut, paste
-        KeyCode::Char('y') => app_state.copy_cell(),
+        KeyCode::Char('y') => {
+            app_state.g_pressed = false;
+            app_state.copy_cell();
+        },
         KeyCode::Char('d') => {
+            app_state.g_pressed = false;
             if let Err(e) = app_state.cut_cell() {
                 app_state.status_message = format!("Cut failed: {}", e);
             }
         },
         KeyCode::Char('p') => {
+            app_state.g_pressed = false;
             if let Err(e) = app_state.paste_cell() {
                 app_state.status_message = format!("Paste failed: {}", e);
             }
         },
         // Enter command mode
-        KeyCode::Char(':') => app_state.start_command_mode(),
+        KeyCode::Char(':') => {
+            app_state.g_pressed = false;
+            app_state.start_command_mode();
+        },
 
-        KeyCode::Left => app_state.move_cursor(0, -1),
-        KeyCode::Right => app_state.move_cursor(0, 1),
-        KeyCode::Up => app_state.move_cursor(-1, 0),
-        KeyCode::Down => app_state.move_cursor(1, 0),
-        _ => {}
+        KeyCode::Left => {
+            app_state.g_pressed = false;
+            app_state.move_cursor(0, -1);
+        },
+        KeyCode::Right => {
+            app_state.g_pressed = false;
+            app_state.move_cursor(0, 1);
+        },
+        KeyCode::Up => {
+            app_state.g_pressed = false;
+            app_state.move_cursor(-1, 0);
+        },
+        KeyCode::Down => {
+            app_state.g_pressed = false;
+            app_state.move_cursor(1, 0);
+        },
+        _ => {
+            app_state.g_pressed = false;
+        }
     }
 }
 
@@ -333,15 +418,7 @@ fn handle_editing_mode(app_state: &mut AppState, key_code: KeyCode) {
     }
 }
 
-fn handle_goto_mode(app_state: &mut AppState, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Enter => app_state.confirm_goto(),
-        KeyCode::Esc => app_state.cancel_input(),
-        KeyCode::Backspace => app_state.delete_char_from_input(),
-        KeyCode::Char(c) => app_state.add_char_to_input(c),
-        _ => {}
-    }
-}
+
 
 fn handle_confirm_mode(app_state: &mut AppState, key_code: KeyCode) {
     match key_code {

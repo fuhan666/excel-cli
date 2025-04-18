@@ -7,7 +7,6 @@ use crate::json_export::{export_json, HeaderDirection};
 pub enum InputMode {
     Normal,
     Editing,
-    Goto,
     Confirm,
     Command,
 }
@@ -26,6 +25,7 @@ pub struct AppState {
     pub should_quit: bool,
     pub column_widths: Vec<usize>, // Store width for each column
     pub clipboard: Option<String>, // Store copied/cut cell content
+    pub g_pressed: bool, // Track if 'g' was pressed for 'gg' command
 }
 
 impl AppState {
@@ -49,6 +49,7 @@ impl AppState {
             should_quit: false,
             column_widths,
             clipboard: None,
+            g_pressed: false,
         })
     }
 
@@ -95,10 +96,7 @@ impl AppState {
         self.input_buffer = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
     }
 
-    pub fn start_goto(&mut self) {
-        self.input_mode = InputMode::Goto;
-        self.input_buffer = String::new();
-    }
+
 
     pub fn cancel_input(&mut self) {
         self.input_mode = InputMode::Normal;
@@ -118,17 +116,373 @@ impl AppState {
         Ok(())
     }
 
-    pub fn confirm_goto(&mut self) {
-        if let InputMode::Goto = self.input_mode {
-            // Parse cell reference, e.g. A1, B2, etc.
-            if let Some(cell_ref) = parse_cell_reference(&self.input_buffer) {
-                self.selected_cell = cell_ref;
-                self.handle_scrolling();
-            } else {
-                self.status_message = "Invalid cell reference".to_string();
+
+
+    // Jump to first row in current column
+    pub fn jump_to_first_row(&mut self) {
+        let current_col = self.selected_cell.1;
+        self.selected_cell = (1, current_col);
+        self.handle_scrolling();
+        self.status_message = "Jumped to first row".to_string();
+    }
+
+    // Jump to last row in current column
+    pub fn jump_to_last_row(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let current_col = self.selected_cell.1;
+
+        // Find the last row with data in any column
+        let max_row = sheet.max_rows;
+
+        self.selected_cell = (max_row, current_col);
+        self.handle_scrolling();
+        self.status_message = "Jumped to last row".to_string();
+    }
+
+    // Jump to first column in current row (0 in Vim)
+    pub fn jump_to_first_column(&mut self) {
+        let current_row = self.selected_cell.0;
+        self.selected_cell = (current_row, 1); // First column is 1 in our system
+        self.handle_scrolling();
+        self.status_message = "Jumped to first column".to_string();
+    }
+
+    // Jump to first non-empty cell in current row (^ in Vim)
+    pub fn jump_to_first_non_empty_column(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let current_row = self.selected_cell.0;
+
+        // Find the first non-empty cell in the current row
+        let mut first_non_empty_col = 1; // Default to first column
+
+        if current_row < sheet.data.len() {
+            for col in 1..=sheet.max_cols {
+                if col < sheet.data[current_row].len() && !sheet.data[current_row][col].value.is_empty() {
+                    first_non_empty_col = col;
+                    break;
+                }
             }
-            self.input_mode = InputMode::Normal;
-            self.input_buffer = String::new();
+        }
+
+        self.selected_cell = (current_row, first_non_empty_col);
+        self.handle_scrolling();
+        self.status_message = "Jumped to first non-empty column".to_string();
+    }
+
+    // Jump to last column in current row ($ in Vim)
+    pub fn jump_to_last_column(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let current_row = self.selected_cell.0;
+
+        // Find the last column with data in the sheet
+        let max_col = sheet.max_cols;
+
+        self.selected_cell = (current_row, max_col);
+        self.handle_scrolling();
+        self.status_message = "Jumped to last column".to_string();
+    }
+
+    // Excel-like Ctrl+Arrow functionality
+
+    // Jump to the last non-empty cell to the left or to the first non-empty cell to the left
+    pub fn jump_to_prev_non_empty_cell_left(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let (row, col) = self.selected_cell;
+
+        if col <= 1 {
+            // Already at leftmost column
+            return;
+        }
+
+        // Check if current cell is empty
+        let current_cell_is_empty = row >= sheet.data.len() ||
+                                   col >= sheet.data[row].len() ||
+                                   sheet.data[row][col].value.is_empty();
+
+        if current_cell_is_empty {
+            // If current cell is empty, find the first non-empty cell to the left
+            let mut target_col = 1; // Default to first column if no non-empty cell found
+            let mut found_non_empty = false;
+
+            // Search to the left
+            for c in (1..col).rev() {
+                if row < sheet.data.len() && c < sheet.data[row].len() && !sheet.data[row][c].value.is_empty() {
+                    // Found a non-empty cell
+                    target_col = c;
+                    found_non_empty = true;
+                    break;
+                }
+            }
+
+            // If no non-empty cell found, go to the first column
+            if !found_non_empty {
+                target_col = 1;
+            }
+
+            self.selected_cell = (row, target_col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to first non-empty cell (left)".to_string();
+        } else {
+            // If current cell is not empty, find the last non-empty cell to the left
+            let mut target_col = 1; // Default to first column if no non-empty cell found
+            let mut last_non_empty_col = col;
+            let mut found_empty_after_non_empty = false;
+
+            // Search to the left for the boundary between non-empty and empty cells
+            for c in (1..col).rev() {
+                if row < sheet.data.len() && c < sheet.data[row].len() {
+                    if sheet.data[row][c].value.is_empty() {
+                        // Found an empty cell after a non-empty cell
+                        target_col = c + 1;
+                        found_empty_after_non_empty = true;
+                        break;
+                    } else {
+                        // Keep track of the last non-empty cell
+                        last_non_empty_col = c;
+                    }
+                } else {
+                    // Treat out-of-bounds as empty
+                    target_col = c + 1;
+                    found_empty_after_non_empty = true;
+                    break;
+                }
+            }
+
+            // If we didn't find a boundary, go to the first column or the last non-empty cell
+            if !found_empty_after_non_empty {
+                target_col = last_non_empty_col;
+            }
+
+            self.selected_cell = (row, target_col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to last non-empty cell (left)".to_string();
+        }
+    }
+
+    // Jump to the last non-empty cell to the right or to the first non-empty cell to the right
+    pub fn jump_to_prev_non_empty_cell_right(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let (row, col) = self.selected_cell;
+        let max_col = sheet.max_cols;
+
+        if col >= max_col {
+            // Already at rightmost column
+            return;
+        }
+
+        // Check if current cell is empty
+        let current_cell_is_empty = row >= sheet.data.len() ||
+                                   col >= sheet.data[row].len() ||
+                                   sheet.data[row][col].value.is_empty();
+
+        if current_cell_is_empty {
+            // If current cell is empty, find the first non-empty cell to the right
+            let mut target_col = max_col; // Default to last column if no non-empty cell found
+            let mut found_non_empty = false;
+
+            // Search to the right
+            for c in (col + 1)..=max_col {
+                if row < sheet.data.len() && c < sheet.data[row].len() && !sheet.data[row][c].value.is_empty() {
+                    // Found a non-empty cell
+                    target_col = c;
+                    found_non_empty = true;
+                    break;
+                }
+            }
+
+            // If no non-empty cell found, go to the last column
+            if !found_non_empty {
+                target_col = max_col;
+            }
+
+            self.selected_cell = (row, target_col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to first non-empty cell (right)".to_string();
+        } else {
+            // If current cell is not empty, find the last non-empty cell to the right
+            let mut target_col = max_col; // Default to last column if no non-empty cell found
+            let mut last_non_empty_col = col;
+            let mut found_empty_after_non_empty = false;
+
+            // Search to the right for the boundary between non-empty and empty cells
+            for c in (col + 1)..=max_col {
+                if row < sheet.data.len() && c < sheet.data[row].len() {
+                    if sheet.data[row][c].value.is_empty() {
+                        // Found an empty cell after a non-empty cell
+                        target_col = c - 1;
+                        found_empty_after_non_empty = true;
+                        break;
+                    } else {
+                        // Keep track of the last non-empty cell
+                        last_non_empty_col = c;
+                    }
+                } else {
+                    // Treat out-of-bounds as empty
+                    target_col = c - 1;
+                    found_empty_after_non_empty = true;
+                    break;
+                }
+            }
+
+            // If we didn't find a boundary, go to the last column or the last non-empty cell
+            if !found_empty_after_non_empty {
+                target_col = last_non_empty_col;
+            }
+
+            self.selected_cell = (row, target_col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to last non-empty cell (right)".to_string();
+        }
+    }
+
+    // Jump to the last non-empty cell above or to the first non-empty cell above
+    pub fn jump_to_prev_non_empty_cell_up(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let (row, col) = self.selected_cell;
+
+        if row <= 1 {
+            // Already at topmost row
+            return;
+        }
+
+        // Check if current cell is empty
+        let current_cell_is_empty = row >= sheet.data.len() ||
+                                   col >= sheet.data[row].len() ||
+                                   sheet.data[row][col].value.is_empty();
+
+        if current_cell_is_empty {
+            // If current cell is empty, find the first non-empty cell above
+            let mut target_row = 1; // Default to first row if no non-empty cell found
+            let mut found_non_empty = false;
+
+            // Search upward
+            for r in (1..row).rev() {
+                if r < sheet.data.len() && col < sheet.data[r].len() && !sheet.data[r][col].value.is_empty() {
+                    // Found a non-empty cell
+                    target_row = r;
+                    found_non_empty = true;
+                    break;
+                }
+            }
+
+            // If no non-empty cell found, go to the first row
+            if !found_non_empty {
+                target_row = 1;
+            }
+
+            self.selected_cell = (target_row, col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to first non-empty cell (up)".to_string();
+        } else {
+            // If current cell is not empty, find the last non-empty cell above
+            let mut target_row = 1; // Default to first row if no non-empty cell found
+            let mut last_non_empty_row = row;
+            let mut found_empty_after_non_empty = false;
+
+            // Search upward for the boundary between non-empty and empty cells
+            for r in (1..row).rev() {
+                if r < sheet.data.len() && col < sheet.data[r].len() {
+                    if sheet.data[r][col].value.is_empty() {
+                        // Found an empty cell after a non-empty cell
+                        target_row = r + 1;
+                        found_empty_after_non_empty = true;
+                        break;
+                    } else {
+                        // Keep track of the last non-empty cell
+                        last_non_empty_row = r;
+                    }
+                } else {
+                    // Treat out-of-bounds as empty
+                    target_row = r + 1;
+                    found_empty_after_non_empty = true;
+                    break;
+                }
+            }
+
+            // If we didn't find a boundary, go to the first row or the last non-empty cell
+            if !found_empty_after_non_empty {
+                target_row = last_non_empty_row;
+            }
+
+            self.selected_cell = (target_row, col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to last non-empty cell (up)".to_string();
+        }
+    }
+
+    // Jump to the last non-empty cell below or to the first non-empty cell below
+    pub fn jump_to_prev_non_empty_cell_down(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let (row, col) = self.selected_cell;
+        let max_row = sheet.max_rows;
+
+        if row >= max_row {
+            // Already at bottommost row
+            return;
+        }
+
+        // Check if current cell is empty
+        let current_cell_is_empty = row >= sheet.data.len() ||
+                                   col >= sheet.data[row].len() ||
+                                   sheet.data[row][col].value.is_empty();
+
+        if current_cell_is_empty {
+            // If current cell is empty, find the first non-empty cell below
+            let mut target_row = max_row; // Default to last row if no non-empty cell found
+            let mut found_non_empty = false;
+
+            // Search downward
+            for r in (row + 1)..=max_row {
+                if r < sheet.data.len() && col < sheet.data[r].len() && !sheet.data[r][col].value.is_empty() {
+                    // Found a non-empty cell
+                    target_row = r;
+                    found_non_empty = true;
+                    break;
+                }
+            }
+
+            // If no non-empty cell found, go to the last row
+            if !found_non_empty {
+                target_row = max_row;
+            }
+
+            self.selected_cell = (target_row, col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to first non-empty cell (down)".to_string();
+        } else {
+            // If current cell is not empty, find the last non-empty cell below
+            let mut target_row = max_row; // Default to last row if no non-empty cell found
+            let mut last_non_empty_row = row;
+            let mut found_empty_after_non_empty = false;
+
+            // Search downward for the boundary between non-empty and empty cells
+            for r in (row + 1)..=max_row {
+                if r < sheet.data.len() && col < sheet.data[r].len() {
+                    if sheet.data[r][col].value.is_empty() {
+                        // Found an empty cell after a non-empty cell
+                        target_row = r - 1;
+                        found_empty_after_non_empty = true;
+                        break;
+                    } else {
+                        // Keep track of the last non-empty cell
+                        last_non_empty_row = r;
+                    }
+                } else {
+                    // Treat out-of-bounds as empty
+                    target_row = r - 1;
+                    found_empty_after_non_empty = true;
+                    break;
+                }
+            }
+
+            // If we didn't find a boundary, go to the last row or the last non-empty cell
+            if !found_empty_after_non_empty {
+                target_row = last_non_empty_row;
+            }
+
+            self.selected_cell = (target_row, col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to last non-empty cell (down)".to_string();
         }
     }
 
@@ -613,14 +967,23 @@ impl AppState {
                          :y - Copy current cell\n\
                          :d - Cut current cell\n\
                          :put, :pu - Paste to current cell\n\
+                         :[cell] - Jump to cell (e.g., :A1, :B10)\n\
                          :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
                          :export json [filename] [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
                          :ej [filename] [h|v] [rows] - Shorthand for export json"
                     );
                 }
-                // Unknown command
+                // Try to parse as cell reference (e.g., A1, B10)
                 _ => {
-                    self.status_message = format!("Unknown command: {}", cmd);
+                    // Clone cmd to avoid borrowing issues
+                    let cmd_clone = cmd.to_string();
+                    if let Some(cell_ref) = parse_cell_reference(cmd) {
+                        self.selected_cell = cell_ref;
+                        self.handle_scrolling();
+                        self.status_message = format!("Jumped to cell {}", cmd_clone);
+                    } else {
+                        self.status_message = format!("Unknown command: {}", cmd_clone);
+                    }
                 }
             }
 
