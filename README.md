@@ -7,7 +7,7 @@ A terminal-based Excel viewer and editor written in Rust, offering a smooth oper
 - Browse Excel worksheets
 - Navigate cells using hjkl or arrow keys
 - Edit cell contents
-- Jump to specific cells
+- Jump to specific cells using Vim-style commands
 - View and create formulas
 - Save changes back to Excel files
 - Export data to JSON format
@@ -36,11 +36,24 @@ sheet-cli path/to/your/file.xlsx
 ## Keyboard Shortcuts
 
 - `h`, `j`, `k`, `l` or arrow keys: Move selection (1 cell)
-- `H`, `J`, `K`, `L`: Move selection (5 cells)
-- `e`: Edit current cell
-- `g`: Go to specific cell (enter cell reference like A1, B2, etc.)
-- `:`: Enter command mode
-- `q`: Quit application
+- `0`: Jump to first column in current row
+- `^`: Jump to first non-empty column in current row
+- `$`: Jump to last column in current row
+- `gg`: Jump to first row in current column
+- `G`: Jump to last row in current column
+- `Ctrl+←`: If current cell is empty, jump to the first non-empty cell to the left; if current cell is not empty, jump to the last non-empty cell to the left
+- `Ctrl+→`: If current cell is empty, jump to the first non-empty cell to the right; if current cell is not empty, jump to the last non-empty cell to the right
+- `Ctrl+↑`: If current cell is empty, jump to the first non-empty cell above; if current cell is not empty, jump to the last non-empty cell above
+- `Ctrl+↓`: If current cell is empty, jump to the first non-empty cell below; if current cell is not empty, jump to the last non-empty cell below
+- `i`: Edit current cell
+- `y`: Copy current cell content
+- `d`: Cut current cell content
+- `p`: Paste clipboard content to current cell
+- `/`: Start forward search
+- `?`: Start backward search
+- `n`: Jump to next search result
+- `N`: Jump to previous search result
+- `:`: Enter command mode (for Vim-style commands)
 
 ## Edit Mode
 
@@ -50,13 +63,17 @@ In edit mode:
 - `Esc`: Cancel edit
 - Formulas can be entered by starting with `=`
 
-## Goto Mode
+## Search Mode
 
-In goto mode:
+Enter search mode by pressing `/` (forward search) or `?` (backward search):
 
-- Enter a cell reference (e.g., A1, B10, Z52)
-- `Enter`: Confirm and jump to the cell
-- `Esc`: Cancel
+- Type your search query
+- `Enter`: Execute search and jump to the first match
+- `Esc`: Cancel search
+- `n`: Jump to next match (after search is executed)
+- `N`: Jump to previous match (after search is executed)
+- Search results are highlighted in yellow
+- Search uses row-first, column-second order (searches through each row from left to right, then moves to the next row)
 
 ## Command Mode
 
@@ -78,16 +95,21 @@ Enter command mode by pressing `:`. Available commands:
   - `rows` - Number of header rows (for horizontal) or columns (for vertical)
 - `:ej [filename] [h|v] [rows]` - Shorthand for export json command
 
+### Vim-style Commands
+
+- `:w` - Save file without exiting
+- `:wq` or `:x` - Save and exit
+- `:q` - Quit (will warn if there are unsaved changes)
+- `:q!` - Force quit without saving
+- `:y` - Copy current cell content
+- `:d` - Cut current cell content
+- `:put` or `:pu` - Paste clipboard content to current cell
+- `:[cell]` - Jump to cell (e.g., `:A1`, `:B10`). Supports both uppercase and lowercase column letters (`:a1` works the same as `:A1`)
+
 ### Other Commands
 
+- `:nohlsearch` or `:noh` - Disable search highlighting
 - `:help` - Show available commands
-
-## Exiting
-
-- If you've made changes, you'll be prompted to save
-- `y`: Save and exit
-- `n`: Exit without saving
-- `c` or `Esc`: Cancel exit
 
 ## Technical Stack
 

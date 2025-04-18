@@ -7,9 +7,10 @@ use crate::json_export::{export_json, HeaderDirection};
 pub enum InputMode {
     Normal,
     Editing,
-    Goto,
     Confirm,
     Command,
+    SearchForward,  // For / search
+    SearchBackward, // For ? search
 }
 
 pub struct AppState {
@@ -25,6 +26,13 @@ pub struct AppState {
     pub status_message: String,
     pub should_quit: bool,
     pub column_widths: Vec<usize>, // Store width for each column
+    pub clipboard: Option<String>, // Store copied/cut cell content
+    pub g_pressed: bool, // Track if 'g' was pressed for 'gg' command
+    pub search_query: String, // Current search query
+    pub search_results: Vec<(usize, usize)>, // List of cells matching the search query
+    pub current_search_idx: Option<usize>, // Index of current search result
+    pub search_direction: bool, // true for forward, false for backward
+    pub highlight_enabled: bool, // Control whether search results are highlighted
 }
 
 impl AppState {
@@ -47,6 +55,13 @@ impl AppState {
             status_message: String::new(),
             should_quit: false,
             column_widths,
+            clipboard: None,
+            g_pressed: false,
+            search_query: String::new(),
+            search_results: Vec::new(),
+            current_search_idx: None,
+            search_direction: true, // Default to forward search
+            highlight_enabled: true, // Default to showing highlights
         })
     }
 
@@ -93,10 +108,7 @@ impl AppState {
         self.input_buffer = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
     }
 
-    pub fn start_goto(&mut self) {
-        self.input_mode = InputMode::Goto;
-        self.input_buffer = String::new();
-    }
+
 
     pub fn cancel_input(&mut self) {
         self.input_mode = InputMode::Normal;
@@ -116,17 +128,373 @@ impl AppState {
         Ok(())
     }
 
-    pub fn confirm_goto(&mut self) {
-        if let InputMode::Goto = self.input_mode {
-            // Parse cell reference, e.g. A1, B2, etc.
-            if let Some(cell_ref) = parse_cell_reference(&self.input_buffer) {
-                self.selected_cell = cell_ref;
-                self.handle_scrolling();
-            } else {
-                self.status_message = "Invalid cell reference".to_string();
+
+
+    // Jump to first row in current column
+    pub fn jump_to_first_row(&mut self) {
+        let current_col = self.selected_cell.1;
+        self.selected_cell = (1, current_col);
+        self.handle_scrolling();
+        self.status_message = "Jumped to first row".to_string();
+    }
+
+    // Jump to last row in current column
+    pub fn jump_to_last_row(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let current_col = self.selected_cell.1;
+
+        // Find the last row with data in any column
+        let max_row = sheet.max_rows;
+
+        self.selected_cell = (max_row, current_col);
+        self.handle_scrolling();
+        self.status_message = "Jumped to last row".to_string();
+    }
+
+    // Jump to first column in current row (0 in Vim)
+    pub fn jump_to_first_column(&mut self) {
+        let current_row = self.selected_cell.0;
+        self.selected_cell = (current_row, 1); // First column is 1 in our system
+        self.handle_scrolling();
+        self.status_message = "Jumped to first column".to_string();
+    }
+
+    // Jump to first non-empty cell in current row (^ in Vim)
+    pub fn jump_to_first_non_empty_column(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let current_row = self.selected_cell.0;
+
+        // Find the first non-empty cell in the current row
+        let mut first_non_empty_col = 1; // Default to first column
+
+        if current_row < sheet.data.len() {
+            for col in 1..=sheet.max_cols {
+                if col < sheet.data[current_row].len() && !sheet.data[current_row][col].value.is_empty() {
+                    first_non_empty_col = col;
+                    break;
+                }
             }
-            self.input_mode = InputMode::Normal;
-            self.input_buffer = String::new();
+        }
+
+        self.selected_cell = (current_row, first_non_empty_col);
+        self.handle_scrolling();
+        self.status_message = "Jumped to first non-empty column".to_string();
+    }
+
+    // Jump to last column in current row ($ in Vim)
+    pub fn jump_to_last_column(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let current_row = self.selected_cell.0;
+
+        // Find the last column with data in the sheet
+        let max_col = sheet.max_cols;
+
+        self.selected_cell = (current_row, max_col);
+        self.handle_scrolling();
+        self.status_message = "Jumped to last column".to_string();
+    }
+
+    // Excel-like Ctrl+Arrow functionality
+
+    // Jump to the last non-empty cell to the left or to the first non-empty cell to the left
+    pub fn jump_to_prev_non_empty_cell_left(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let (row, col) = self.selected_cell;
+
+        if col <= 1 {
+            // Already at leftmost column
+            return;
+        }
+
+        // Check if current cell is empty
+        let current_cell_is_empty = row >= sheet.data.len() ||
+                                   col >= sheet.data[row].len() ||
+                                   sheet.data[row][col].value.is_empty();
+
+        if current_cell_is_empty {
+            // If current cell is empty, find the first non-empty cell to the left
+            let mut target_col = 1; // Default to first column if no non-empty cell found
+            let mut found_non_empty = false;
+
+            // Search to the left
+            for c in (1..col).rev() {
+                if row < sheet.data.len() && c < sheet.data[row].len() && !sheet.data[row][c].value.is_empty() {
+                    // Found a non-empty cell
+                    target_col = c;
+                    found_non_empty = true;
+                    break;
+                }
+            }
+
+            // If no non-empty cell found, go to the first column
+            if !found_non_empty {
+                target_col = 1;
+            }
+
+            self.selected_cell = (row, target_col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to first non-empty cell (left)".to_string();
+        } else {
+            // If current cell is not empty, find the last non-empty cell to the left
+            let mut target_col = 1; // Default to first column if no non-empty cell found
+            let mut last_non_empty_col = col;
+            let mut found_empty_after_non_empty = false;
+
+            // Search to the left for the boundary between non-empty and empty cells
+            for c in (1..col).rev() {
+                if row < sheet.data.len() && c < sheet.data[row].len() {
+                    if sheet.data[row][c].value.is_empty() {
+                        // Found an empty cell after a non-empty cell
+                        target_col = c + 1;
+                        found_empty_after_non_empty = true;
+                        break;
+                    } else {
+                        // Keep track of the last non-empty cell
+                        last_non_empty_col = c;
+                    }
+                } else {
+                    // Treat out-of-bounds as empty
+                    target_col = c + 1;
+                    found_empty_after_non_empty = true;
+                    break;
+                }
+            }
+
+            // If we didn't find a boundary, go to the first column or the last non-empty cell
+            if !found_empty_after_non_empty {
+                target_col = last_non_empty_col;
+            }
+
+            self.selected_cell = (row, target_col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to last non-empty cell (left)".to_string();
+        }
+    }
+
+    // Jump to the last non-empty cell to the right or to the first non-empty cell to the right
+    pub fn jump_to_prev_non_empty_cell_right(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let (row, col) = self.selected_cell;
+        let max_col = sheet.max_cols;
+
+        if col >= max_col {
+            // Already at rightmost column
+            return;
+        }
+
+        // Check if current cell is empty
+        let current_cell_is_empty = row >= sheet.data.len() ||
+                                   col >= sheet.data[row].len() ||
+                                   sheet.data[row][col].value.is_empty();
+
+        if current_cell_is_empty {
+            // If current cell is empty, find the first non-empty cell to the right
+            let mut target_col = max_col; // Default to last column if no non-empty cell found
+            let mut found_non_empty = false;
+
+            // Search to the right
+            for c in (col + 1)..=max_col {
+                if row < sheet.data.len() && c < sheet.data[row].len() && !sheet.data[row][c].value.is_empty() {
+                    // Found a non-empty cell
+                    target_col = c;
+                    found_non_empty = true;
+                    break;
+                }
+            }
+
+            // If no non-empty cell found, go to the last column
+            if !found_non_empty {
+                target_col = max_col;
+            }
+
+            self.selected_cell = (row, target_col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to first non-empty cell (right)".to_string();
+        } else {
+            // If current cell is not empty, find the last non-empty cell to the right
+            let mut target_col = max_col; // Default to last column if no non-empty cell found
+            let mut last_non_empty_col = col;
+            let mut found_empty_after_non_empty = false;
+
+            // Search to the right for the boundary between non-empty and empty cells
+            for c in (col + 1)..=max_col {
+                if row < sheet.data.len() && c < sheet.data[row].len() {
+                    if sheet.data[row][c].value.is_empty() {
+                        // Found an empty cell after a non-empty cell
+                        target_col = c - 1;
+                        found_empty_after_non_empty = true;
+                        break;
+                    } else {
+                        // Keep track of the last non-empty cell
+                        last_non_empty_col = c;
+                    }
+                } else {
+                    // Treat out-of-bounds as empty
+                    target_col = c - 1;
+                    found_empty_after_non_empty = true;
+                    break;
+                }
+            }
+
+            // If we didn't find a boundary, go to the last column or the last non-empty cell
+            if !found_empty_after_non_empty {
+                target_col = last_non_empty_col;
+            }
+
+            self.selected_cell = (row, target_col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to last non-empty cell (right)".to_string();
+        }
+    }
+
+    // Jump to the last non-empty cell above or to the first non-empty cell above
+    pub fn jump_to_prev_non_empty_cell_up(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let (row, col) = self.selected_cell;
+
+        if row <= 1 {
+            // Already at topmost row
+            return;
+        }
+
+        // Check if current cell is empty
+        let current_cell_is_empty = row >= sheet.data.len() ||
+                                   col >= sheet.data[row].len() ||
+                                   sheet.data[row][col].value.is_empty();
+
+        if current_cell_is_empty {
+            // If current cell is empty, find the first non-empty cell above
+            let mut target_row = 1; // Default to first row if no non-empty cell found
+            let mut found_non_empty = false;
+
+            // Search upward
+            for r in (1..row).rev() {
+                if r < sheet.data.len() && col < sheet.data[r].len() && !sheet.data[r][col].value.is_empty() {
+                    // Found a non-empty cell
+                    target_row = r;
+                    found_non_empty = true;
+                    break;
+                }
+            }
+
+            // If no non-empty cell found, go to the first row
+            if !found_non_empty {
+                target_row = 1;
+            }
+
+            self.selected_cell = (target_row, col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to first non-empty cell (up)".to_string();
+        } else {
+            // If current cell is not empty, find the last non-empty cell above
+            let mut target_row = 1; // Default to first row if no non-empty cell found
+            let mut last_non_empty_row = row;
+            let mut found_empty_after_non_empty = false;
+
+            // Search upward for the boundary between non-empty and empty cells
+            for r in (1..row).rev() {
+                if r < sheet.data.len() && col < sheet.data[r].len() {
+                    if sheet.data[r][col].value.is_empty() {
+                        // Found an empty cell after a non-empty cell
+                        target_row = r + 1;
+                        found_empty_after_non_empty = true;
+                        break;
+                    } else {
+                        // Keep track of the last non-empty cell
+                        last_non_empty_row = r;
+                    }
+                } else {
+                    // Treat out-of-bounds as empty
+                    target_row = r + 1;
+                    found_empty_after_non_empty = true;
+                    break;
+                }
+            }
+
+            // If we didn't find a boundary, go to the first row or the last non-empty cell
+            if !found_empty_after_non_empty {
+                target_row = last_non_empty_row;
+            }
+
+            self.selected_cell = (target_row, col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to last non-empty cell (up)".to_string();
+        }
+    }
+
+    // Jump to the last non-empty cell below or to the first non-empty cell below
+    pub fn jump_to_prev_non_empty_cell_down(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        let (row, col) = self.selected_cell;
+        let max_row = sheet.max_rows;
+
+        if row >= max_row {
+            // Already at bottommost row
+            return;
+        }
+
+        // Check if current cell is empty
+        let current_cell_is_empty = row >= sheet.data.len() ||
+                                   col >= sheet.data[row].len() ||
+                                   sheet.data[row][col].value.is_empty();
+
+        if current_cell_is_empty {
+            // If current cell is empty, find the first non-empty cell below
+            let mut target_row = max_row; // Default to last row if no non-empty cell found
+            let mut found_non_empty = false;
+
+            // Search downward
+            for r in (row + 1)..=max_row {
+                if r < sheet.data.len() && col < sheet.data[r].len() && !sheet.data[r][col].value.is_empty() {
+                    // Found a non-empty cell
+                    target_row = r;
+                    found_non_empty = true;
+                    break;
+                }
+            }
+
+            // If no non-empty cell found, go to the last row
+            if !found_non_empty {
+                target_row = max_row;
+            }
+
+            self.selected_cell = (target_row, col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to first non-empty cell (down)".to_string();
+        } else {
+            // If current cell is not empty, find the last non-empty cell below
+            let mut target_row = max_row; // Default to last row if no non-empty cell found
+            let mut last_non_empty_row = row;
+            let mut found_empty_after_non_empty = false;
+
+            // Search downward for the boundary between non-empty and empty cells
+            for r in (row + 1)..=max_row {
+                if r < sheet.data.len() && col < sheet.data[r].len() {
+                    if sheet.data[r][col].value.is_empty() {
+                        // Found an empty cell after a non-empty cell
+                        target_row = r - 1;
+                        found_empty_after_non_empty = true;
+                        break;
+                    } else {
+                        // Keep track of the last non-empty cell
+                        last_non_empty_row = r;
+                    }
+                } else {
+                    // Treat out-of-bounds as empty
+                    target_row = r - 1;
+                    found_empty_after_non_empty = true;
+                    break;
+                }
+            }
+
+            // If we didn't find a boundary, go to the last row or the last non-empty cell
+            if !found_empty_after_non_empty {
+                target_row = last_non_empty_row;
+            }
+
+            self.selected_cell = (target_row, col);
+            self.handle_scrolling();
+            self.status_message = "Jumped to last non-empty cell (down)".to_string();
         }
     }
 
@@ -136,6 +504,159 @@ impl AppState {
 
     pub fn delete_char_from_input(&mut self) {
         self.input_buffer.pop();
+    }
+
+    // Start forward search mode (/ in Vim)
+    pub fn start_search_forward(&mut self) {
+        self.input_mode = InputMode::SearchForward;
+        self.input_buffer = String::new();
+        self.status_message = String::new();
+        self.highlight_enabled = true; // Ensure highlighting is enabled when starting a search
+    }
+
+    // Start backward search mode (? in Vim)
+    pub fn start_search_backward(&mut self) {
+        self.input_mode = InputMode::SearchBackward;
+        self.input_buffer = String::new();
+        self.status_message = String::new();
+        self.highlight_enabled = true; // Ensure highlighting is enabled when starting a search
+    }
+
+    // Execute search based on current input buffer
+    pub fn execute_search(&mut self) {
+        let query = self.input_buffer.clone();
+        if query.is_empty() {
+            self.input_mode = InputMode::Normal;
+            return;
+        }
+
+        // Save the query for n/N commands
+        self.search_query = query.clone();
+
+        // Set search direction based on mode
+        match self.input_mode {
+            InputMode::SearchForward => self.search_direction = true,
+            InputMode::SearchBackward => self.search_direction = false,
+            _ => {}
+        }
+
+        // Perform the search
+        self.search_results = self.find_all_matches(&query);
+
+        if self.search_results.is_empty() {
+            self.status_message = format!("Pattern not found: {}", query);
+            self.current_search_idx = None;
+        } else {
+            // Find the appropriate result to jump to based on search direction and current position
+            self.jump_to_next_search_result();
+            self.status_message = format!("{} matches found for: {}", self.search_results.len(), query);
+        }
+
+        self.input_mode = InputMode::Normal;
+        self.input_buffer = String::new();
+    }
+
+    // Find all cells that match the search query
+    pub fn find_all_matches(&self, query: &str) -> Vec<(usize, usize)> {
+        let sheet = self.workbook.get_current_sheet();
+        let query_lower = query.to_lowercase();
+        let mut results = Vec::new();
+
+        // Search through all cells in the sheet using row-first, column-second order
+        for row in 1..=sheet.max_rows {
+            for col in 1..=sheet.max_cols {
+                if row < sheet.data.len() && col < sheet.data[row].len() {
+                    let cell_content = &sheet.data[row][col].value;
+                    if cell_content.to_lowercase().contains(&query_lower) {
+                        results.push((row, col));
+                    }
+                }
+            }
+        }
+
+        // The search already uses row-first, column-second order, so no need to sort
+        results
+    }
+
+    // Jump to the next search result based on current position and search direction
+    // Uses row-first, column-second order for determining "next" and "previous"
+    pub fn jump_to_next_search_result(&mut self) {
+        if self.search_results.is_empty() {
+            return;
+        }
+
+        // Enable highlighting when jumping between search results
+        self.highlight_enabled = true;
+
+        let current_pos = self.selected_cell;
+
+        if self.search_direction { // Forward search
+            // Find the next result after current position using row-first, column-second order
+            let next_idx = self.search_results.iter().position(|&pos| {
+                // First compare rows, then columns
+                pos.0 > current_pos.0 || (pos.0 == current_pos.0 && pos.1 > current_pos.1)
+            });
+
+            match next_idx {
+                Some(idx) => {
+                    self.current_search_idx = Some(idx);
+                    self.selected_cell = self.search_results[idx];
+                }
+                None => {
+                    // Wrap around to the first result
+                    self.current_search_idx = Some(0);
+                    self.selected_cell = self.search_results[0];
+                    self.status_message = "Search wrapped to top".to_string();
+                }
+            }
+        } else { // Backward search
+            // Find the previous result before current position using row-first, column-second order
+            let prev_idx = self.search_results.iter().rposition(|&pos| {
+                // First compare rows, then columns
+                pos.0 < current_pos.0 || (pos.0 == current_pos.0 && pos.1 < current_pos.1)
+            });
+
+            match prev_idx {
+                Some(idx) => {
+                    self.current_search_idx = Some(idx);
+                    self.selected_cell = self.search_results[idx];
+                }
+                None => {
+                    // Wrap around to the last result
+                    let last_idx = self.search_results.len() - 1;
+                    self.current_search_idx = Some(last_idx);
+                    self.selected_cell = self.search_results[last_idx];
+                    self.status_message = "Search wrapped to bottom".to_string();
+                }
+            }
+        }
+
+        self.handle_scrolling();
+    }
+
+    // Jump to the previous search result (opposite of current search direction)
+    pub fn jump_to_prev_search_result(&mut self) {
+        if self.search_results.is_empty() {
+            return;
+        }
+
+        // Temporarily flip the search direction
+        self.search_direction = !self.search_direction;
+        self.jump_to_next_search_result();
+        // Restore original search direction
+        self.search_direction = !self.search_direction;
+    }
+
+    // Disable search highlighting (nohlsearch in Vim)
+    pub fn disable_search_highlight(&mut self) {
+        self.highlight_enabled = false;
+        self.status_message = "Search highlighting disabled".to_string();
+    }
+
+    // Re-enable search highlighting
+    pub fn enable_search_highlight(&mut self) {
+        self.highlight_enabled = true;
+        self.status_message = "Search highlighting enabled".to_string();
     }
 
     pub fn exit(&mut self) {
@@ -161,6 +682,19 @@ impl AppState {
         }
     }
 
+    // Save without exiting
+    pub fn save(&mut self) -> Result<()> {
+        match self.workbook.save() {
+            Ok(_) => {
+                self.status_message = "File saved".to_string();
+            }
+            Err(e) => {
+                self.status_message = format!("Save failed: {}", e);
+            }
+        }
+        Ok(())
+    }
+
     pub fn exit_without_saving(&mut self) {
         self.should_quit = true;
     }
@@ -168,6 +702,44 @@ impl AppState {
     pub fn cancel_exit(&mut self) {
         self.input_mode = InputMode::Normal;
         self.status_message = String::new();
+    }
+
+    // Copy current cell content to clipboard
+    pub fn copy_cell(&mut self) {
+        let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
+        self.clipboard = Some(content);
+        self.status_message = "Cell content copied".to_string();
+    }
+
+    // Cut current cell content to clipboard
+    pub fn cut_cell(&mut self) -> Result<()> {
+        let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
+        self.clipboard = Some(content);
+
+        // Clear the cell
+        self.workbook.set_cell_value(
+            self.selected_cell.0,
+            self.selected_cell.1,
+            String::new(),
+        )?;
+
+        self.status_message = "Cell content cut".to_string();
+        Ok(())
+    }
+
+    // Paste clipboard content to current cell
+    pub fn paste_cell(&mut self) -> Result<()> {
+        if let Some(content) = &self.clipboard {
+            self.workbook.set_cell_value(
+                self.selected_cell.0,
+                self.selected_cell.1,
+                content.clone(),
+            )?;
+            self.status_message = "Content pasted".to_string();
+        } else {
+            self.status_message = "Clipboard is empty".to_string();
+        }
+        Ok(())
     }
 
     pub fn auto_adjust_column_width(&mut self, col: Option<usize>) {
@@ -371,7 +943,7 @@ impl AppState {
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
-        self.status_message = "Commands: :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json, :ej, :help".to_string();
+        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json, :ej, :help".to_string();
     }
 
     // Handle JSON export command
@@ -448,79 +1020,141 @@ impl AppState {
         if let InputMode::Command = self.input_mode {
             let cmd = self.input_buffer.trim();
 
-            // Handle column width commands
-            if cmd.starts_with("cw ") {
-                if let Some(subcmd) = cmd.strip_prefix("cw ") {
-                    match subcmd {
-                        // Auto-adjust current column width
-                        "fit" => {
-                            self.auto_adjust_column_width(Some(self.selected_cell.1));
-                        }
-                        // Auto-adjust all column widths
-                        "fit all" => {
-                            self.auto_adjust_column_width(None);
-                        }
-                        // Minimize current column width
-                        "min" => {
-                            self.shrink_column_width(Some(self.selected_cell.1));
-                        }
-                        // Minimize all column widths
-                        "min all" => {
-                            self.shrink_column_width(None);
-                        }
-                        // Try to parse subcommand as a number to set current column width
-                        _ => {
-                            if let Ok(width) = subcmd.parse::<usize>() {
-                                let min_width = 5;
-                                let max_width = 100;
-                                let column = self.selected_cell.1;
+            // Handle Vim-style save and exit commands
+            match cmd {
+                // Save and continue editing
+                "w" => {
+                    if let Err(e) = self.save() {
+                        self.status_message = format!("Save failed: {}", e);
+                    }
+                }
+                // Save and quit
+                "wq" | "x" => {
+                    self.save_and_exit();
+                }
+                // Quit without saving
+                "q" => {
+                    if self.workbook.is_modified() {
+                        self.status_message = "File modified. Use :q! to force quit without saving".to_string();
+                    } else {
+                        self.should_quit = true;
+                    }
+                }
+                // Force quit without saving
+                "q!" => {
+                    self.exit_without_saving();
+                }
+                // Handle column width commands
+                _ if cmd.starts_with("cw ") => {
+                    if let Some(subcmd) = cmd.strip_prefix("cw ") {
+                        match subcmd {
+                            // Auto-adjust current column width
+                            "fit" => {
+                                self.auto_adjust_column_width(Some(self.selected_cell.1));
+                            }
+                            // Auto-adjust all column widths
+                            "fit all" => {
+                                self.auto_adjust_column_width(None);
+                            }
+                            // Minimize current column width
+                            "min" => {
+                                self.shrink_column_width(Some(self.selected_cell.1));
+                            }
+                            // Minimize all column widths
+                            "min all" => {
+                                self.shrink_column_width(None);
+                            }
+                            // Try to parse subcommand as a number to set current column width
+                            _ => {
+                                if let Ok(width) = subcmd.parse::<usize>() {
+                                    let min_width = 5;
+                                    let max_width = 100;
+                                    let column = self.selected_cell.1;
 
-                                // Ensure width is within reasonable range
-                                let width = width.max(min_width).min(max_width);
+                                    // Ensure width is within reasonable range
+                                    let width = width.max(min_width).min(max_width);
 
-                                if column < self.column_widths.len() {
-                                    // Record original width for status message
-                                    let old_width = self.column_widths[column];
+                                    if column < self.column_widths.len() {
+                                        // Record original width for status message
+                                        let old_width = self.column_widths[column];
 
-                                    // Record starting column to detect changes (unused but kept for future use)
-                                    let _original_start_col = self.start_col;
+                                        // Record starting column to detect changes (unused but kept for future use)
+                                        let _original_start_col = self.start_col;
 
-                                    // Set new column width
-                                    self.column_widths[column] = width;
+                                        // Set new column width
+                                        self.column_widths[column] = width;
 
-                                    self.ensure_column_visible(column);
+                                        self.ensure_column_visible(column);
 
-                                    self.status_message = format!(
-                                        "Column {} width changed from {} to {}",
-                                        index_to_col_name(column),
-                                        old_width,
-                                        width
-                                    );
+                                        self.status_message = format!(
+                                            "Column {} width changed from {} to {}",
+                                            index_to_col_name(column),
+                                            old_width,
+                                            width
+                                        );
+                                    }
+                                } else {
+                                    self.status_message = format!("Unknown column command: {}", subcmd);
                                 }
-                            } else {
-                                self.status_message = format!("Unknown column command: {}", subcmd);
                             }
                         }
                     }
                 }
-            }
-            // JSON export command
-            else if cmd.starts_with("export json ") || cmd.starts_with("ej ") {
-                let cmd_str = cmd.to_string(); // Clone the command string to avoid borrowing issues
-                self.handle_json_export_command(&cmd_str);
-            }
-            // Help command
-            else if cmd == "help" {
-                self.status_message = format!(
-                    "Commands:\n\
-                     :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
-                     :export json [filename] [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
-                     :ej [filename] [h|v] [rows] - Shorthand for export json"
-                );
-            }
-            // Unknown command
-            else {
-                self.status_message = format!("Unknown command: {}", cmd);
+                // JSON export command
+                _ if cmd.starts_with("export json ") || cmd.starts_with("ej ") => {
+                    let cmd_str = cmd.to_string(); // Clone the command string to avoid borrowing issues
+                    self.handle_json_export_command(&cmd_str);
+                }
+                // Copy command
+                "y" => {
+                    self.copy_cell();
+                }
+                // Cut command
+                "d" => {
+                    if let Err(e) = self.cut_cell() {
+                        self.status_message = format!("Cut failed: {}", e);
+                    }
+                }
+                // Paste command (using Vim's Ex mode paste command)
+                "put" | "pu" => {
+                    if let Err(e) = self.paste_cell() {
+                        self.status_message = format!("Paste failed: {}", e);
+                    }
+                }
+                // Disable search highlighting
+                "nohlsearch" | "noh" => {
+                    self.disable_search_highlight();
+                }
+                // Help command
+                "help" => {
+                    self.status_message = format!(
+                        "Commands:\n\
+                         :w - Save file\n\
+                         :wq, :x - Save and quit\n\
+                         :q - Quit (will warn if unsaved changes)\n\
+                         :q! - Force quit without saving\n\
+                         :y - Copy current cell\n\
+                         :d - Cut current cell\n\
+                         :put, :pu - Paste to current cell\n\
+                         :[cell] - Jump to cell (e.g., :A1, :B10)\n\
+                         :nohlsearch, :noh - Disable search highlighting\n\
+                         :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
+                         :export json [filename] [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
+                         :ej [filename] [h|v] [rows] - Shorthand for export json"
+                    );
+                }
+                // Try to parse as cell reference (e.g., A1, B10)
+                _ => {
+                    // Clone cmd to avoid borrowing issues
+                    let cmd_clone = cmd.to_string();
+                    if let Some(cell_ref) = parse_cell_reference(cmd) {
+                        self.selected_cell = cell_ref;
+                        self.handle_scrolling();
+                        self.status_message = format!("Jumped to cell {}", cmd_clone);
+                    } else {
+                        self.status_message = format!("Unknown command: {}", cmd_clone);
+                    }
+                }
             }
 
             self.input_mode = InputMode::Normal;
