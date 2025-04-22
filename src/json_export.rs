@@ -282,13 +282,17 @@ fn extract_vertical_headers(sheet: &Sheet, header_cols: usize) -> Result<HashMap
     Ok(headers)
 }
 
+// Serialize data to JSON string
+pub fn serialize_to_json<T: Serialize>(data: &T) -> Result<String> {
+    serde_json::to_string_pretty(data).context("Failed to serialize data to JSON")
+}
+
 // Write data to JSON file
 fn write_json_to_file<T: Serialize>(data: &T, path: &Path) -> Result<()> {
     let mut file =
         File::create(path).with_context(|| format!("Failed to create file: {}", path.display()))?;
 
-    let json_string =
-        serde_json::to_string_pretty(data).context("Failed to serialize data to JSON")?;
+    let json_string = serialize_to_json(data)?;
 
     file.write_all(json_string.as_bytes())
         .with_context(|| format!("Failed to write to file: {}", path.display()))?;
@@ -390,13 +394,12 @@ fn process_sheet_for_json(
     }
 }
 
-// Export all sheets to a single JSON file
-pub fn export_all_sheets_json(
+// Generate JSON data for all sheets
+pub fn generate_all_sheets_json(
     workbook: &Workbook,
     direction: HeaderDirection,
     header_count: usize,
-    path: &Path,
-) -> Result<()> {
+) -> Result<IndexMap<String, OrderedSheetData>> {
     let mut all_sheets = IndexMap::new();
     let sheet_names = workbook.get_sheet_names();
 
@@ -412,6 +415,18 @@ pub fn export_all_sheets_json(
         // Add the sheet data to our collection with the sheet name as the key
         all_sheets.insert(sheet_name.clone(), sheet_data);
     }
+
+    Ok(all_sheets)
+}
+
+// Export all sheets to a single JSON file
+pub fn export_all_sheets_json(
+    workbook: &Workbook,
+    direction: HeaderDirection,
+    header_count: usize,
+    path: &Path,
+) -> Result<()> {
+    let all_sheets = generate_all_sheets_json(workbook, direction, header_count)?;
 
     // Write the combined data to file
     write_json_to_file(&all_sheets, path)

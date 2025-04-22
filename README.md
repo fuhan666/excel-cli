@@ -29,9 +29,24 @@ cargo install --path .
 ## Usage
 
 ```bash
-# Open an Excel file
+# Open an Excel file in interactive mode
 sheet-cli path/to/your/file.xlsx
+
+# Export all sheets to JSON and output to stdout (for piping)
+sheet-cli path/to/your/file.xlsx --json-export
+
+# Export with custom header direction and count
+sheet-cli path/to/your/file.xlsx -j -d v -r 2
+
+# Pipe JSON output to another command
+sheet-cli path/to/your/file.xlsx -j | jq '.SheetName[0]'
 ```
+
+### Command-line Options
+
+- `--json-export`, `-j`: Export all sheets to JSON and output to stdout (for piping)
+- `--direction`, `-d`: Header direction for JSON export: 'h' for horizontal (top rows), 'v' for vertical (left columns). Default: 'h'
+- `--header-count`, `-r`: Number of header rows (for horizontal) or columns (for vertical) in JSON export. Default: 1
 
 ## User Interface
 
