@@ -1041,31 +1041,14 @@ impl<'a> AppState<'a> {
     }
 
     fn handle_column_scrolling(&mut self) {
-        let target_col = self.selected_cell.1;
-
-        if target_col < self.start_col {
-            self.start_col = target_col;
-            return;
-        }
-
-        let mut current_col = self.start_col;
-        let mut visible_cols = 0;
-
-        while visible_cols < self.visible_cols {
-            if current_col == target_col {
-                return;
-            }
-
-            visible_cols += 1;
-            current_col += 1;
-        }
-
-        self.start_col = target_col - self.visible_cols + 1;
-        self.start_col = self.start_col.max(1);
+        self.ensure_column_visible(self.selected_cell.1);
     }
 
     pub fn ensure_column_visible(&mut self, column: usize) {
+        let desired_right_margin_chars = 15; 
+
         if column < self.start_col {
+            // If column is to the left of visible area, adjust start_col
             self.start_col = column;
             return;
         }
@@ -1073,8 +1056,41 @@ impl<'a> AppState<'a> {
         let last_visible_col = self.start_col + self.visible_cols - 1;
 
         if column > last_visible_col {
+            // If column is to the right of visible area, adjust start_col to make it visible
             self.start_col = column - self.visible_cols + 1;
             self.start_col = self.start_col.max(1);
+            return;
+        }
+
+        // If we're here, the column is already visible
+        // add a right margin if possible
+
+        let sheet = self.workbook.get_current_sheet();
+        let max_col = sheet.max_cols;
+
+        if column < max_col {
+            let cols_to_right = last_visible_col - column;
+
+            if cols_to_right > 0 {
+                return;
+            }
+
+            let next_col = column + 1;
+            if next_col <= max_col {
+                let next_col_width = self.get_column_width(next_col);
+
+                if next_col_width <= desired_right_margin_chars {
+                    if self.visible_cols > 1 {
+                        self.start_col = column - (self.visible_cols - 2);
+                        self.start_col = self.start_col.max(1);
+                    }
+                } else {
+                    if self.visible_cols > 1 {
+                        self.start_col = column - (self.visible_cols - 2);
+                        self.start_col = self.start_col.max(1);
+                    }
+                }
+            }
         }
     }
 
