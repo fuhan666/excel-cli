@@ -309,13 +309,16 @@ pub fn export_json(
     }
 }
 
+// Type for sheet data that preserves field order
+type OrderedSheetData = Vec<IndexMap<String, Value>>;
+
 // Process a single sheet for all-sheets export
 fn process_sheet_for_json(
     sheet: &Sheet,
     direction: HeaderDirection,
     header_count: usize,
-) -> Result<serde_json::Value> {
-    let json_data = match direction {
+) -> Result<OrderedSheetData> {
+    match direction {
         HeaderDirection::Horizontal => {
             if header_count == 0 || header_count >= sheet.data.len() {
                 anyhow::bail!("Invalid header rows: {}", header_count);
@@ -348,7 +351,7 @@ fn process_sheet_for_json(
                 }
             }
 
-            serde_json::to_value(sheet_data)?
+            Ok(sheet_data)
         }
         HeaderDirection::Vertical => {
             if header_count == 0 || header_count >= sheet.data[0].len() {
@@ -382,11 +385,9 @@ fn process_sheet_for_json(
                 }
             }
 
-            serde_json::to_value(sheet_data)?
+            Ok(sheet_data)
         }
-    };
-
-    Ok(json_data)
+    }
 }
 
 // Export all sheets to a single JSON file
@@ -402,7 +403,6 @@ pub fn export_all_sheets_json(
     // Process each sheet
     for (index, sheet_name) in sheet_names.iter().enumerate() {
         // We need to temporarily switch to each sheet to process it
-        // But we'll save the current index and restore it later
         let mut wb_clone = workbook.clone();
         wb_clone.switch_sheet(index)?;
 
