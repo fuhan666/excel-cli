@@ -4,6 +4,7 @@ use rust_xlsxwriter::{Workbook as XlsxWorkbook, Format};
 use std::path::Path;
 use chrono::Local;
 
+#[derive(Clone)]
 pub struct Workbook {
     sheets: Vec<Sheet>,
     current_sheet_index: usize,
@@ -11,6 +12,7 @@ pub struct Workbook {
     is_modified: bool,
 }
 
+#[derive(Clone)]
 pub struct Sheet {
     pub name: String,
     pub data: Vec<Vec<Cell>>,

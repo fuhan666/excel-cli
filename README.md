@@ -99,11 +99,17 @@ Enter command mode by pressing `:`. Available commands:
 
 ### JSON Export Commands
 
-- `:ej [h|v] [rows]` - Export data to JSON format
+- `:ej [h|v] [rows]` - Export current sheet data to JSON format
   - `h|v` - Header direction: `h` for horizontal (top rows), `v` for vertical (left columns)
   - `rows` - Number of header rows (for horizontal) or columns (for vertical)
 
-The output filename is automatically generated in the format: `original_filename_sheet_SheetName_YYYYMMDD_HHMMSS.json`
+- `:eja [h|v] [rows]` - Export all sheets to a single JSON file
+  - Uses the same parameters as `:ej`
+  - Creates a JSON object with sheet names as keys and sheet data as values
+
+The output filename is automatically generated in one of these formats:
+- For single sheet: `original_filename_sheet_SheetName_YYYYMMDD_HHMMSS.json`
+- For all sheets: `original_filename_all_sheets_YYYYMMDD_HHMMSS.json`
 
 ### Vim-like Commands
 

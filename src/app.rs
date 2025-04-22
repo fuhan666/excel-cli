@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 use crate::excel::Workbook;
-use crate::json_export::{export_json, HeaderDirection};
+use crate::json_export::{export_json, export_all_sheets_json, HeaderDirection};
 use ratatui_textarea::TextArea;
 
 pub enum InputMode {
@@ -1106,10 +1106,13 @@ impl<'a> AppState<'a> {
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
-        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :ej [h|v] [rows], :sheet [name/number], :delsheet, :help".to_string();
+        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :ej [h|v] [rows], :eja [h|v] [rows], :sheet [name/number], :delsheet, :help".to_string();
     }
 
     fn handle_json_export_command(&mut self, cmd: &str) {
+        // Check if this is an export all command
+        let export_all = cmd.starts_with("eja ") || cmd == "eja";
+
         // Parse command
         let parts: Vec<&str> = if cmd.starts_with("ej ") {
             cmd.strip_prefix("ej ")
@@ -1119,6 +1122,14 @@ impl<'a> AppState<'a> {
         } else if cmd == "ej" {
             // No arguments provided, use default values
             vec!["h", "1"] // Default to horizontal headers with 1 header row
+        } else if cmd.starts_with("eja ") {
+            cmd.strip_prefix("eja ")
+                .unwrap()
+                .split_whitespace()
+                .collect()
+        } else if cmd == "eja" {
+            // No arguments provided, use default values
+            vec!["h", "1"] // Default to horizontal headers with 1 header row
         } else {
             self.status_message = "Invalid JSON export command".to_string();
             return;
@@ -1126,7 +1137,11 @@ impl<'a> AppState<'a> {
 
         // Check if we have enough arguments for direction and header count
         if parts.len() < 2 {
-            self.status_message = "Usage: :ej [h|v] [rows]".to_string();
+            if export_all {
+                self.status_message = "Usage: :eja [h|v] [rows]".to_string();
+            } else {
+                self.status_message = "Usage: :ej [h|v] [rows]".to_string();
+            }
             return;
         }
 
@@ -1169,16 +1184,31 @@ impl<'a> AppState<'a> {
         let now = chrono::Local::now();
         let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
 
-        // Create new filename with original name, sheet name and timestamp
-        let new_filename = format!("{}_sheet_{}_{}.json", file_stem, sheet_name, timestamp);
+        // Create new filename with original name, timestamp, and sheet info
+        let new_filename = if export_all {
+            format!("{}_all_sheets_{}.json", file_stem, timestamp)
+        } else {
+            format!("{}_sheet_{}_{}.json", file_stem, sheet_name, timestamp)
+        };
 
         // Export to JSON
-        match export_json(
-            self.workbook.get_current_sheet(),
-            direction,
-            header_count,
-            Path::new(&new_filename),
-        ) {
+        let result = if export_all {
+            export_all_sheets_json(
+                &self.workbook,
+                direction,
+                header_count,
+                Path::new(&new_filename),
+            )
+        } else {
+            export_json(
+                self.workbook.get_current_sheet(),
+                direction,
+                header_count,
+                Path::new(&new_filename),
+            )
+        };
+
+        match result {
             Ok(_) => {
                 self.status_message = format!("Successfully exported to {}", new_filename);
             }
@@ -1274,7 +1304,7 @@ impl<'a> AppState<'a> {
                     }
                 }
                 // JSON export command
-                _ if cmd.starts_with("ej ") || cmd == "ej" => {
+                _ if cmd.starts_with("ej ") || cmd == "ej" || cmd.starts_with("eja ") || cmd == "eja" => {
                     let cmd_str = cmd.to_string(); // Clone the command string to avoid borrowing issues
                     self.handle_json_export_command(&cmd_str);
                 }
@@ -1325,7 +1355,8 @@ impl<'a> AppState<'a> {
                          :[cell] - Jump to cell (e.g., :A1, :B10)\n\
                          :nohlsearch, :noh - Disable search highlighting\n\
                          :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
-                         :ej [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
+                         :ej [h|v] [rows] - Export current sheet to JSON (h=horizontal, v=vertical)\n\
+                         :eja [h|v] [rows] - Export all sheets to a single JSON file\n\
                          :sheet [name/number] - Switch to sheet by name or index\n\
                          :delsheet - Delete the current sheet"
                     );

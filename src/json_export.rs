@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use crate::excel::{CellType, DataTypeInfo, Sheet};
+use crate::excel::{CellType, DataTypeInfo, Sheet, Workbook};
 
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -380,7 +380,7 @@ fn write_json_to_file<T: Serialize>(data: &T, path: &Path) -> Result<()> {
     Ok(())
 }
 
-// Export JSON file
+// Export JSON file for a single sheet
 pub fn export_json(
     sheet: &Sheet,
     direction: HeaderDirection,
@@ -391,4 +391,112 @@ pub fn export_json(
         HeaderDirection::Horizontal => export_horizontal_json(sheet, header_count, path),
         HeaderDirection::Vertical => export_vertical_json(sheet, header_count, path),
     }
+}
+
+// Process a single sheet for all-sheets export
+fn process_sheet_for_json(
+    sheet: &Sheet,
+    direction: HeaderDirection,
+    header_count: usize,
+) -> Result<serde_json::Value> {
+    let json_data = match direction {
+        HeaderDirection::Horizontal => {
+            if header_count == 0 || header_count >= sheet.data.len() {
+                anyhow::bail!("Invalid header rows: {}", header_count);
+            }
+
+            let headers = extract_horizontal_headers(sheet, header_count)?;
+
+            let mut ordered_headers: Vec<(usize, String)> = headers
+                .iter()
+                .map(|(col_idx, header)| (*col_idx, header.clone()))
+                .collect();
+            ordered_headers.sort_by_key(|(col_idx, _)| *col_idx);
+
+            let mut sheet_data = Vec::new();
+
+            for row_idx in (header_count + 1)..sheet.data.len() {
+                let mut row_data = IndexMap::new();
+
+                for (col_idx, header) in &ordered_headers {
+                    let cell = &sheet.data[row_idx][*col_idx];
+
+                    if !header.is_empty() {
+                        let json_value = process_cell_value(cell);
+                        row_data.insert(header.clone(), json_value);
+                    }
+                }
+
+                if !row_data.is_empty() {
+                    sheet_data.push(row_data);
+                }
+            }
+
+            serde_json::to_value(sheet_data)?
+        },
+        HeaderDirection::Vertical => {
+            if header_count == 0 || header_count >= sheet.data[0].len() {
+                anyhow::bail!("Invalid header columns: {}", header_count);
+            }
+
+            let headers = extract_vertical_headers(sheet, header_count)?;
+
+            let mut ordered_headers: Vec<(usize, String)> = headers
+                .iter()
+                .map(|(row_idx, header)| (*row_idx, header.clone()))
+                .collect();
+            ordered_headers.sort_by_key(|(row_idx, _)| *row_idx);
+
+            let mut sheet_data = Vec::new();
+
+            for col_idx in (header_count + 1)..sheet.data[0].len() {
+                let mut obj = IndexMap::new();
+
+                for (row_idx, header) in &ordered_headers {
+                    let cell = &sheet.data[*row_idx][col_idx];
+
+                    if !header.is_empty() {
+                        let json_value = process_cell_value(cell);
+                        obj.insert(header.clone(), json_value);
+                    }
+                }
+
+                if !obj.is_empty() {
+                    sheet_data.push(obj);
+                }
+            }
+
+            serde_json::to_value(sheet_data)?
+        },
+    };
+
+    Ok(json_data)
+}
+
+// Export all sheets to a single JSON file
+pub fn export_all_sheets_json(
+    workbook: &Workbook,
+    direction: HeaderDirection,
+    header_count: usize,
+    path: &Path,
+) -> Result<()> {
+    let mut all_sheets = IndexMap::new();
+    let sheet_names = workbook.get_sheet_names();
+
+    // Process each sheet
+    for (index, sheet_name) in sheet_names.iter().enumerate() {
+        // We need to temporarily switch to each sheet to process it
+        // But we'll save the current index and restore it later
+        let mut wb_clone = workbook.clone();
+        wb_clone.switch_sheet(index)?;
+
+        let sheet = wb_clone.get_current_sheet();
+        let sheet_data = process_sheet_for_json(sheet, direction, header_count)?;
+
+        // Add the sheet data to our collection with the sheet name as the key
+        all_sheets.insert(sheet_name.clone(), sheet_data);
+    }
+
+    // Write the combined data to file
+    write_json_to_file(&all_sheets, path)
 }
