@@ -1111,7 +1111,7 @@ impl<'a> AppState<'a> {
     }
 
     pub fn ensure_column_visible(&mut self, column: usize) {
-        let desired_right_margin_chars = 15;
+        let desired_right_margin_chars = 15; 
 
         if column < self.start_col {
             // If column is to the left of visible area, adjust start_col
@@ -1157,14 +1157,6 @@ impl<'a> AppState<'a> {
                     }
                 }
             }
-        } else if column == max_col {
-            if self.visible_cols > 2 && column >= self.visible_cols - 2 {
-                self.start_col = column.saturating_sub(self.visible_cols - 2);
-            } else {
-                self.start_col = column.saturating_sub(1).max(1);
-            }
-            self.start_col = self.start_col.max(1);
-            return;
         }
     }
 
