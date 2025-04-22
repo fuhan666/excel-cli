@@ -284,10 +284,8 @@ impl Workbook {
         let new_filename = format!("{}_{}.{}", file_stem, timestamp, extension);
         let new_filepath = parent_dir.join(new_filename);
 
-
-        let number_format = Format::new().set_num_format("0.00");
+        let number_format = Format::new().set_num_format("General");
         let date_format = Format::new().set_num_format("yyyy-mm-dd");
-
 
         for sheet in &self.sheets {
 
