@@ -12,6 +12,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame, Terminal,
 };
+use ratatui_textarea::TextArea;
 use std::{io, time::Duration};
 
 use crate::app::{index_to_col_name, AppState, InputMode};
@@ -216,15 +217,23 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
         })
         .collect::<Vec<_>>();
 
-    let table = Table::new(std::iter::once(header_cells).chain(rows), col_constraints)
-        .block(Block::default().borders(Borders::ALL))
+    // Create a table with the rows
+    let mut table = Table::new(std::iter::once(header_cells).chain(rows));
+
+    // Set table properties
+    table = table.block(Block::default().borders(Borders::ALL))
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol(">> ");
+
+    // Set column constraints
+    table = table.widths(&col_constraints);
 
     f.render_widget(table, area);
 }
 
-// Helper function to parse command input and identify keywords and parameters
+
+
+// Parse command input and identify keywords and parameters for highlighting
 fn parse_command(input: &str) -> Vec<Span> {
     if input.is_empty() {
         return vec![Span::raw("")];
@@ -380,15 +389,24 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
         }
 
         InputMode::Editing => {
-            let status = format!(
-                " Editing cell {}: {}",
-                cell_reference(app_state.selected_cell),
-                app_state.input_buffer
-            );
+            let text_area = app_state.text_area.clone();
 
-            let status_style = Style::default().bg(Color::Black).fg(Color::White);
-            let status_widget = Paragraph::new(status).style(status_style);
-            f.render_widget(status_widget, area);
+            let prefix = format!(" Editing cell {}: ", cell_reference(app_state.selected_cell));
+            let prefix_width = prefix.len() as u16;
+
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(prefix_width),
+                    Constraint::Min(1),
+                ])
+                .split(area);
+
+            let prefix_widget = Paragraph::new(prefix)
+                .style(Style::default().bg(Color::Black).fg(Color::White));
+            f.render_widget(prefix_widget, chunks[0]);
+
+            f.render_widget(text_area.widget(), chunks[1]);
         }
 
         InputMode::Confirm => {
@@ -410,17 +428,39 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
         }
 
         InputMode::SearchForward => {
-            let status = format!("/{}|_", app_state.input_buffer);
-            let status_style = Style::default().bg(Color::Black).fg(Color::White);
-            let status_widget = Paragraph::new(status).style(status_style);
-            f.render_widget(status_widget, area);
+            let text_area = app_state.text_area.clone();
+
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(1),
+                    Constraint::Min(1),
+                ])
+                .split(area);
+
+            let prefix_widget = Paragraph::new("/")
+                .style(Style::default().bg(Color::Black).fg(Color::White));
+            f.render_widget(prefix_widget, chunks[0]);
+
+            f.render_widget(text_area.widget(), chunks[1]);
         }
 
         InputMode::SearchBackward => {
-            let status = format!("?{}|_", app_state.input_buffer);
-            let status_style = Style::default().bg(Color::Black).fg(Color::White);
-            let status_widget = Paragraph::new(status).style(status_style);
-            f.render_widget(status_widget, area);
+            let text_area = app_state.text_area.clone();
+
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(1),
+                    Constraint::Min(1),
+                ])
+                .split(area);
+
+            let prefix_widget = Paragraph::new("?")
+                .style(Style::default().bg(Color::Black).fg(Color::White));
+            f.render_widget(prefix_widget, chunks[0]);
+
+            f.render_widget(text_area.widget(), chunks[1]);
         }
     }
 }
@@ -627,9 +667,15 @@ fn handle_editing_mode(app_state: &mut AppState, key_code: KeyCode) {
             }
         }
         KeyCode::Esc => app_state.cancel_input(),
-        KeyCode::Backspace => app_state.delete_char_from_input(),
-        KeyCode::Char(c) => app_state.add_char_to_input(c),
-        _ => {}
+        _ => {
+            let key_event = KeyEvent {
+                code: key_code,
+                modifiers: KeyModifiers::empty(),
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::NONE,
+            };
+            app_state.text_area.input(key_event);
+        }
     }
 }
 
@@ -650,10 +696,17 @@ fn handle_search_mode(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Esc => {
             app_state.input_mode = InputMode::Normal;
             app_state.input_buffer = String::new();
+            app_state.text_area = TextArea::default();
         },
-        KeyCode::Backspace => app_state.delete_char_from_input(),
-        KeyCode::Char(c) => app_state.add_char_to_input(c),
-        _ => {}
+        _ => {
+            let key_event = KeyEvent {
+                code: key_code,
+                modifiers: KeyModifiers::empty(),
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::NONE,
+            };
+            app_state.text_area.input(key_event);
+        }
     }
 }
 

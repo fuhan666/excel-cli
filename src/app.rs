@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::excel::Workbook;
 use crate::json_export::{export_json, HeaderDirection};
+use ratatui_textarea::TextArea;
 
 pub enum InputMode {
     Normal,
@@ -13,7 +14,7 @@ pub enum InputMode {
     SearchBackward, // For ? search
 }
 
-pub struct AppState {
+pub struct AppState<'a> {
     pub workbook: Workbook,
     pub file_path: PathBuf,
     pub selected_cell: (usize, usize), // (row, col)
@@ -23,6 +24,7 @@ pub struct AppState {
     pub visible_cols: usize,
     pub input_mode: InputMode,
     pub input_buffer: String,
+    pub text_area: TextArea<'a>,
     pub status_message: String,
     pub should_quit: bool,
     pub column_widths: Vec<usize>, // Store width for each column
@@ -35,12 +37,15 @@ pub struct AppState {
     pub highlight_enabled: bool, // Control whether search results are highlighted
 }
 
-impl AppState {
+impl<'a> AppState<'a> {
     pub fn new(workbook: Workbook, file_path: PathBuf) -> Result<Self> {
         // Initialize default column widths
         let max_cols = workbook.get_current_sheet().max_cols;
         let default_width = 15;
         let column_widths = vec![default_width; max_cols + 1];
+
+        // Initialize TextArea
+        let mut text_area = TextArea::default();
 
         Ok(Self {
             workbook,
@@ -52,6 +57,7 @@ impl AppState {
             visible_cols: 15, // Default values, will be adjusted based on window size
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
+            text_area,
             status_message: String::new(),
             should_quit: false,
             column_widths,
@@ -105,7 +111,12 @@ impl AppState {
 
     pub fn start_editing(&mut self) {
         self.input_mode = InputMode::Editing;
-        self.input_buffer = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
+        let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
+        self.input_buffer = content.clone();
+
+        // Set up TextArea for editing
+        self.text_area = TextArea::default();
+        self.text_area.insert_str(&content);
     }
 
 
@@ -113,17 +124,22 @@ impl AppState {
     pub fn cancel_input(&mut self) {
         self.input_mode = InputMode::Normal;
         self.input_buffer = String::new();
+        self.text_area = TextArea::default();
     }
 
     pub fn confirm_edit(&mut self) -> Result<()> {
         if let InputMode::Editing = self.input_mode {
+            // Get content from TextArea
+            let content = self.text_area.lines().join("\n");
+
             self.workbook.set_cell_value(
                 self.selected_cell.0,
                 self.selected_cell.1,
-                self.input_buffer.clone(),
+                content,
             )?;
             self.input_mode = InputMode::Normal;
             self.input_buffer = String::new();
+            self.text_area = TextArea::default();
         }
         Ok(())
     }
@@ -498,6 +514,16 @@ impl AppState {
         }
     }
 
+
+
+    pub fn start_search_forward(&mut self) {
+        self.input_mode = InputMode::SearchForward;
+        self.input_buffer = String::new();
+        self.text_area = TextArea::default();
+        self.status_message = String::new();
+        self.highlight_enabled = true;
+    }
+
     pub fn add_char_to_input(&mut self, c: char) {
         self.input_buffer.push(c);
     }
@@ -506,25 +532,18 @@ impl AppState {
         self.input_buffer.pop();
     }
 
-    // Start forward search mode (/ in Vim)
-    pub fn start_search_forward(&mut self) {
-        self.input_mode = InputMode::SearchForward;
-        self.input_buffer = String::new();
-        self.status_message = String::new();
-        self.highlight_enabled = true; // Ensure highlighting is enabled when starting a search
-    }
-
-    // Start backward search mode (? in Vim)
     pub fn start_search_backward(&mut self) {
         self.input_mode = InputMode::SearchBackward;
         self.input_buffer = String::new();
+        self.text_area = TextArea::default();
         self.status_message = String::new();
-        self.highlight_enabled = true; // Ensure highlighting is enabled when starting a search
+        self.highlight_enabled = true;
     }
 
-    // Execute search based on current input buffer
     pub fn execute_search(&mut self) {
-        let query = self.input_buffer.clone();
+        let query = self.text_area.lines().join("\n");
+        self.input_buffer = query.clone();
+
         if query.is_empty() {
             self.input_mode = InputMode::Normal;
             return;
@@ -554,6 +573,7 @@ impl AppState {
 
         self.input_mode = InputMode::Normal;
         self.input_buffer = String::new();
+        self.text_area = TextArea::default();
     }
 
     // Find all cells that match the search query
@@ -653,11 +673,7 @@ impl AppState {
         self.status_message = "Search highlighting disabled".to_string();
     }
 
-    // Re-enable search highlighting
-    pub fn enable_search_highlight(&mut self) {
-        self.highlight_enabled = true;
-        self.status_message = "Search highlighting enabled".to_string();
-    }
+
 
     pub fn exit(&mut self) {
         if self.workbook.is_modified() {
@@ -689,7 +705,6 @@ impl AppState {
         }
     }
 
-    // Save without exiting
     pub fn save(&mut self) -> Result<()> {
         if !self.workbook.is_modified() {
             self.status_message = "No changes to save".to_string();
@@ -716,7 +731,6 @@ impl AppState {
         self.status_message = String::new();
     }
 
-    // Switch to next sheet (without cycling)
     pub fn next_sheet(&mut self) -> Result<()> {
         let sheet_count = self.workbook.get_sheet_names().len();
         let current_index = self.workbook.get_current_sheet_index();
@@ -731,7 +745,6 @@ impl AppState {
         self.switch_sheet_by_index(current_index + 1)
     }
 
-    // Switch to previous sheet (without cycling)
     pub fn prev_sheet(&mut self) -> Result<()> {
         let current_index = self.workbook.get_current_sheet_index();
 
@@ -745,7 +758,6 @@ impl AppState {
         self.switch_sheet_by_index(current_index - 1)
     }
 
-    // Switch to sheet by index
     pub fn switch_sheet_by_index(&mut self, index: usize) -> Result<()> {
         // Reset cell selection and view position when switching sheets
         self.selected_cell = (1, 1);
@@ -768,7 +780,6 @@ impl AppState {
         Ok(())
     }
 
-    // Switch to sheet by name or index from command
     pub fn switch_to_sheet(&mut self, name_or_index: &str) {
         // Get all sheet names
         let sheet_names = self.workbook.get_sheet_names();
@@ -835,14 +846,12 @@ impl AppState {
 
 
 
-    // Copy current cell content to clipboard
     pub fn copy_cell(&mut self) {
         let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
         self.clipboard = Some(content);
         self.status_message = "Cell content copied".to_string();
     }
 
-    // Cut current cell content to clipboard
     pub fn cut_cell(&mut self) -> Result<()> {
         let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
         self.clipboard = Some(content);
@@ -858,7 +867,6 @@ impl AppState {
         Ok(())
     }
 
-    // Paste clipboard content to current cell
     pub fn paste_cell(&mut self) -> Result<()> {
         if let Some(content) = &self.clipboard {
             self.workbook.set_cell_value(
@@ -1077,7 +1085,6 @@ impl AppState {
         self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json [h|v] [rows], :ej [h|v] [rows], :sheet [name/number], :delsheet, :help".to_string();
     }
 
-    // Handle JSON export command
     fn handle_json_export_command(&mut self, cmd: &str) {
         // Parse command
         let parts: Vec<&str> = if cmd.starts_with("export json ") {
@@ -1325,7 +1332,6 @@ impl AppState {
     }
 }
 
-// Parse cell reference, e.g. A1, B2, etc.
 fn parse_cell_reference(input: &str) -> Option<(usize, usize)> {
     // Simple regex pattern matching
     let mut col_str = String::new();
@@ -1355,7 +1361,6 @@ fn parse_cell_reference(input: &str) -> Option<(usize, usize)> {
     Some((row, col))
 }
 
-// Convert column name to index, e.g. A->1, B->2, AA->27, etc.
 fn col_name_to_index(col_name: &str) -> Option<usize> {
     let mut index = 0;
 
@@ -1370,7 +1375,6 @@ fn col_name_to_index(col_name: &str) -> Option<usize> {
     Some(index)
 }
 
-// Convert column index to column name (e.g. 1->A, 27->AA)
 pub fn index_to_col_name(index: usize) -> String {
     let mut name = String::new();
     let mut idx = index;
