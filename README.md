@@ -6,6 +6,7 @@ A terminal-based Excel viewer and editor written in Rust, offering a smooth oper
 
 - Browse Excel worksheets
 - Switch between sheets in multi-sheet workbooks
+- Delete worksheets from multi-sheet workbooks
 - Navigate cells using hjkl or arrow keys
 - Edit cell contents
 - Jump to specific cells using Vim-style commands
@@ -123,6 +124,7 @@ See [File Saving Logic](#file-saving-logic) for details on how files are saved.
 ### Sheet Management Commands
 
 - `:sheet [name/number]` - Switch to sheet by name or index (1-based)
+- `:delsheet` - Delete the current sheet (prevents deleting the last sheet)
 
 ### Other Commands
 

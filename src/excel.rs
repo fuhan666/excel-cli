@@ -232,6 +232,23 @@ impl Workbook {
         Ok(())
     }
 
+    pub fn delete_current_sheet(&mut self) -> Result<()> {
+        // Prevent deleting the last sheet
+        if self.sheets.len() <= 1 {
+            anyhow::bail!("Cannot delete the last sheet");
+        }
+
+        self.sheets.remove(self.current_sheet_index);
+        self.is_modified = true;
+
+        // Adjust current_sheet_index
+        if self.current_sheet_index >= self.sheets.len() {
+            self.current_sheet_index = self.sheets.len() - 1;
+        }
+
+        Ok(())
+    }
+
     pub fn is_modified(&self) -> bool {
         self.is_modified
     }

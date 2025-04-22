@@ -806,6 +806,33 @@ impl AppState {
         self.status_message = format!("Sheet '{}' not found", name_or_index);
     }
 
+    pub fn delete_current_sheet(&mut self) {
+        let current_sheet_name = self.workbook.get_current_sheet_name();
+
+        match self.workbook.delete_current_sheet() {
+            Ok(_) => {
+                // Reset cell selection and view position for the current sheet
+                self.selected_cell = (1, 1);
+                self.start_row = 1;
+                self.start_col = 1;
+
+                // Update column widths for the current sheet
+                let max_cols = self.workbook.get_current_sheet().max_cols;
+                let default_width = 15;
+                self.column_widths = vec![default_width; max_cols + 1];
+
+                // Clear search results as they're specific to the previous sheet
+                self.search_results.clear();
+                self.current_search_idx = None;
+
+                self.status_message = format!("Deleted sheet: {}", current_sheet_name);
+            },
+            Err(e) => {
+                self.status_message = format!("Failed to delete sheet: {}", e);
+            }
+        }
+    }
+
 
 
     // Copy current cell content to clipboard
@@ -1047,7 +1074,7 @@ impl AppState {
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
-        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json [h|v] [rows], :ej [h|v] [rows], :sheet [name/number], :help".to_string();
+        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json [h|v] [rows], :ej [h|v] [rows], :sheet [name/number], :delsheet, :help".to_string();
     }
 
     // Handle JSON export command
@@ -1233,6 +1260,11 @@ impl AppState {
                     }
                 }
 
+                // Delete current sheet command
+                "delsheet" => {
+                    self.delete_current_sheet();
+                }
+
                 // Copy command
                 "y" => {
                     self.copy_cell();
@@ -1269,7 +1301,8 @@ impl AppState {
                          :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
                          :export json [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
                          :ej [h|v] [rows] - Shorthand for export json\n\
-                         :sheet [name/number] - Switch to sheet by name or index"
+                         :sheet [name/number] - Switch to sheet by name or index\n\
+                         :delsheet - Delete the current sheet"
                     );
                 }
                 // Try to parse as cell reference (e.g., A1, B10)
