@@ -101,6 +101,8 @@ Enter command mode by pressing `:`. Available commands:
 - `:wq` or `:x` - Save and exit
 - `:q` - Quit (will warn if there are unsaved changes)
 - `:q!` - Force quit without saving
+See [File Saving Logic](#file-saving-logic) for details on how files are saved.
+
 - `:y` - Copy current cell content
 - `:d` - Cut current cell content
 - `:put` or `:pu` - Paste clipboard content to current cell
@@ -111,13 +113,22 @@ Enter command mode by pressing `:`. Available commands:
 - `:nohlsearch` or `:noh` - Disable search highlighting
 - `:help` - Show available commands
 
+## File Saving Logic
+
+Sheet-CLI uses a non-destructive approach to file saving:
+
+- When you save a file (using `:w`, `:wq`, or `:x`), the application checks if any changes have been made.
+- If no changes have been made, no new file is created, and a "No changes to save" message is displayed.
+- If changes have been made, a new file is created with a timestamp in the filename, following the format `original_filename_YYYYMMDD_HHMMSS.xlsx`.
+- The original file is never modified.
+
 ## Technical Stack
 
 - Written in Rust
 - Uses ratatui library for terminal UI
 - crossterm for terminal input handling
 - calamine library for reading Excel files
-- simple_excel_writer for writing Excel files
+- rust_xlsxwriter for writing Excel files
 - serde_json for JSON serialization
 
 ## License
