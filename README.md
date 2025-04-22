@@ -5,11 +5,13 @@ A terminal-based Excel viewer and editor written in Rust, offering a smooth oper
 ## Features
 
 - Browse Excel worksheets
+- Switch between sheets in multi-sheet workbooks
+- Delete worksheets from multi-sheet workbooks
 - Navigate cells using hjkl or arrow keys
 - Edit cell contents
 - Jump to specific cells using Vim-style commands
 - View and create formulas
-- Save changes back to Excel files
+- Save changes to Excel files
 - Export data to JSON format
 
 ## Installation
@@ -33,9 +35,19 @@ cargo install --path .
 sheet-cli path/to/your/file.xlsx
 ```
 
+## User Interface
+
+The application has a simple and intuitive interface:
+
+- **Title Bar with Sheet Tabs**: Displays the current file name and all available sheets with the current sheet highlighted
+- **Spreadsheet**: The main area displaying the Excel data
+- **Status Bar**: Shows current cell reference and available commands
+
 ## Keyboard Shortcuts
 
 - `h`, `j`, `k`, `l` or arrow keys: Move selection (1 cell)
+- `[`: Switch to previous sheet (stops at first sheet)
+- `]`: Switch to next sheet (stops at last sheet)
 - `0`: Jump to first column in current row
 - `^`: Jump to first non-empty column in current row
 - `$`: Jump to last column in current row
@@ -89,11 +101,12 @@ Enter command mode by pressing `:`. Available commands:
 
 ### JSON Export Commands
 
-- `:export json [filename] [h|v] [rows]` - Export data to JSON format
-  - `filename` - The name of the output JSON file
+- `:export json [h|v] [rows]` - Export data to JSON format
   - `h|v` - Header direction: `h` for horizontal (top rows), `v` for vertical (left columns)
   - `rows` - Number of header rows (for horizontal) or columns (for vertical)
-- `:ej [filename] [h|v] [rows]` - Shorthand for export json command
+- `:ej [h|v] [rows]` - Shorthand for export json command
+
+The output filename is automatically generated in the format: `original_filename_sheet_SheetName_YYYYMMDD_HHMMSS.json`
 
 ### Vim-style Commands
 
@@ -107,6 +120,11 @@ See [File Saving Logic](#file-saving-logic) for details on how files are saved.
 - `:d` - Cut current cell content
 - `:put` or `:pu` - Paste clipboard content to current cell
 - `:[cell]` - Jump to cell (e.g., `:A1`, `:B10`). Supports both uppercase and lowercase column letters (`:a1` works the same as `:A1`)
+
+### Sheet Management Commands
+
+- `:sheet [name/number]` - Switch to sheet by name or index (1-based)
+- `:delsheet` - Delete the current sheet (prevents deleting the last sheet)
 
 ### Other Commands
 

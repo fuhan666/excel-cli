@@ -88,23 +88,13 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
+            Constraint::Length(1),  // Combined title bar and sheet tabs
+            Constraint::Min(1),     // Spreadsheet
+            Constraint::Length(1),  // Status bar
         ])
         .split(f.size());
 
-    let title = format!(
-        " {} - Sheet: {} ",
-        app_state.file_path.display(),
-        app_state.workbook.get_current_sheet_name()
-    );
-
-    let title_widget =
-        Paragraph::new(title).style(Style::default().bg(Color::Blue).fg(Color::White));
-
-    f.render_widget(title_widget, chunks[0]);
-
+    draw_title_with_tabs(f, app_state, chunks[0]);
     update_visible_area(app_state, chunks[1]);
     draw_spreadsheet(f, app_state, chunks[1]);
     draw_status_bar(f, app_state, chunks[2]);
@@ -240,7 +230,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 app_state.status_message.clone()
             } else {
                 format!(
-                    " Cell: {} | hjkl=move(1) 0=first-col ^=first-non-empty $=last-col gg=first-row G=last-row Ctrl+arrows=jump i=edit y=copy d=cut p=paste /=search ?=rev-search n=next N=prev :=command",
+                    " Cell: {} | hjkl=move(1) 0=first-col ^=first-non-empty $=last-col gg=first-row G=last-row Ctrl+arrows=jump i=edit y=copy d=cut p=paste /=search ?=rev-search n=next N=prev :=command [ ]=prev/next-sheet",
                     cell_reference(app_state.selected_cell)
                 )
             }
@@ -338,42 +328,56 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
             app_state.move_cursor(0, 1);
         },
 
+        KeyCode::Char('[') => {
+            app_state.g_pressed = false;
+            if let Err(e) = app_state.prev_sheet() {
+                app_state.status_message = format!("Failed to switch to previous sheet: {}", e);
+            }
+        },
+
+        KeyCode::Char(']') => {
+            app_state.g_pressed = false;
+            if let Err(e) = app_state.next_sheet() {
+                app_state.status_message = format!("Failed to switch to next sheet: {}", e);
+            }
+        },
+
         KeyCode::Char('i') => {
             app_state.g_pressed = false;
             app_state.start_editing();
         },
-        // Handle 'g' key for 'gg' command
+
         KeyCode::Char('g') => {
             if app_state.g_pressed {
-                // Second 'g' pressed - jump to first row
+
                 app_state.jump_to_first_row();
                 app_state.g_pressed = false;
             } else {
-                // First 'g' pressed - set flag
+
                 app_state.g_pressed = true;
             }
         },
-        // Handle 'G' key to jump to last row
+
         KeyCode::Char('G') => {
             app_state.g_pressed = false;
             app_state.jump_to_last_row();
         },
-        // Handle '0' key to jump to first column
+
         KeyCode::Char('0') => {
             app_state.g_pressed = false;
             app_state.jump_to_first_column();
         },
-        // Handle '^' key to jump to first non-empty column
+
         KeyCode::Char('^') => {
             app_state.g_pressed = false;
             app_state.jump_to_first_non_empty_column();
         },
-        // Handle '$' key to jump to last column
+
         KeyCode::Char('$') => {
             app_state.g_pressed = false;
             app_state.jump_to_last_column();
         },
-        // Vim-style copy, cut, paste
+
         KeyCode::Char('y') => {
             app_state.g_pressed = false;
             app_state.copy_cell();
@@ -390,22 +394,22 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
                 app_state.status_message = format!("Paste failed: {}", e);
             }
         },
-        // Enter command mode
+
         KeyCode::Char(':') => {
             app_state.g_pressed = false;
             app_state.start_command_mode();
         },
-        // Start forward search
+
         KeyCode::Char('/') => {
             app_state.g_pressed = false;
             app_state.start_search_forward();
         },
-        // Start backward search
+
         KeyCode::Char('?') => {
             app_state.g_pressed = false;
             app_state.start_search_backward();
         },
-        // Jump to next search result
+
         KeyCode::Char('n') => {
             app_state.g_pressed = false;
             if !app_state.search_results.is_empty() {
@@ -418,7 +422,7 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
                 }
             }
         },
-        // Jump to previous search result
+
         KeyCode::Char('N') => {
             app_state.g_pressed = false;
             if !app_state.search_results.is_empty() {
@@ -494,4 +498,97 @@ fn handle_search_mode(app_state: &mut AppState, key_code: KeyCode) {
 
 fn cell_reference(cell: (usize, usize)) -> String {
     format!("{}{}", index_to_col_name(cell.1), cell.0)
+}
+
+// Draw title bar with sheet tabs
+fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
+    let sheet_names = app_state.workbook.get_sheet_names();
+    let current_index = app_state.workbook.get_current_sheet_index();
+
+    let file_name = app_state.file_path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Untitled");
+    let title = format!(" {} | ", file_name);
+    let title_width = title.len() as u16;
+
+    let available_width = area.width.saturating_sub(title_width) as usize;
+
+    let mut tab_widths = Vec::new();
+    let mut total_width = 0;
+    let mut visible_tabs = Vec::new();
+    for (i, name) in sheet_names.iter().enumerate() {
+        let tab_width = name.len() + 4;
+
+        if total_width + tab_width <= available_width {
+            tab_widths.push(tab_width as u16);
+            total_width += tab_width;
+            visible_tabs.push(i);
+        } else {
+            if !visible_tabs.contains(&current_index) {
+                while !visible_tabs.is_empty() && total_width + tab_width > available_width {
+                    let removed_width = tab_widths.remove(0) as usize;
+                    visible_tabs.remove(0);
+                    total_width -= removed_width;
+                }
+
+                if total_width + tab_width <= available_width {
+                    tab_widths.push(tab_width as u16);
+                    visible_tabs.push(current_index);
+                }
+            }
+            break;
+        }
+    }
+
+    let mut constraints = vec![Constraint::Length(title_width)];
+    constraints.extend(tab_widths.iter().map(|&width| Constraint::Length(width)));
+
+    if !constraints.is_empty() {
+        let combined_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(constraints)
+            .split(area);
+
+        let title_widget = Paragraph::new(title).style(Style::default().bg(Color::Blue).fg(Color::White));
+        f.render_widget(title_widget, combined_layout[0]);
+
+        for (layout_idx, &sheet_idx) in visible_tabs.iter().enumerate() {
+            let name = &sheet_names[sheet_idx];
+            let is_current = sheet_idx == current_index;
+
+            let tab_text = if is_current {
+                format!("[{}]", name)
+            } else {
+                format!(" {} ", name)
+            };
+
+            let style = if is_current {
+                Style::default().bg(Color::LightBlue).fg(Color::Black)
+            } else {
+                Style::default().bg(Color::DarkGray).fg(Color::White)
+            };
+
+            let tab_widget = Paragraph::new(tab_text).style(style);
+            f.render_widget(tab_widget, combined_layout[layout_idx + 1]);
+        }
+    } else {
+        let title_widget = Paragraph::new(title).style(Style::default().bg(Color::Blue).fg(Color::White));
+        f.render_widget(title_widget, area);
+    }
+
+    if visible_tabs.len() < sheet_names.len() {
+        let more_indicator = "...";
+        let indicator_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+        let indicator_width = more_indicator.len() as u16;
+
+        let indicator_rect = Rect {
+            x: area.x + area.width - indicator_width,
+            y: area.y,
+            width: indicator_width,
+            height: 1,
+        };
+
+        let indicator_widget = Paragraph::new(more_indicator).style(indicator_style);
+        f.render_widget(indicator_widget, indicator_rect);
+    }
 }
