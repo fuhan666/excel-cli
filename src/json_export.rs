@@ -10,17 +10,13 @@ use std::path::Path;
 
 use crate::excel::{CellType, DataTypeInfo, Sheet, Workbook};
 
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HeaderDirection {
-
     Horizontal,
-
     Vertical,
 }
 
 impl HeaderDirection {
-
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "h" | "horizontal" => Some(HeaderDirection::Horizontal),
@@ -32,30 +28,21 @@ impl HeaderDirection {
 
 // Convert Excel date number to ISO date string
 fn excel_date_to_iso_string(excel_date: f64) -> String {
-
     let days = if excel_date > 59.0 {
-
         excel_date - 1.0
     } else {
         excel_date
     };
 
-
     let base_date = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
-
-
     let whole_days = days.trunc() as i64;
     let fractional_day = days.fract();
 
-
     let date = base_date + Duration::days(whole_days - 1); // Subtract 1 because Excel day 1 is 1900-01-01
 
-
     if fractional_day > 0.0 {
-
         let seconds_in_day = 24.0 * 60.0 * 60.0;
         let seconds = (fractional_day * seconds_in_day).round() as u32;
-
 
         let hours = seconds / 3600;
         let minutes = (seconds % 3600) / 60;
@@ -66,66 +53,45 @@ fn excel_date_to_iso_string(excel_date: f64) -> String {
             chrono::NaiveTime::from_hms_opt(hours, minutes, secs).unwrap(),
         );
 
-
         datetime.format("%Y-%m-%dT%H:%M:%S").to_string()
     } else {
-
         date.format("%Y-%m-%d").to_string()
     }
 }
 
 // Process cell value based on its type
 fn process_cell_value(cell: &crate::excel::Cell) -> Value {
-
     if cell.value.is_empty() {
         return Value::Null;
     }
 
-
     if let Some(original_type) = &cell.original_type {
         match original_type {
-
             DataTypeInfo::Float(f) => {
-
                 if f.fract() == 0.0 {
-
                     json!(f.trunc() as i64)
                 } else {
                     json!(f)
                 }
             }
             DataTypeInfo::Int(i) => json!(i),
-
-
             DataTypeInfo::DateTime(dt) => {
-
                 if *dt >= 0.0 {
                     json!(excel_date_to_iso_string(*dt))
                 } else {
-
                     json!(cell.value)
                 }
             }
             DataTypeInfo::DateTimeIso(s) => json!(s),
-
-
             DataTypeInfo::Bool(b) => json!(b),
-
-
             DataTypeInfo::Empty => Value::Null,
-
-
             _ => json!(cell.value),
         }
     } else {
-
         match cell.cell_type {
             CellType::Number => {
-
                 if let Ok(num) = cell.value.parse::<f64>() {
-
                     if num.fract() == 0.0 {
-
                         json!(num.trunc() as i64)
                     } else {
                         json!(num)
@@ -135,7 +101,6 @@ fn process_cell_value(cell: &crate::excel::Cell) -> Value {
                 }
             }
             CellType::Boolean => {
-
                 if cell.value.to_lowercase() == "true" {
                     json!(true)
                 } else if cell.value.to_lowercase() == "false" {
@@ -145,7 +110,6 @@ fn process_cell_value(cell: &crate::excel::Cell) -> Value {
                 }
             }
             CellType::Date => {
-
                 if let Ok(excel_date) = cell.value.parse::<f64>() {
                     if excel_date >= 0.0 {
                         json!(excel_date_to_iso_string(excel_date))
@@ -153,7 +117,6 @@ fn process_cell_value(cell: &crate::excel::Cell) -> Value {
                         json!(cell.value)
                     }
                 } else {
-
                     json!(cell.value)
                 }
             }
@@ -165,14 +128,11 @@ fn process_cell_value(cell: &crate::excel::Cell) -> Value {
 
 // Process JSON export with horizontal headers
 fn export_horizontal_json(sheet: &Sheet, header_rows: usize, path: &Path) -> Result<()> {
-
     if header_rows == 0 || header_rows >= sheet.data.len() {
         anyhow::bail!("Invalid header rows: {}", header_rows);
     }
 
-
     let headers = extract_horizontal_headers(sheet, header_rows)?;
-
 
     let mut ordered_headers: Vec<(usize, String)> = headers
         .iter()
@@ -180,18 +140,13 @@ fn export_horizontal_json(sheet: &Sheet, header_rows: usize, path: &Path) -> Res
         .collect();
     ordered_headers.sort_by_key(|(col_idx, _)| *col_idx);
 
-
     let mut json_data = Vec::new();
-
 
     for row_idx in (header_rows + 1)..sheet.data.len() {
         let mut row_data = IndexMap::new();
 
-
         for (col_idx, header) in &ordered_headers {
-
             let cell = &sheet.data[row_idx][*col_idx];
-
 
             if !header.is_empty() {
                 let json_value = process_cell_value(cell);
@@ -199,26 +154,21 @@ fn export_horizontal_json(sheet: &Sheet, header_rows: usize, path: &Path) -> Res
             }
         }
 
-
         if !row_data.is_empty() {
             json_data.push(row_data);
         }
     }
-
 
     write_json_to_file(&json_data, path)
 }
 
 // Process JSON export with vertical headers
 fn export_vertical_json(sheet: &Sheet, header_cols: usize, path: &Path) -> Result<()> {
-
     if header_cols == 0 || header_cols >= sheet.data[0].len() {
         anyhow::bail!("Invalid header columns: {}", header_cols);
     }
 
-
     let headers = extract_vertical_headers(sheet, header_cols)?;
-
 
     let mut ordered_headers: Vec<(usize, String)> = headers
         .iter()
@@ -226,18 +176,13 @@ fn export_vertical_json(sheet: &Sheet, header_cols: usize, path: &Path) -> Resul
         .collect();
     ordered_headers.sort_by_key(|(row_idx, _)| *row_idx);
 
-
     let mut json_data = Vec::new();
-
 
     for col_idx in (header_cols + 1)..sheet.data[0].len() {
         let mut obj = IndexMap::new();
 
-
         for (row_idx, header) in &ordered_headers {
-
             let cell = &sheet.data[*row_idx][col_idx];
-
 
             if !header.is_empty() {
                 let json_value = process_cell_value(cell);
@@ -245,12 +190,10 @@ fn export_vertical_json(sheet: &Sheet, header_cols: usize, path: &Path) -> Resul
             }
         }
 
-
         if !obj.is_empty() {
             json_data.push(obj);
         }
     }
-
 
     write_json_to_file(&json_data, path)
 }
@@ -258,48 +201,36 @@ fn export_vertical_json(sheet: &Sheet, header_cols: usize, path: &Path) -> Resul
 // Extract horizontal headers
 fn extract_horizontal_headers(sheet: &Sheet, header_rows: usize) -> Result<HashMap<usize, String>> {
     let mut headers = HashMap::new();
-
-
     let mut last_values_by_row: HashMap<usize, String> = HashMap::new();
-
 
     for col_idx in 1..sheet.data[0].len() {
         let mut header_parts = Vec::new();
-
 
         for row_idx in 1..=header_rows {
             if row_idx < sheet.data.len() && col_idx < sheet.data[row_idx].len() {
                 let cell_value = &sheet.data[row_idx][col_idx].value;
 
-
                 if cell_value.is_empty() {
-
                     if let Some(last_value) = last_values_by_row.get(&row_idx) {
                         header_parts.push(last_value.clone());
                     } else {
-
                         if row_idx > 1 {
                             let prev_row_idx = row_idx - 1;
                             let prev_header_parts_len = header_parts.len();
 
-
                             if prev_header_parts_len > 0 && prev_row_idx >= 1 {
-
                                 header_parts.push(header_parts[prev_header_parts_len - 1].clone());
                             }
                         }
                     }
                 } else {
-
                     last_values_by_row.insert(row_idx, cell_value.clone());
                     header_parts.push(cell_value.clone());
                 }
             }
         }
 
-
         let header = header_parts.join("-");
-
 
         if !header.is_empty() {
             headers.insert(col_idx, header);
@@ -312,48 +243,36 @@ fn extract_horizontal_headers(sheet: &Sheet, header_rows: usize) -> Result<HashM
 // Extract vertical headers
 fn extract_vertical_headers(sheet: &Sheet, header_cols: usize) -> Result<HashMap<usize, String>> {
     let mut headers = HashMap::new();
-
-
     let mut last_values_by_col: HashMap<usize, String> = HashMap::new();
-
 
     for row_idx in 1..sheet.data.len() {
         let mut header_parts = Vec::new();
-
 
         for col_idx in 1..=header_cols {
             if col_idx < sheet.data[0].len() && row_idx < sheet.data.len() {
                 let cell_value = &sheet.data[row_idx][col_idx].value;
 
-
                 if cell_value.is_empty() {
-
                     if let Some(last_value) = last_values_by_col.get(&col_idx) {
                         header_parts.push(last_value.clone());
                     } else {
-
                         if col_idx > 1 {
                             let prev_col_idx = col_idx - 1;
                             let prev_header_parts_len = header_parts.len();
 
-
                             if prev_header_parts_len > 0 && prev_col_idx >= 1 {
-
                                 header_parts.push(header_parts[prev_header_parts_len - 1].clone());
                             }
                         }
                     }
                 } else {
-
                     last_values_by_col.insert(col_idx, cell_value.clone());
                     header_parts.push(cell_value.clone());
                 }
             }
         }
 
-
         let header = header_parts.join("-");
-
 
         if !header.is_empty() {
             headers.insert(row_idx, header);
@@ -365,14 +284,11 @@ fn extract_vertical_headers(sheet: &Sheet, header_cols: usize) -> Result<HashMap
 
 // Write data to JSON file
 fn write_json_to_file<T: Serialize>(data: &T, path: &Path) -> Result<()> {
-
     let mut file =
         File::create(path).with_context(|| format!("Failed to create file: {}", path.display()))?;
 
-
     let json_string =
         serde_json::to_string_pretty(data).context("Failed to serialize data to JSON")?;
-
 
     file.write_all(json_string.as_bytes())
         .with_context(|| format!("Failed to write to file: {}", path.display()))?;
@@ -433,7 +349,7 @@ fn process_sheet_for_json(
             }
 
             serde_json::to_value(sheet_data)?
-        },
+        }
         HeaderDirection::Vertical => {
             if header_count == 0 || header_count >= sheet.data[0].len() {
                 anyhow::bail!("Invalid header columns: {}", header_count);
@@ -467,7 +383,7 @@ fn process_sheet_for_json(
             }
 
             serde_json::to_value(sheet_data)?
-        },
+        }
     };
 
     Ok(json_data)

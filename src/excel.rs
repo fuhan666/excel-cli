@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use calamine::{open_workbook_auto, DataType, Reader};
-use rust_xlsxwriter::{Workbook as XlsxWorkbook, Format};
-use std::path::Path;
 use chrono::Local;
+use rust_xlsxwriter::{Format, Workbook as XlsxWorkbook};
+use std::path::Path;
 
 #[derive(Clone)]
 pub struct Workbook {
@@ -53,7 +53,6 @@ pub enum DataTypeInfo {
 
 impl Cell {
     pub fn new(value: String, is_formula: bool) -> Self {
-
         let cell_type = if value.is_empty() {
             CellType::Empty
         } else if is_formula {
@@ -176,7 +175,6 @@ fn create_sheet_from_range(name: &str, range: calamine::Range<DataType>) -> Shee
                 ),
             };
 
-
             let is_formula = value.starts_with('=');
 
             data[row_idx + 1][col_idx + 1] =
@@ -268,19 +266,12 @@ impl Workbook {
         // Create a new workbook with rust_xlsxwriter
         let mut workbook = XlsxWorkbook::new();
 
-
         let now = Local::now();
         let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
 
-
         let path = Path::new(&self.file_path);
-        let file_stem = path.file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("sheet");
-        let extension = path.extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("xlsx");
-
+        let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("sheet");
+        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("xlsx");
 
         let parent_dir = path.parent().unwrap_or_else(|| Path::new(""));
         let new_filename = format!("{}_{}.{}", file_stem, timestamp, extension);
@@ -290,14 +281,11 @@ impl Workbook {
         let date_format = Format::new().set_num_format("yyyy-mm-dd");
 
         for sheet in &self.sheets {
-
             let worksheet = workbook.add_worksheet().set_name(&sheet.name)?;
-
 
             for col in 0..sheet.max_cols {
                 worksheet.set_column_width(col as u16, 15)?;
             }
-
 
             for row in 1..sheet.data.len() {
                 if row <= sheet.max_rows {
@@ -305,44 +293,50 @@ impl Workbook {
                         if col <= sheet.max_cols {
                             let cell = &sheet.data[row][col];
 
-
                             if cell.value.is_empty() {
                                 continue;
                             }
 
-
                             let row_idx = (row - 1) as u32;
                             let col_idx = (col - 1) as u16;
-
 
                             match cell.cell_type {
                                 CellType::Number => {
                                     if let Ok(num) = cell.value.parse::<f64>() {
-                                        worksheet.write_number_with_format(row_idx, col_idx, num, &number_format)?;
+                                        worksheet.write_number_with_format(
+                                            row_idx,
+                                            col_idx,
+                                            num,
+                                            &number_format,
+                                        )?;
                                     } else {
                                         worksheet.write_string(row_idx, col_idx, &cell.value)?;
                                     }
-                                },
+                                }
                                 CellType::Date => {
-                                    worksheet.write_string_with_format(row_idx, col_idx, &cell.value, &date_format)?;
-                                },
+                                    worksheet.write_string_with_format(
+                                        row_idx,
+                                        col_idx,
+                                        &cell.value,
+                                        &date_format,
+                                    )?;
+                                }
                                 CellType::Boolean => {
                                     if let Ok(b) = cell.value.parse::<bool>() {
                                         worksheet.write_boolean(row_idx, col_idx, b)?;
                                     } else {
                                         worksheet.write_string(row_idx, col_idx, &cell.value)?;
                                     }
-                                },
+                                }
                                 CellType::Text => {
                                     if cell.is_formula {
-
                                         let formula = rust_xlsxwriter::Formula::new(&cell.value);
                                         worksheet.write_formula(row_idx, col_idx, formula)?;
                                     } else {
                                         worksheet.write_string(row_idx, col_idx, &cell.value)?;
                                     }
-                                },
-                                CellType::Empty => {},
+                                }
+                                CellType::Empty => {}
                             }
                         }
                     }
@@ -350,12 +344,9 @@ impl Workbook {
             }
         }
 
-
         workbook.save(&new_filepath)?;
 
-
         println!("File saved as: {}", new_filepath.display());
-
 
         self.is_modified = false;
 

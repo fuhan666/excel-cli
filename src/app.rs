@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 use crate::excel::Workbook;
-use crate::json_export::{export_json, export_all_sheets_json, HeaderDirection};
+use crate::json_export::{export_all_sheets_json, export_json, HeaderDirection};
 use ratatui_textarea::TextArea;
 
 pub enum InputMode {
@@ -28,12 +28,12 @@ pub struct AppState<'a> {
     pub should_quit: bool,
     pub column_widths: Vec<usize>, // Store width for each column
     pub clipboard: Option<String>, // Store copied/cut cell content
-    pub g_pressed: bool, // Track if 'g' was pressed for 'gg' command
-    pub search_query: String, // Current search query
+    pub g_pressed: bool,           // Track if 'g' was pressed for 'gg' command
+    pub search_query: String,      // Current search query
     pub search_results: Vec<(usize, usize)>, // List of cells matching the search query
     pub current_search_idx: Option<usize>, // Index of current search result
-    pub search_direction: bool, // true for forward, false for backward
-    pub highlight_enabled: bool, // Control whether search results are highlighted
+    pub search_direction: bool,    // true for forward, false for backward
+    pub highlight_enabled: bool,   // Control whether search results are highlighted
 }
 
 impl<'a> AppState<'a> {
@@ -65,7 +65,7 @@ impl<'a> AppState<'a> {
             search_query: String::new(),
             search_results: Vec::new(),
             current_search_idx: None,
-            search_direction: true, // Default to forward search
+            search_direction: true,  // Default to forward search
             highlight_enabled: true, // Default to showing highlights
         })
     }
@@ -85,8 +85,7 @@ impl<'a> AppState<'a> {
     fn handle_scrolling(&mut self) {
         if self.selected_cell.0 < self.start_row {
             self.start_row = self.selected_cell.0;
-        }
-        else if self.selected_cell.0 >= self.start_row + self.visible_rows {
+        } else if self.selected_cell.0 >= self.start_row + self.visible_rows {
             self.start_row = self.selected_cell.0 - self.visible_rows + 1;
         }
 
@@ -118,8 +117,6 @@ impl<'a> AppState<'a> {
         self.text_area.insert_str(&content);
     }
 
-
-
     pub fn cancel_input(&mut self) {
         self.input_mode = InputMode::Normal;
         self.input_buffer = String::new();
@@ -131,20 +128,14 @@ impl<'a> AppState<'a> {
             // Get content from TextArea
             let content = self.text_area.lines().join("\n");
 
-            self.workbook.set_cell_value(
-                self.selected_cell.0,
-                self.selected_cell.1,
-                content,
-            )?;
+            self.workbook
+                .set_cell_value(self.selected_cell.0, self.selected_cell.1, content)?;
             self.input_mode = InputMode::Normal;
             self.input_buffer = String::new();
             self.text_area = TextArea::default();
         }
         Ok(())
     }
-
-
-
 
     pub fn jump_to_first_row(&mut self) {
         let current_col = self.selected_cell.1;
@@ -153,11 +144,9 @@ impl<'a> AppState<'a> {
         self.status_message = "Jumped to first row".to_string();
     }
 
-
     pub fn jump_to_last_row(&mut self) {
         let sheet = self.workbook.get_current_sheet();
         let current_col = self.selected_cell.1;
-
 
         let max_row = sheet.max_rows;
 
@@ -166,7 +155,6 @@ impl<'a> AppState<'a> {
         self.status_message = "Jumped to last row".to_string();
     }
 
-
     pub fn jump_to_first_column(&mut self) {
         let current_row = self.selected_cell.0;
         self.selected_cell = (current_row, 1); // First column is 1 in our system
@@ -174,17 +162,17 @@ impl<'a> AppState<'a> {
         self.status_message = "Jumped to first column".to_string();
     }
 
-
     pub fn jump_to_first_non_empty_column(&mut self) {
         let sheet = self.workbook.get_current_sheet();
         let current_row = self.selected_cell.0;
-
 
         let mut first_non_empty_col = 1; // Default to first column
 
         if current_row < sheet.data.len() {
             for col in 1..=sheet.max_cols {
-                if col < sheet.data[current_row].len() && !sheet.data[current_row][col].value.is_empty() {
+                if col < sheet.data[current_row].len()
+                    && !sheet.data[current_row][col].value.is_empty()
+                {
                     first_non_empty_col = col;
                     break;
                 }
@@ -196,11 +184,9 @@ impl<'a> AppState<'a> {
         self.status_message = "Jumped to first non-empty column".to_string();
     }
 
-
     pub fn jump_to_last_column(&mut self) {
         let sheet = self.workbook.get_current_sheet();
         let current_row = self.selected_cell.0;
-
 
         let max_col = sheet.max_cols;
 
@@ -209,38 +195,32 @@ impl<'a> AppState<'a> {
         self.status_message = "Jumped to last column".to_string();
     }
 
-
-
-
     pub fn jump_to_prev_non_empty_cell_left(&mut self) {
         let sheet = self.workbook.get_current_sheet();
         let (row, col) = self.selected_cell;
 
         if col <= 1 {
-
             return;
         }
 
-
-        let current_cell_is_empty = row >= sheet.data.len() ||
-                                   col >= sheet.data[row].len() ||
-                                   sheet.data[row][col].value.is_empty();
+        let current_cell_is_empty = row >= sheet.data.len()
+            || col >= sheet.data[row].len()
+            || sheet.data[row][col].value.is_empty();
 
         if current_cell_is_empty {
-
             let mut target_col = 1;
             let mut found_non_empty = false;
 
-
             for c in (1..col).rev() {
-                if row < sheet.data.len() && c < sheet.data[row].len() && !sheet.data[row][c].value.is_empty() {
-
+                if row < sheet.data.len()
+                    && c < sheet.data[row].len()
+                    && !sheet.data[row][c].value.is_empty()
+                {
                     target_col = c;
                     found_non_empty = true;
                     break;
                 }
             }
-
 
             if !found_non_empty {
                 target_col = 1;
@@ -250,31 +230,25 @@ impl<'a> AppState<'a> {
             self.handle_scrolling();
             self.status_message = "Jumped to first non-empty cell (left)".to_string();
         } else {
-
             let mut target_col = 1;
             let mut last_non_empty_col = col;
             let mut found_empty_after_non_empty = false;
 
-
             for c in (1..col).rev() {
                 if row < sheet.data.len() && c < sheet.data[row].len() {
                     if sheet.data[row][c].value.is_empty() {
-
                         target_col = c + 1;
                         found_empty_after_non_empty = true;
                         break;
                     } else {
-
                         last_non_empty_col = c;
                     }
                 } else {
-
                     target_col = c + 1;
                     found_empty_after_non_empty = true;
                     break;
                 }
             }
-
 
             if !found_empty_after_non_empty {
                 target_col = last_non_empty_col;
@@ -286,37 +260,33 @@ impl<'a> AppState<'a> {
         }
     }
 
-
     pub fn jump_to_prev_non_empty_cell_right(&mut self) {
         let sheet = self.workbook.get_current_sheet();
         let (row, col) = self.selected_cell;
         let max_col = sheet.max_cols;
 
         if col >= max_col {
-
             return;
         }
 
-
-        let current_cell_is_empty = row >= sheet.data.len() ||
-                                   col >= sheet.data[row].len() ||
-                                   sheet.data[row][col].value.is_empty();
+        let current_cell_is_empty = row >= sheet.data.len()
+            || col >= sheet.data[row].len()
+            || sheet.data[row][col].value.is_empty();
 
         if current_cell_is_empty {
-
             let mut target_col = max_col;
             let mut found_non_empty = false;
 
-
             for c in (col + 1)..=max_col {
-                if row < sheet.data.len() && c < sheet.data[row].len() && !sheet.data[row][c].value.is_empty() {
-
+                if row < sheet.data.len()
+                    && c < sheet.data[row].len()
+                    && !sheet.data[row][c].value.is_empty()
+                {
                     target_col = c;
                     found_non_empty = true;
                     break;
                 }
             }
-
 
             if !found_non_empty {
                 target_col = max_col;
@@ -326,31 +296,25 @@ impl<'a> AppState<'a> {
             self.handle_scrolling();
             self.status_message = "Jumped to first non-empty cell (right)".to_string();
         } else {
-
             let mut target_col = max_col;
             let mut last_non_empty_col = col;
             let mut found_empty_after_non_empty = false;
 
-
             for c in (col + 1)..=max_col {
                 if row < sheet.data.len() && c < sheet.data[row].len() {
                     if sheet.data[row][c].value.is_empty() {
-
                         target_col = c - 1;
                         found_empty_after_non_empty = true;
                         break;
                     } else {
-
                         last_non_empty_col = c;
                     }
                 } else {
-
                     target_col = c - 1;
                     found_empty_after_non_empty = true;
                     break;
                 }
             }
-
 
             if !found_empty_after_non_empty {
                 target_col = last_non_empty_col;
@@ -362,36 +326,32 @@ impl<'a> AppState<'a> {
         }
     }
 
-
     pub fn jump_to_prev_non_empty_cell_up(&mut self) {
         let sheet = self.workbook.get_current_sheet();
         let (row, col) = self.selected_cell;
 
         if row <= 1 {
-
             return;
         }
 
-
-        let current_cell_is_empty = row >= sheet.data.len() ||
-                                   col >= sheet.data[row].len() ||
-                                   sheet.data[row][col].value.is_empty();
+        let current_cell_is_empty = row >= sheet.data.len()
+            || col >= sheet.data[row].len()
+            || sheet.data[row][col].value.is_empty();
 
         if current_cell_is_empty {
-
             let mut target_row = 1;
             let mut found_non_empty = false;
 
-
             for r in (1..row).rev() {
-                if r < sheet.data.len() && col < sheet.data[r].len() && !sheet.data[r][col].value.is_empty() {
-
+                if r < sheet.data.len()
+                    && col < sheet.data[r].len()
+                    && !sheet.data[r][col].value.is_empty()
+                {
                     target_row = r;
                     found_non_empty = true;
                     break;
                 }
             }
-
 
             if !found_non_empty {
                 target_row = 1;
@@ -401,31 +361,25 @@ impl<'a> AppState<'a> {
             self.handle_scrolling();
             self.status_message = "Jumped to first non-empty cell (up)".to_string();
         } else {
-
             let mut target_row = 1;
             let mut last_non_empty_row = row;
             let mut found_empty_after_non_empty = false;
 
-
             for r in (1..row).rev() {
                 if r < sheet.data.len() && col < sheet.data[r].len() {
                     if sheet.data[r][col].value.is_empty() {
-
                         target_row = r + 1;
                         found_empty_after_non_empty = true;
                         break;
                     } else {
-
                         last_non_empty_row = r;
                     }
                 } else {
-
                     target_row = r + 1;
                     found_empty_after_non_empty = true;
                     break;
                 }
             }
-
 
             if !found_empty_after_non_empty {
                 target_row = last_non_empty_row;
@@ -437,37 +391,33 @@ impl<'a> AppState<'a> {
         }
     }
 
-
     pub fn jump_to_prev_non_empty_cell_down(&mut self) {
         let sheet = self.workbook.get_current_sheet();
         let (row, col) = self.selected_cell;
         let max_row = sheet.max_rows;
 
         if row >= max_row {
-
             return;
         }
 
-
-        let current_cell_is_empty = row >= sheet.data.len() ||
-                                   col >= sheet.data[row].len() ||
-                                   sheet.data[row][col].value.is_empty();
+        let current_cell_is_empty = row >= sheet.data.len()
+            || col >= sheet.data[row].len()
+            || sheet.data[row][col].value.is_empty();
 
         if current_cell_is_empty {
-
             let mut target_row = max_row;
             let mut found_non_empty = false;
 
-
             for r in (row + 1)..=max_row {
-                if r < sheet.data.len() && col < sheet.data[r].len() && !sheet.data[r][col].value.is_empty() {
-
+                if r < sheet.data.len()
+                    && col < sheet.data[r].len()
+                    && !sheet.data[r][col].value.is_empty()
+                {
                     target_row = r;
                     found_non_empty = true;
                     break;
                 }
             }
-
 
             if !found_non_empty {
                 target_row = max_row;
@@ -477,31 +427,25 @@ impl<'a> AppState<'a> {
             self.handle_scrolling();
             self.status_message = "Jumped to first non-empty cell (down)".to_string();
         } else {
-
             let mut target_row = max_row;
             let mut last_non_empty_row = row;
             let mut found_empty_after_non_empty = false;
 
-
             for r in (row + 1)..=max_row {
                 if r < sheet.data.len() && col < sheet.data[r].len() {
                     if sheet.data[r][col].value.is_empty() {
-
                         target_row = r - 1;
                         found_empty_after_non_empty = true;
                         break;
                     } else {
-
                         last_non_empty_row = r;
                     }
                 } else {
-
                     target_row = r - 1;
                     found_empty_after_non_empty = true;
                     break;
                 }
             }
-
 
             if !found_empty_after_non_empty {
                 target_row = last_non_empty_row;
@@ -512,8 +456,6 @@ impl<'a> AppState<'a> {
             self.status_message = "Jumped to last non-empty cell (down)".to_string();
         }
     }
-
-
 
     pub fn start_search_forward(&mut self) {
         self.input_mode = InputMode::SearchForward;
@@ -567,7 +509,8 @@ impl<'a> AppState<'a> {
         } else {
             // Find the appropriate result to jump to based on search direction and current position
             self.jump_to_next_search_result();
-            self.status_message = format!("{} matches found for: {}", self.search_results.len(), query);
+            self.status_message =
+                format!("{} matches found for: {}", self.search_results.len(), query);
         }
 
         self.input_mode = InputMode::Normal;
@@ -609,7 +552,8 @@ impl<'a> AppState<'a> {
 
         let current_pos = self.selected_cell;
 
-        if self.search_direction { // Forward search
+        if self.search_direction {
+            // Forward search
             // Find the next result after current position using row-first, column-second order
             let next_idx = self.search_results.iter().position(|&pos| {
                 // First compare rows, then columns
@@ -628,7 +572,8 @@ impl<'a> AppState<'a> {
                     self.status_message = "Search wrapped to top".to_string();
                 }
             }
-        } else { // Backward search
+        } else {
+            // Backward search
             // Find the previous result before current position using row-first, column-second order
             let prev_idx = self.search_results.iter().rposition(|&pos| {
                 // First compare rows, then columns
@@ -671,10 +616,6 @@ impl<'a> AppState<'a> {
         self.highlight_enabled = false;
         self.status_message = "Search highlighting disabled".to_string();
     }
-
-
-
-
 
     pub fn save_and_exit(&mut self) {
         // Check if there are changes to save
@@ -763,7 +704,10 @@ impl<'a> AppState<'a> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.status_message = format!("Switched to sheet: {}", self.workbook.get_current_sheet_name());
+        self.status_message = format!(
+            "Switched to sheet: {}",
+            self.workbook.get_current_sheet_name()
+        );
         Ok(())
     }
 
@@ -793,7 +737,8 @@ impl<'a> AppState<'a> {
                 match self.switch_sheet_by_index(i) {
                     Ok(_) => return,
                     Err(e) => {
-                        self.status_message = format!("Failed to switch to sheet '{}': {}", name_or_index, e);
+                        self.status_message =
+                            format!("Failed to switch to sheet '{}': {}", name_or_index, e);
                         return;
                     }
                 }
@@ -824,14 +769,12 @@ impl<'a> AppState<'a> {
                 self.current_search_idx = None;
 
                 self.status_message = format!("Deleted sheet: {}", current_sheet_name);
-            },
+            }
             Err(e) => {
                 self.status_message = format!("Failed to delete sheet: {}", e);
             }
         }
     }
-
-
 
     pub fn copy_cell(&mut self) {
         let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
@@ -844,11 +787,8 @@ impl<'a> AppState<'a> {
         self.clipboard = Some(content);
 
         // Clear the cell
-        self.workbook.set_cell_value(
-            self.selected_cell.0,
-            self.selected_cell.1,
-            String::new(),
-        )?;
+        self.workbook
+            .set_cell_value(self.selected_cell.0, self.selected_cell.1, String::new())?;
 
         self.status_message = "Cell content cut".to_string();
         Ok(())
@@ -1078,7 +1018,7 @@ impl<'a> AppState<'a> {
                     }
                 }
             }
-        } else if column == max_col{
+        } else if column == max_col {
             if self.visible_cols > 2 && column >= self.visible_cols - 2 {
                 self.start_col = column.saturating_sub(self.visible_cols - 2);
             } else {
@@ -1163,7 +1103,8 @@ impl<'a> AppState<'a> {
         // Get original file name without extension
         let file_path = self.workbook.get_file_path().to_string();
         let original_file = Path::new(&file_path);
-        let file_stem = original_file.file_stem()
+        let file_stem = original_file
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("export");
 
@@ -1225,7 +1166,8 @@ impl<'a> AppState<'a> {
                 // Quit without saving
                 "q" => {
                     if self.workbook.is_modified() {
-                        self.status_message = "File modified. Use :q! to force quit without saving".to_string();
+                        self.status_message =
+                            "File modified. Use :q! to force quit without saving".to_string();
                     } else {
                         self.should_quit = true;
                     }
@@ -1284,14 +1226,19 @@ impl<'a> AppState<'a> {
                                         );
                                     }
                                 } else {
-                                    self.status_message = format!("Unknown column command: {}", subcmd);
+                                    self.status_message =
+                                        format!("Unknown column command: {}", subcmd);
                                 }
                             }
                         }
                     }
                 }
                 // JSON export command
-                _ if cmd.starts_with("ej ") || cmd == "ej" || cmd.starts_with("eja ") || cmd == "eja" => {
+                _ if cmd.starts_with("ej ")
+                    || cmd == "ej"
+                    || cmd.starts_with("eja ")
+                    || cmd == "eja" =>
+                {
                     let cmd_str = cmd.to_string(); // Clone the command string to avoid borrowing issues
                     self.handle_json_export_command(&cmd_str);
                 }
