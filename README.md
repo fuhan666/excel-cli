@@ -1,16 +1,14 @@
 # Sheet-CLI
 
-A terminal-based Excel viewer and editor written in Rust, offering a smooth operating experience.
+A lightweight terminal-based Excel viewer with Vim-like navigation, it allows basic Excel file viewing and provides a simple way to export Excel data to JSON format.
 
 ## Features
 
 - Browse Excel worksheets
 - Switch between sheets in multi-sheet workbooks
 - Delete worksheets from multi-sheet workbooks
-- Navigate cells using hjkl or arrow keys
+- Navigate through cells using Vim-like commands
 - Edit cell contents
-- Jump to specific cells using Vim-style commands
-- View and create formulas
 - Save changes to Excel files
 - Export data to JSON format
 
@@ -65,7 +63,7 @@ The application has a simple and intuitive interface:
 - `?`: Start backward search
 - `n`: Jump to next search result
 - `N`: Jump to previous search result
-- `:`: Enter command mode (for Vim-style commands)
+- `:`: Enter command mode (for Vim-like commands)
 
 ## Edit Mode
 
@@ -107,7 +105,7 @@ Enter command mode by pressing `:`. Available commands:
 
 The output filename is automatically generated in the format: `original_filename_sheet_SheetName_YYYYMMDD_HHMMSS.json`
 
-### Vim-style Commands
+### Vim-like Commands
 
 - `:w` - Save file without exiting
 - `:wq` or `:x` - Save and exit
