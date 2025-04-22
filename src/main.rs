@@ -40,7 +40,8 @@ fn main() -> Result<()> {
             .with_context(|| format!("Invalid header direction: {}", cli.direction))?;
 
         // Generate JSON for all sheets
-        let all_sheets = json_export::generate_all_sheets_json(&workbook, direction, cli.header_count)?;
+        let all_sheets =
+            json_export::generate_all_sheets_json(&workbook, direction, cli.header_count)?;
 
         // Serialize to JSON and print to stdout
         let json_string = json_export::serialize_to_json(&all_sheets)?;

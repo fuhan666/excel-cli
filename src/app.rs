@@ -1111,7 +1111,7 @@ impl<'a> AppState<'a> {
     }
 
     pub fn ensure_column_visible(&mut self, column: usize) {
-        let desired_right_margin_chars = 15; 
+        let desired_right_margin_chars = 15;
 
         if column < self.start_col {
             // If column is to the left of visible area, adjust start_col
