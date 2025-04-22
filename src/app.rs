@@ -8,7 +8,6 @@ use ratatui_textarea::TextArea;
 pub enum InputMode {
     Normal,
     Editing,
-    Confirm,
     Command,
     SearchForward,  // For / search
     SearchBackward, // For ? search
@@ -45,7 +44,7 @@ impl<'a> AppState<'a> {
         let column_widths = vec![default_width; max_cols + 1];
 
         // Initialize TextArea
-        let mut text_area = TextArea::default();
+        let text_area = TextArea::default();
 
         Ok(Self {
             workbook,
@@ -675,14 +674,7 @@ impl<'a> AppState<'a> {
 
 
 
-    pub fn exit(&mut self) {
-        if self.workbook.is_modified() {
-            self.input_mode = InputMode::Confirm;
-            self.status_message = "File modified. Save? (y)es/(n)o/(c)ancel".to_string();
-        } else {
-            self.should_quit = true;
-        }
-    }
+
 
     pub fn save_and_exit(&mut self) {
         // Check if there are changes to save
@@ -724,11 +716,6 @@ impl<'a> AppState<'a> {
 
     pub fn exit_without_saving(&mut self) {
         self.should_quit = true;
-    }
-
-    pub fn cancel_exit(&mut self) {
-        self.input_mode = InputMode::Normal;
-        self.status_message = String::new();
     }
 
     pub fn next_sheet(&mut self) -> Result<()> {

@@ -8,7 +8,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame, Terminal,
 };
@@ -382,12 +382,6 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
             f.render_widget(text_area.widget(), chunks[1]);
         }
 
-        InputMode::Confirm => {
-            let status_style = Style::default().bg(Color::Black).fg(Color::White);
-            let status_widget = Paragraph::new(app_state.status_message.clone()).style(status_style);
-            f.render_widget(status_widget, area);
-        }
-
         InputMode::Command => {
             // Create a styled text with different colors for command and parameters
             let mut spans = vec![Span::styled(":", Style::default().fg(Color::White))];
@@ -448,7 +442,6 @@ fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
             }
         },
         InputMode::Editing => handle_editing_mode(app_state, key.code),
-        InputMode::Confirm => handle_confirm_mode(app_state, key.code),
         InputMode::Command => handle_command_mode(app_state, key.code),
         InputMode::SearchForward => handle_search_mode(app_state, key.code),
         InputMode::SearchBackward => handle_search_mode(app_state, key.code),
@@ -649,17 +642,6 @@ fn handle_editing_mode(app_state: &mut AppState, key_code: KeyCode) {
             };
             app_state.text_area.input(key_event);
         }
-    }
-}
-
-
-
-fn handle_confirm_mode(app_state: &mut AppState, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Char('y') | KeyCode::Char('Y') => app_state.save_and_exit(),
-        KeyCode::Char('n') | KeyCode::Char('N') => app_state.exit_without_saving(),
-        KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => app_state.cancel_exit(),
-        _ => {}
     }
 }
 
