@@ -1082,22 +1082,17 @@ impl<'a> AppState<'a> {
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
-        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :export json [h|v] [rows], :ej [h|v] [rows], :sheet [name/number], :delsheet, :help".to_string();
+        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :ej [h|v] [rows], :sheet [name/number], :delsheet, :help".to_string();
     }
 
     fn handle_json_export_command(&mut self, cmd: &str) {
         // Parse command
-        let parts: Vec<&str> = if cmd.starts_with("export json ") {
-            cmd.strip_prefix("export json ")
-                .unwrap()
-                .split_whitespace()
-                .collect()
-        } else if cmd.starts_with("ej ") {
+        let parts: Vec<&str> = if cmd.starts_with("ej ") {
             cmd.strip_prefix("ej ")
                 .unwrap()
                 .split_whitespace()
                 .collect()
-        } else if cmd == "export json" || cmd == "ej" {
+        } else if cmd == "ej" {
             // No arguments provided, use default values
             vec!["h", "1"] // Default to horizontal headers with 1 header row
         } else {
@@ -1107,7 +1102,7 @@ impl<'a> AppState<'a> {
 
         // Check if we have enough arguments for direction and header count
         if parts.len() < 2 {
-            self.status_message = "Usage: :export json [h|v] [rows] or :ej [h|v] [rows]".to_string();
+            self.status_message = "Usage: :ej [h|v] [rows]".to_string();
             return;
         }
 
@@ -1255,7 +1250,7 @@ impl<'a> AppState<'a> {
                     }
                 }
                 // JSON export command
-                _ if cmd.starts_with("export json ") || cmd.starts_with("ej ") => {
+                _ if cmd.starts_with("ej ") || cmd == "ej" => {
                     let cmd_str = cmd.to_string(); // Clone the command string to avoid borrowing issues
                     self.handle_json_export_command(&cmd_str);
                 }
@@ -1306,8 +1301,7 @@ impl<'a> AppState<'a> {
                          :[cell] - Jump to cell (e.g., :A1, :B10)\n\
                          :nohlsearch, :noh - Disable search highlighting\n\
                          :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
-                         :export json [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
-                         :ej [h|v] [rows] - Shorthand for export json\n\
+                         :ej [h|v] [rows] - Export to JSON (h=horizontal, v=vertical)\n\
                          :sheet [name/number] - Switch to sheet by name or index\n\
                          :delsheet - Delete the current sheet"
                     );

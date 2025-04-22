@@ -247,7 +247,7 @@ fn parse_command(input: &str) -> Vec<Span> {
 
     // Commands with parameters
     let commands_with_params = [
-        "cw", "export", "ej", "sheet"
+        "cw", "ej", "sheet"
     ];
 
     // Check if input is a simple command without parameters
@@ -282,54 +282,27 @@ fn parse_command(input: &str) -> Vec<Span> {
         }
     }
 
-    // Special case for "export json" or "ej" commands
-    if input.starts_with("export json ") || input.starts_with("ej ") {
+    // Special case for "ej" command
+    if input.starts_with("ej ") {
         let mut spans = Vec::new();
         let parts: Vec<&str> = input.split_whitespace().collect();
 
-        if input.starts_with("export json") {
-            // Handle "export json" command
-            spans.push(Span::styled(
-                "export",
-                Style::default().fg(Color::Yellow)
-            ));
+        // Handle "ej" command
+        spans.push(Span::styled(
+            "ej",
+            Style::default().fg(Color::Yellow)
+        ));
+
+        // Add parameters if they exist
+        if parts.len() > 1 {
             spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                "json",
-                Style::default().fg(Color::Yellow)
-            ));
-
-            // Add parameters if they exist
-            if parts.len() > 2 {
-                spans.push(Span::raw(" "));
-                for i in 2..parts.len() {
-                    spans.push(Span::styled(
-                        parts[i],
-                        Style::default().fg(Color::LightCyan)
-                    ));
-                    if i < parts.len() - 1 {
-                        spans.push(Span::raw(" "));
-                    }
-                }
-            }
-        } else {
-            // Handle "ej" command
-            spans.push(Span::styled(
-                "ej",
-                Style::default().fg(Color::Yellow)
-            ));
-
-            // Add parameters if they exist
-            if parts.len() > 1 {
-                spans.push(Span::raw(" "));
-                for i in 1..parts.len() {
-                    spans.push(Span::styled(
-                        parts[i],
-                        Style::default().fg(Color::LightCyan)
-                    ));
-                    if i < parts.len() - 1 {
-                        spans.push(Span::raw(" "));
-                    }
+            for i in 1..parts.len() {
+                spans.push(Span::styled(
+                    parts[i],
+                    Style::default().fg(Color::LightCyan)
+                ));
+                if i < parts.len() - 1 {
+                    spans.push(Span::raw(" "));
                 }
             }
         }

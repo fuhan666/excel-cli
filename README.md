@@ -101,10 +101,9 @@ Enter command mode by pressing `:`. Available commands:
 
 ### JSON Export Commands
 
-- `:export json [h|v] [rows]` - Export data to JSON format
+- `:ej [h|v] [rows]` - Export data to JSON format
   - `h|v` - Header direction: `h` for horizontal (top rows), `v` for vertical (left columns)
   - `rows` - Number of header rows (for horizontal) or columns (for vertical)
-- `:ej [h|v] [rows]` - Shorthand for export json command
 
 The output filename is automatically generated in the format: `original_filename_sheet_SheetName_YYYYMMDD_HHMMSS.json`
 
