@@ -51,18 +51,16 @@ pub enum DataTypeInfo {
 
 impl Cell {
     pub fn new(value: String, is_formula: bool) -> Self {
-        // Determine cell type based on content
+
         let cell_type = if value.is_empty() {
             CellType::Empty
         } else if is_formula {
-            CellType::Text // Formulas are treated as text initially
+            CellType::Text
         } else if value.parse::<f64>().is_ok() {
             CellType::Number
         } else if value.contains('/') && value.split('/').count() == 3 {
-            // Simple date detection (e.g., 2021/01/01)
             CellType::Date
         } else if value.contains('-') && value.split('-').count() == 3 {
-            // Simple date detection (e.g., 2021-01-01)
             CellType::Date
         } else if value == "true" || value == "false" {
             CellType::Boolean
@@ -176,8 +174,7 @@ fn create_sheet_from_range(name: &str, range: calamine::Range<DataType>) -> Shee
                 ),
             };
 
-            // Can't directly determine if it's a formula; calamine limitation
-            // Roughly determine by checking if value starts with '='
+
             let is_formula = value.starts_with('=');
 
             data[row_idx + 1][col_idx + 1] =
@@ -222,6 +219,10 @@ impl Workbook {
         self.sheets[self.current_sheet_index].name.clone()
     }
 
+    pub fn get_current_sheet_index(&self) -> usize {
+        self.current_sheet_index
+    }
+
     pub fn switch_sheet(&mut self, index: usize) -> Result<()> {
         if index >= self.sheets.len() {
             anyhow::bail!("Sheet index out of range");
@@ -248,11 +249,11 @@ impl Workbook {
         // Create a new workbook with rust_xlsxwriter
         let mut workbook = XlsxWorkbook::new();
 
-        // Create a timestamp for the filename
+
         let now = Local::now();
         let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
 
-        // Extract the original filename without extension
+
         let path = Path::new(&self.file_path);
         let file_stem = path.file_stem()
             .and_then(|s| s.to_str())
@@ -261,42 +262,42 @@ impl Workbook {
             .and_then(|s| s.to_str())
             .unwrap_or("xlsx");
 
-        // Create the new filename with timestamp
+
         let parent_dir = path.parent().unwrap_or_else(|| Path::new(""));
         let new_filename = format!("{}_{}.{}", file_stem, timestamp, extension);
         let new_filepath = parent_dir.join(new_filename);
 
-        // Create formats for different cell types
+
         let number_format = Format::new().set_num_format("0.00");
         let date_format = Format::new().set_num_format("yyyy-mm-dd");
 
-        // Process each sheet
+
         for sheet in &self.sheets {
-            // Add a worksheet
+
             let worksheet = workbook.add_worksheet().set_name(&sheet.name)?;
 
-            // Set column widths
+
             for col in 0..sheet.max_cols {
                 worksheet.set_column_width(col as u16, 15)?;
             }
 
-            // Write data by row
+
             for row in 1..sheet.data.len() {
                 if row <= sheet.max_rows {
                     for col in 1..sheet.data[0].len() {
                         if col <= sheet.max_cols {
                             let cell = &sheet.data[row][col];
 
-                            // Skip empty cells
+
                             if cell.value.is_empty() {
                                 continue;
                             }
 
-                            // Convert to 0-based indices for rust_xlsxwriter
+
                             let row_idx = (row - 1) as u32;
                             let col_idx = (col - 1) as u16;
 
-                            // Write cell based on its type
+
                             match cell.cell_type {
                                 CellType::Number => {
                                     if let Ok(num) = cell.value.parse::<f64>() {
@@ -317,14 +318,14 @@ impl Workbook {
                                 },
                                 CellType::Text => {
                                     if cell.is_formula {
-                                        // For formulas, we need to create a Formula object
+
                                         let formula = rust_xlsxwriter::Formula::new(&cell.value);
                                         worksheet.write_formula(row_idx, col_idx, formula)?;
                                     } else {
                                         worksheet.write_string(row_idx, col_idx, &cell.value)?;
                                     }
                                 },
-                                CellType::Empty => {}, // Skip empty cells
+                                CellType::Empty => {},
                             }
                         }
                     }
@@ -332,13 +333,13 @@ impl Workbook {
             }
         }
 
-        // Save the workbook to the new file path
+
         workbook.save(&new_filepath)?;
 
-        // Print information about the saved file
+
         println!("File saved as: {}", new_filepath.display());
 
-        // Reset modification flag
+
         self.is_modified = false;
 
         Ok(())
