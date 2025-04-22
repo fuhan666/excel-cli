@@ -249,6 +249,92 @@ impl Workbook {
         Ok(())
     }
 
+    pub fn delete_row(&mut self, row: usize) -> Result<()> {
+        let sheet = &mut self.sheets[self.current_sheet_index];
+
+        if row < 1 || row > sheet.max_rows {
+            anyhow::bail!("Row index out of range");
+        }
+
+        sheet.data.remove(row);
+
+        sheet.max_rows = sheet.max_rows.saturating_sub(1);
+
+        self.is_modified = true;
+        Ok(())
+    }
+
+    // Delete a range of rows from the current sheet
+    pub fn delete_rows(&mut self, start_row: usize, end_row: usize) -> Result<()> {
+        let sheet = &mut self.sheets[self.current_sheet_index];
+
+        if start_row < 1
+            || start_row > sheet.max_rows
+            || end_row < start_row
+            || end_row > sheet.max_rows
+        {
+            anyhow::bail!("Row range out of bounds");
+        }
+
+        let rows_to_remove = end_row - start_row + 1;
+
+        for row in (start_row..=end_row).rev() {
+            sheet.data.remove(row);
+        }
+
+        sheet.max_rows = sheet.max_rows.saturating_sub(rows_to_remove);
+
+        self.is_modified = true;
+        Ok(())
+    }
+
+    pub fn delete_column(&mut self, col: usize) -> Result<()> {
+        let sheet = &mut self.sheets[self.current_sheet_index];
+
+        if col < 1 || col > sheet.max_cols {
+            anyhow::bail!("Column index out of range");
+        }
+
+        for row in sheet.data.iter_mut() {
+            if col < row.len() {
+                row.remove(col);
+            }
+        }
+
+        sheet.max_cols = sheet.max_cols.saturating_sub(1);
+
+        self.is_modified = true;
+        Ok(())
+    }
+
+    // Delete a range of columns from the current sheet
+    pub fn delete_columns(&mut self, start_col: usize, end_col: usize) -> Result<()> {
+        let sheet = &mut self.sheets[self.current_sheet_index];
+
+        if start_col < 1
+            || start_col > sheet.max_cols
+            || end_col < start_col
+            || end_col > sheet.max_cols
+        {
+            anyhow::bail!("Column range out of bounds");
+        }
+
+        let cols_to_remove = end_col - start_col + 1;
+
+        for row in sheet.data.iter_mut() {
+            for col in (start_col..=end_col).rev() {
+                if col < row.len() {
+                    row.remove(col);
+                }
+            }
+        }
+
+        sheet.max_cols = sheet.max_cols.saturating_sub(cols_to_remove);
+
+        self.is_modified = true;
+        Ok(())
+    }
+
     pub fn is_modified(&self) -> bool {
         self.is_modified
     }

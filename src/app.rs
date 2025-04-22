@@ -776,6 +776,145 @@ impl<'a> AppState<'a> {
         }
     }
 
+    pub fn delete_current_row(&mut self) -> Result<()> {
+        let row = self.selected_cell.0;
+
+        self.workbook.delete_row(row)?;
+
+        // Adjust selected cell if needed
+        let sheet = self.workbook.get_current_sheet();
+        if row > sheet.max_rows {
+            self.selected_cell.0 = sheet.max_rows.max(1);
+        }
+
+        self.handle_scrolling();
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+
+        self.status_message = format!("Deleted row {}", row);
+        Ok(())
+    }
+
+    pub fn delete_row(&mut self, row: usize) -> Result<()> {
+        self.workbook.delete_row(row)?;
+
+        // Adjust selected cell if needed
+        let sheet = self.workbook.get_current_sheet();
+        if self.selected_cell.0 > sheet.max_rows {
+            self.selected_cell.0 = sheet.max_rows.max(1);
+        }
+
+        self.handle_scrolling();
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+
+        self.status_message = format!("Deleted row {}", row);
+        Ok(())
+    }
+
+    pub fn delete_rows(&mut self, start_row: usize, end_row: usize) -> Result<()> {
+        self.workbook.delete_rows(start_row, end_row)?;
+
+        // Adjust selected cell if needed
+        let sheet = self.workbook.get_current_sheet();
+        if self.selected_cell.0 > sheet.max_rows {
+            self.selected_cell.0 = sheet.max_rows.max(1);
+        }
+
+        self.handle_scrolling();
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+
+        self.status_message = format!("Deleted rows {} to {}", start_row, end_row);
+        Ok(())
+    }
+
+    pub fn delete_current_column(&mut self) -> Result<()> {
+        let col = self.selected_cell.1;
+
+        self.workbook.delete_column(col)?;
+
+        // Adjust selected cell if needed
+        let sheet = self.workbook.get_current_sheet();
+        if col > sheet.max_cols {
+            self.selected_cell.1 = sheet.max_cols.max(1);
+        }
+
+        if self.column_widths.len() > col {
+            self.column_widths.remove(col);
+            // Add a default width for the last column to maintain the vector size
+            self.column_widths.push(15);
+        }
+
+        self.handle_scrolling();
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+
+        self.status_message = format!("Deleted column {}", index_to_col_name(col));
+        Ok(())
+    }
+
+    pub fn delete_column(&mut self, col: usize) -> Result<()> {
+        self.workbook.delete_column(col)?;
+
+        // Adjust selected cell if needed
+        let sheet = self.workbook.get_current_sheet();
+        if self.selected_cell.1 > sheet.max_cols {
+            self.selected_cell.1 = sheet.max_cols.max(1);
+        }
+
+        if self.column_widths.len() > col {
+            self.column_widths.remove(col);
+            // Add a default width for the last column to maintain the vector size
+            self.column_widths.push(15);
+        }
+
+        self.handle_scrolling();
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+
+        self.status_message = format!("Deleted column {}", index_to_col_name(col));
+        Ok(())
+    }
+
+    pub fn delete_columns(&mut self, start_col: usize, end_col: usize) -> Result<()> {
+        self.workbook.delete_columns(start_col, end_col)?;
+
+        // Adjust selected cell if needed
+        let sheet = self.workbook.get_current_sheet();
+        if self.selected_cell.1 > sheet.max_cols {
+            self.selected_cell.1 = sheet.max_cols.max(1);
+        }
+
+        let cols_to_remove = end_col - start_col + 1;
+        for col in (start_col..=end_col).rev() {
+            if self.column_widths.len() > col {
+                self.column_widths.remove(col);
+            }
+        }
+        // Add default widths for the removed columns to maintain the vector size
+        for _ in 0..cols_to_remove {
+            self.column_widths.push(15);
+        }
+
+        self.handle_scrolling();
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+
+        self.status_message = format!(
+            "Deleted columns {} to {}",
+            index_to_col_name(start_col),
+            index_to_col_name(end_col)
+        );
+        Ok(())
+    }
+
     pub fn copy_cell(&mut self) {
         let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
         self.clipboard = Some(content);
@@ -1033,7 +1172,7 @@ impl<'a> AppState<'a> {
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
-        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :ej [h|v] [rows], :eja [h|v] [rows], :sheet [name/number], :delsheet, :help".to_string();
+        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :ej [h|v] [rows], :eja [h|v] [rows], :sheet [name/number], :delsheet, :dr, :dc, :help".to_string();
     }
 
     fn handle_json_export_command(&mut self, cmd: &str) {
@@ -1275,6 +1414,109 @@ impl<'a> AppState<'a> {
                 "nohlsearch" | "noh" => {
                     self.disable_search_highlight();
                 }
+                // Delete row command
+                _ if cmd.starts_with("dr") => {
+                    let cmd_parts: Vec<String> =
+                        cmd.split_whitespace().map(|s| s.to_string()).collect();
+
+                    if cmd_parts.len() == 1 {
+                        // Just :dr - delete current row
+                        if let Err(e) = self.delete_current_row() {
+                            self.status_message = format!("Failed to delete row: {}", e);
+                        }
+                    } else if cmd_parts.len() == 2 {
+                        // :dr N - delete specific row
+                        if let Ok(row) = cmd_parts[1].parse::<usize>() {
+                            let row_num = row; // Store the value to avoid borrowing issues
+                            if let Err(e) = self.delete_row(row) {
+                                self.status_message =
+                                    format!("Failed to delete row {}: {}", row_num, e);
+                            }
+                        } else {
+                            self.status_message = "Invalid row number".to_string();
+                        }
+                    } else if cmd_parts.len() == 3 {
+                        // :dr N M - delete rows N to M
+                        if let (Ok(start_row), Ok(end_row)) =
+                            (cmd_parts[1].parse::<usize>(), cmd_parts[2].parse::<usize>())
+                        {
+                            let start = start_row; // Store the values to avoid borrowing issues
+                            let end = end_row;
+                            if let Err(e) = self.delete_rows(start_row, end_row) {
+                                self.status_message =
+                                    format!("Failed to delete rows {} to {}: {}", start, end, e);
+                            }
+                        } else {
+                            self.status_message = "Invalid row range".to_string();
+                        }
+                    } else {
+                        self.status_message = "Usage: :dr [row] [end_row]".to_string();
+                    }
+                }
+
+                // Delete column command
+                _ if cmd.starts_with("dc") => {
+                    let cmd_parts: Vec<String> =
+                        cmd.split_whitespace().map(|s| s.to_string()).collect();
+
+                    if cmd_parts.len() == 1 {
+                        // Just :dc - delete current column
+                        if let Err(e) = self.delete_current_column() {
+                            self.status_message = format!("Failed to delete column: {}", e);
+                        }
+                    } else if cmd_parts.len() == 2 {
+                        // :dc COL - delete specific column
+                        // Try to parse as column letter (e.g., A, B, AA)
+                        if let Some(col) = col_name_to_index(&cmd_parts[1]) {
+                            let col_name = cmd_parts[1].clone();
+                            if let Err(e) = self.delete_column(col) {
+                                self.status_message =
+                                    format!("Failed to delete column {}: {}", col_name, e);
+                            }
+                        } else if let Ok(col) = cmd_parts[1].parse::<usize>() {
+                            // Try to parse as column number
+                            let col_num = col; // Store the value to avoid borrowing issues
+                            if let Err(e) = self.delete_column(col) {
+                                self.status_message =
+                                    format!("Failed to delete column {}: {}", col_num, e);
+                            }
+                        } else {
+                            self.status_message = "Invalid column reference".to_string();
+                        }
+                    } else if cmd_parts.len() == 3 {
+                        // :dc COL1 COL2 - delete columns COL1 to COL2
+                        let start_col = if let Some(col) = col_name_to_index(&cmd_parts[1]) {
+                            col
+                        } else if let Ok(col) = cmd_parts[1].parse::<usize>() {
+                            col
+                        } else {
+                            self.status_message = "Invalid start column reference".to_string();
+                            return;
+                        };
+
+                        let end_col = if let Some(col) = col_name_to_index(&cmd_parts[2]) {
+                            col
+                        } else if let Ok(col) = cmd_parts[2].parse::<usize>() {
+                            col
+                        } else {
+                            self.status_message = "Invalid end column reference".to_string();
+                            return;
+                        };
+
+                        let col1_name = cmd_parts[1].clone();
+                        let col2_name = cmd_parts[2].clone();
+
+                        if let Err(e) = self.delete_columns(start_col, end_col) {
+                            self.status_message = format!(
+                                "Failed to delete columns {} to {}: {}",
+                                col1_name, col2_name, e
+                            );
+                        }
+                    } else {
+                        self.status_message = "Usage: :dc [column] [end_column]".to_string();
+                    }
+                }
+
                 // Help command
                 "help" => {
                     self.status_message = format!(
@@ -1292,7 +1534,13 @@ impl<'a> AppState<'a> {
                          :ej [h|v] [rows] - Export current sheet to JSON (h=horizontal, v=vertical)\n\
                          :eja [h|v] [rows] - Export all sheets to a single JSON file\n\
                          :sheet [name/number] - Switch to sheet by name or index\n\
-                         :delsheet - Delete the current sheet"
+                         :delsheet - Delete the current sheet\n\
+                         :dr - Delete current row\n\
+                         :dr [row] - Delete specific row\n\
+                         :dr [start] [end] - Delete rows from start to end\n\
+                         :dc - Delete current column\n\
+                         :dc [col] - Delete specific column (e.g., :dc A or :dc 1)\n\
+                         :dc [start] [end] - Delete columns from start to end (e.g., :dc A C)"
                     );
                 }
                 // Try to parse as cell reference (e.g., A1, B10)
@@ -1352,7 +1600,9 @@ fn col_name_to_index(col_name: &str) -> Option<usize> {
             return None;
         }
 
-        index = index * 26 + (c as usize - 'A' as usize + 1);
+        // Convert to uppercase for calculation
+        let uppercase_c = c.to_ascii_uppercase();
+        index = index * 26 + (uppercase_c as usize - 'A' as usize + 1);
     }
 
     Some(index)

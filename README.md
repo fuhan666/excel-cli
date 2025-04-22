@@ -129,6 +129,15 @@ See [File Saving Logic](#file-saving-logic) for details on how files are saved.
 - `:sheet [name/number]` - Switch to sheet by name or index (1-based)
 - `:delsheet` - Delete the current sheet (prevents deleting the last sheet)
 
+### Row and Column Management Commands
+
+- `:dr` - Delete the current row
+- `:dr [row]` - Delete a specific row (e.g., `:dr 5` deletes row 5)
+- `:dr [start] [end]` - Delete a range of rows (e.g., `:dr 5 10` deletes rows 5 through 10)
+- `:dc` - Delete the current column
+- `:dc [col]` - Delete a specific column (e.g., `:dc A` or `:dc a` or `:dc 1` all delete column A)
+- `:dc [start] [end]` - Delete a range of columns (e.g., `:dc A C` or `:dc a c` deletes columns A through C)
+
 ### Other Commands
 
 - `:nohlsearch` or `:noh` - Disable search highlighting

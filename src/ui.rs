@@ -258,7 +258,7 @@ fn parse_command(input: &str) -> Vec<Span> {
     ];
 
     // Commands with parameters
-    let commands_with_params = ["cw", "ej", "sheet"];
+    let commands_with_params = ["cw", "ej", "sheet", "dr", "dc"];
 
     // Check if input is a simple command without parameters
     if known_commands.contains(&input) {
@@ -328,6 +328,54 @@ fn parse_command(input: &str) -> Vec<Span> {
                 };
 
                 spans.push(Span::styled(parts[i], style));
+                if i < parts.len() - 1 {
+                    spans.push(Span::raw(" "));
+                }
+            }
+        }
+
+        return spans;
+    }
+
+    // Special case for "dr" commands
+    if input.starts_with("dr") {
+        let mut spans = Vec::new();
+        let parts: Vec<&str> = input.split_whitespace().collect();
+
+        spans.push(Span::styled("dr", Style::default().fg(Color::Yellow)));
+
+        // Add parameters if they exist
+        if parts.len() > 1 {
+            spans.push(Span::raw(" "));
+            for i in 1..parts.len() {
+                spans.push(Span::styled(
+                    parts[i],
+                    Style::default().fg(Color::LightCyan),
+                ));
+                if i < parts.len() - 1 {
+                    spans.push(Span::raw(" "));
+                }
+            }
+        }
+
+        return spans;
+    }
+
+    // Special case for "dc" commands
+    if input.starts_with("dc") {
+        let mut spans = Vec::new();
+        let parts: Vec<&str> = input.split_whitespace().collect();
+
+        spans.push(Span::styled("dc", Style::default().fg(Color::Yellow)));
+
+        // Add parameters if they exist
+        if parts.len() > 1 {
+            spans.push(Span::raw(" "));
+            for i in 1..parts.len() {
+                spans.push(Span::styled(
+                    parts[i],
+                    Style::default().fg(Color::LightCyan),
+                ));
                 if i < parts.len() - 1 {
                     spans.push(Span::raw(" "));
                 }
