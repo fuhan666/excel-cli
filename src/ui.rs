@@ -8,6 +8,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame, Terminal,
 };
@@ -223,45 +224,205 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
     f.render_widget(table, area);
 }
 
+// Helper function to parse command input and identify keywords and parameters
+fn parse_command(input: &str) -> Vec<Span> {
+    if input.is_empty() {
+        return vec![Span::raw("")];
+    }
+
+    // Define known commands and their parameters
+    let known_commands = [
+        "w", "wq", "q", "q!", "x", "y", "d", "put", "pu",
+        "nohlsearch", "noh", "help", "delsheet"
+    ];
+
+    // Commands with parameters
+    let commands_with_params = [
+        "cw", "export", "ej", "sheet"
+    ];
+
+    // Check if input is a simple command without parameters
+    if known_commands.contains(&input) {
+        return vec![Span::styled(
+            input,
+            Style::default().fg(Color::Yellow)
+        )];
+    }
+
+    // Check for commands with parameters
+    for &cmd in &commands_with_params {
+        if input.starts_with(cmd) && (input.len() == cmd.len() || input.chars().nth(cmd.len()) == Some(' ')) {
+            let mut spans = Vec::new();
+
+            // Add the command part with yellow color
+            spans.push(Span::styled(
+                cmd,
+                Style::default().fg(Color::Yellow)
+            ));
+
+            // If there are parameters, add them with a different color
+            if input.len() > cmd.len() {
+                let params = &input[cmd.len()..];
+                spans.push(Span::styled(
+                    params,
+                    Style::default().fg(Color::LightCyan)
+                ));
+            }
+
+            return spans;
+        }
+    }
+
+    // Special case for "export json" or "ej" commands
+    if input.starts_with("export json ") || input.starts_with("ej ") {
+        let mut spans = Vec::new();
+        let parts: Vec<&str> = input.split_whitespace().collect();
+
+        if input.starts_with("export json") {
+            // Handle "export json" command
+            spans.push(Span::styled(
+                "export",
+                Style::default().fg(Color::Yellow)
+            ));
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                "json",
+                Style::default().fg(Color::Yellow)
+            ));
+
+            // Add parameters if they exist
+            if parts.len() > 2 {
+                spans.push(Span::raw(" "));
+                for i in 2..parts.len() {
+                    spans.push(Span::styled(
+                        parts[i],
+                        Style::default().fg(Color::LightCyan)
+                    ));
+                    if i < parts.len() - 1 {
+                        spans.push(Span::raw(" "));
+                    }
+                }
+            }
+        } else {
+            // Handle "ej" command
+            spans.push(Span::styled(
+                "ej",
+                Style::default().fg(Color::Yellow)
+            ));
+
+            // Add parameters if they exist
+            if parts.len() > 1 {
+                spans.push(Span::raw(" "));
+                for i in 1..parts.len() {
+                    spans.push(Span::styled(
+                        parts[i],
+                        Style::default().fg(Color::LightCyan)
+                    ));
+                    if i < parts.len() - 1 {
+                        spans.push(Span::raw(" "));
+                    }
+                }
+            }
+        }
+
+        return spans;
+    }
+
+    // Special case for "cw" commands
+    if input.starts_with("cw ") {
+        let mut spans = Vec::new();
+        let parts: Vec<&str> = input.split_whitespace().collect();
+
+        spans.push(Span::styled(
+            "cw",
+            Style::default().fg(Color::Yellow)
+        ));
+
+        // Add parameters if they exist
+        if parts.len() > 1 {
+            spans.push(Span::raw(" "));
+            for i in 1..parts.len() {
+                let style = if parts[i] == "fit" || parts[i] == "min" || parts[i] == "all" {
+                    Style::default().fg(Color::Yellow) // Keywords are yellow
+                } else {
+                    Style::default().fg(Color::LightCyan) // Parameters are cyan
+                };
+
+                spans.push(Span::styled(parts[i], style));
+                if i < parts.len() - 1 {
+                    spans.push(Span::raw(" "));
+                }
+            }
+        }
+
+        return spans;
+    }
+
+    // For cell references or unknown commands, return as is
+    vec![Span::raw(input)]
+}
+
 fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
-    let status = match app_state.input_mode {
+    match app_state.input_mode {
         InputMode::Normal => {
-            if !app_state.status_message.is_empty() {
+            let status = if !app_state.status_message.is_empty() {
                 app_state.status_message.clone()
             } else {
                 format!(
                     " Cell: {} | hjkl=move(1) 0=first-col ^=first-non-empty $=last-col gg=first-row G=last-row Ctrl+arrows=jump i=edit y=copy d=cut p=paste /=search ?=rev-search n=next N=prev :=command [ ]=prev/next-sheet",
                     cell_reference(app_state.selected_cell)
                 )
-            }
+            };
+
+            let status_style = Style::default().bg(Color::Black).fg(Color::White);
+            let status_widget = Paragraph::new(status).style(status_style);
+            f.render_widget(status_widget, area);
         }
+
         InputMode::Editing => {
-            format!(
+            let status = format!(
                 " Editing cell {}: {}",
                 cell_reference(app_state.selected_cell),
                 app_state.input_buffer
-            )
+            );
+
+            let status_style = Style::default().bg(Color::Black).fg(Color::White);
+            let status_widget = Paragraph::new(status).style(status_style);
+            f.render_widget(status_widget, area);
         }
 
-        InputMode::Confirm => app_state.status_message.clone(),
+        InputMode::Confirm => {
+            let status_style = Style::default().bg(Color::Black).fg(Color::White);
+            let status_widget = Paragraph::new(app_state.status_message.clone()).style(status_style);
+            f.render_widget(status_widget, area);
+        }
 
         InputMode::Command => {
-            format!(":{}", app_state.input_buffer)
+            // Create a styled text with different colors for command and parameters
+            let mut spans = vec![Span::styled(":", Style::default().fg(Color::White))];
+            let command_spans = parse_command(&app_state.input_buffer);
+            spans.extend(command_spans);
+
+            let text = Line::from(spans);
+            let status_style = Style::default().bg(Color::Black);
+            let status_widget = Paragraph::new(text).style(status_style);
+            f.render_widget(status_widget, area);
         }
 
         InputMode::SearchForward => {
-            format!("/{}|_", app_state.input_buffer)
+            let status = format!("/{}|_", app_state.input_buffer);
+            let status_style = Style::default().bg(Color::Black).fg(Color::White);
+            let status_widget = Paragraph::new(status).style(status_style);
+            f.render_widget(status_widget, area);
         }
 
         InputMode::SearchBackward => {
-            format!("?{}|_", app_state.input_buffer)
+            let status = format!("?{}|_", app_state.input_buffer);
+            let status_style = Style::default().bg(Color::Black).fg(Color::White);
+            let status_widget = Paragraph::new(status).style(status_style);
+            f.render_widget(status_widget, area);
         }
-    };
-
-    let status_style = Style::default().bg(Color::Green).fg(Color::White);
-    let status_widget = Paragraph::new(status).style(status_style);
-
-    f.render_widget(status_widget, area);
+    }
 }
 
 fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
