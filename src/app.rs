@@ -669,6 +669,13 @@ impl AppState {
     }
 
     pub fn save_and_exit(&mut self) {
+        // Check if there are changes to save
+        if !self.workbook.is_modified() {
+            self.status_message = "No changes to save".to_string();
+            self.should_quit = true;
+            return;
+        }
+
         // Try to save the file
         match self.workbook.save() {
             Ok(_) => {
@@ -684,6 +691,11 @@ impl AppState {
 
     // Save without exiting
     pub fn save(&mut self) -> Result<()> {
+        if !self.workbook.is_modified() {
+            self.status_message = "No changes to save".to_string();
+            return Ok(());
+        }
+
         match self.workbook.save() {
             Ok(_) => {
                 self.status_message = "File saved".to_string();

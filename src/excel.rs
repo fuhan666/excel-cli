@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use calamine::{open_workbook_auto, DataType, Reader};
-use simple_excel_writer as excel;
+use rust_xlsxwriter::{Workbook as XlsxWorkbook, Format};
 use std::path::Path;
+use chrono::Local;
 
 pub struct Workbook {
     sheets: Vec<Sheet>,
@@ -239,45 +240,103 @@ impl Workbook {
     }
 
     pub fn save(&mut self) -> Result<()> {
-        let mut excel_wb = excel::Workbook::create(&self.file_path);
-
-        for sheet in &self.sheets {
-            let mut excel_sheet = excel_wb.create_sheet(&sheet.name);
-
-            // Set column widths
-            for _ in 0..sheet.max_cols {
-                excel_sheet.add_column(excel::Column { width: 15.0 });
-            }
-
-            // Write all cell data
-            excel_wb.write_sheet(&mut excel_sheet, |sheet_writer| {
-                // Write data by row
-                for row in 1..sheet.data.len() {
-                    if row <= sheet.max_rows {
-                        // Create a row of data
-                        let mut excel_row = excel::Row::new();
-
-                        for col in 1..sheet.data[0].len() {
-                            if col <= sheet.max_cols {
-                                if !sheet.data[row][col].value.is_empty() {
-                                    excel_row.add_cell(sheet.data[row][col].value.clone());
-                                } else {
-                                    excel_row.add_cell(String::new());
-                                }
-                            }
-                        }
-
-                        // Only add row if not empty
-                        sheet_writer.append_row(excel_row)?;
-                    }
-                }
-
-                Ok(())
-            })?;
+        if !self.is_modified {
+            println!("No changes to save.");
+            return Ok(());
         }
 
-        // Close workbook, save to file
-        excel_wb.close()?;
+        // Create a new workbook with rust_xlsxwriter
+        let mut workbook = XlsxWorkbook::new();
+
+        // Create a timestamp for the filename
+        let now = Local::now();
+        let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
+
+        // Extract the original filename without extension
+        let path = Path::new(&self.file_path);
+        let file_stem = path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("sheet");
+        let extension = path.extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("xlsx");
+
+        // Create the new filename with timestamp
+        let parent_dir = path.parent().unwrap_or_else(|| Path::new(""));
+        let new_filename = format!("{}_{}.{}", file_stem, timestamp, extension);
+        let new_filepath = parent_dir.join(new_filename);
+
+        // Create formats for different cell types
+        let number_format = Format::new().set_num_format("0.00");
+        let date_format = Format::new().set_num_format("yyyy-mm-dd");
+
+        // Process each sheet
+        for sheet in &self.sheets {
+            // Add a worksheet
+            let worksheet = workbook.add_worksheet().set_name(&sheet.name)?;
+
+            // Set column widths
+            for col in 0..sheet.max_cols {
+                worksheet.set_column_width(col as u16, 15)?;
+            }
+
+            // Write data by row
+            for row in 1..sheet.data.len() {
+                if row <= sheet.max_rows {
+                    for col in 1..sheet.data[0].len() {
+                        if col <= sheet.max_cols {
+                            let cell = &sheet.data[row][col];
+
+                            // Skip empty cells
+                            if cell.value.is_empty() {
+                                continue;
+                            }
+
+                            // Convert to 0-based indices for rust_xlsxwriter
+                            let row_idx = (row - 1) as u32;
+                            let col_idx = (col - 1) as u16;
+
+                            // Write cell based on its type
+                            match cell.cell_type {
+                                CellType::Number => {
+                                    if let Ok(num) = cell.value.parse::<f64>() {
+                                        worksheet.write_number_with_format(row_idx, col_idx, num, &number_format)?;
+                                    } else {
+                                        worksheet.write_string(row_idx, col_idx, &cell.value)?;
+                                    }
+                                },
+                                CellType::Date => {
+                                    worksheet.write_string_with_format(row_idx, col_idx, &cell.value, &date_format)?;
+                                },
+                                CellType::Boolean => {
+                                    if let Ok(b) = cell.value.parse::<bool>() {
+                                        worksheet.write_boolean(row_idx, col_idx, b)?;
+                                    } else {
+                                        worksheet.write_string(row_idx, col_idx, &cell.value)?;
+                                    }
+                                },
+                                CellType::Text => {
+                                    if cell.is_formula {
+                                        // For formulas, we need to create a Formula object
+                                        let formula = rust_xlsxwriter::Formula::new(&cell.value);
+                                        worksheet.write_formula(row_idx, col_idx, formula)?;
+                                    } else {
+                                        worksheet.write_string(row_idx, col_idx, &cell.value)?;
+                                    }
+                                },
+                                CellType::Empty => {}, // Skip empty cells
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Save the workbook to the new file path
+        workbook.save(&new_filepath)?;
+
+        // Print information about the saved file
+        println!("File saved as: {}", new_filepath.display());
 
         // Reset modification flag
         self.is_modified = false;
