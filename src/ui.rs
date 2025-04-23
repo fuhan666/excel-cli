@@ -1,21 +1,21 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
-    Frame, Terminal,
+    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table},
 };
 use ratatui_textarea::TextArea;
 use std::{io, time::Duration};
 
-use crate::app::{index_to_col_name, AppState, InputMode};
+use crate::app::{AppState, InputMode, index_to_col_name};
 
 pub fn run_app(mut app_state: AppState) -> Result<()> {
     // Setup terminal
@@ -87,19 +87,29 @@ fn update_visible_area(app_state: &mut AppState, area: Rect) {
 }
 
 fn ui(f: &mut Frame, app_state: &mut AppState) {
+    // Create the main layout
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // Combined title bar and sheet tabs
             Constraint::Min(1),    // Spreadsheet
+            Constraint::Length(app_state.info_panel_height as u16), // Info panel
             Constraint::Length(1), // Status bar
         ])
         .split(f.size());
 
     draw_title_with_tabs(f, app_state, chunks[0]);
+
     update_visible_area(app_state, chunks[1]);
     draw_spreadsheet(f, app_state, chunks[1]);
-    draw_status_bar(f, app_state, chunks[2]);
+
+    draw_info_panel(f, app_state, chunks[2]);
+    draw_status_bar(f, app_state, chunks[3]);
+
+    // If in help mode, draw the help popup over everything else
+    if let InputMode::Help = app_state.input_mode {
+        draw_help_popup(f, app_state, f.size());
+    }
 }
 
 fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
@@ -389,17 +399,105 @@ fn parse_command(input: &str) -> Vec<Span> {
     vec![Span::raw(input)]
 }
 
+fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
+    // Create a layout to split the info panel into two sections
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50), // Cell content/editing area
+            Constraint::Percentage(50), // Notifications
+        ])
+        .split(area);
+
+    // Get the cell reference
+    let (row, col) = app_state.selected_cell;
+    let cell_ref = cell_reference(app_state.selected_cell);
+
+    // Handle the left panel based on the input mode
+    match app_state.input_mode {
+        InputMode::Editing => {
+            // In editing mode, show the text area for editing
+            let text_area = app_state.text_area.clone();
+
+            // Create a block for the editing area
+            let edit_block = Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" Editing Cell {} ", cell_ref));
+
+            // First render the block
+            f.render_widget(edit_block.clone(), chunks[0]);
+
+            let inner_area = edit_block.inner(chunks[0]);
+            let padded_area = Rect {
+                x: inner_area.x + 1, // Add 1 character padding on the left
+                y: inner_area.y,
+                width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
+                height: inner_area.height,
+            };
+            f.render_widget(text_area.widget(), padded_area);
+        }
+        _ => {
+            let content = app_state.get_cell_content(row, col);
+
+            let cell_block = Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" Cell {} Content ", cell_ref));
+
+            f.render_widget(cell_block.clone(), chunks[0]);
+
+            let inner_area = cell_block.inner(chunks[0]);
+            let padded_area = Rect {
+                x: inner_area.x + 1, // Add 1 character padding on the left
+                y: inner_area.y,
+                width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
+                height: inner_area.height,
+            };
+
+            let cell_paragraph = Paragraph::new(content)
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .scroll((0, 0));
+
+            f.render_widget(cell_paragraph, padded_area);
+        }
+    }
+
+    let notification_block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Notifications ");
+
+    let notification_height = area.height as usize - 2; // Subtract 2 for the border
+
+    let notifications_to_show = if app_state.notification_messages.len() > notification_height {
+        let start_idx = app_state.notification_messages.len() - notification_height;
+        app_state.notification_messages[start_idx..].to_vec()
+    } else {
+        app_state.notification_messages.clone()
+    };
+
+    let notifications_text = notifications_to_show.join("\n");
+
+    f.render_widget(notification_block.clone(), chunks[1]);
+
+    let inner_area = notification_block.inner(chunks[1]);
+    let padded_area = Rect {
+        x: inner_area.x + 1, // Add 1 character padding on the left
+        y: inner_area.y,
+        width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
+        height: inner_area.height,
+    };
+
+    let notification_paragraph = Paragraph::new(notifications_text)
+        .wrap(ratatui::widgets::Wrap { trim: false })
+        .scroll((0, 0));
+
+    f.render_widget(notification_paragraph, padded_area);
+}
+
 fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
     match app_state.input_mode {
         InputMode::Normal => {
-            let status = if !app_state.status_message.is_empty() {
-                app_state.status_message.clone()
-            } else {
-                format!(
-                    " Cell: {} | hjkl=move(1) 0=first-col ^=first-non-empty $=last-col gg=first-row G=last-row Ctrl+arrows=jump i=edit y=copy d=cut p=paste /=search ?=rev-search n=next N=prev :=command [ ]=prev/next-sheet",
-                    cell_reference(app_state.selected_cell)
-                )
-            };
+            let status =
+                "hjkl=move 0=first-col ^=first-non-empty $=last-col gg=first-row G=last-row Ctrl+arrows=jump i=edit y=copy d=cut p=paste /=search ?=rev-search n=next N=prev :=command [ ]=prev/next-sheet +-=adjust-info-panel".to_string();
 
             let status_style = Style::default().bg(Color::Black).fg(Color::White);
             let status_widget = Paragraph::new(status).style(status_style);
@@ -407,24 +505,13 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
         }
 
         InputMode::Editing => {
-            let text_area = app_state.text_area.clone();
-
-            let prefix = format!(
-                " Editing cell {}: ",
+            let status = format!(
+                "Editing cell {} (Enter=confirm, Esc=cancel)",
                 cell_reference(app_state.selected_cell)
             );
-            let prefix_width = prefix.len() as u16;
-
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Length(prefix_width), Constraint::Min(1)])
-                .split(area);
-
-            let prefix_widget =
-                Paragraph::new(prefix).style(Style::default().bg(Color::Black).fg(Color::White));
-            f.render_widget(prefix_widget, chunks[0]);
-
-            f.render_widget(text_area.widget(), chunks[1]);
+            let status_style = Style::default().bg(Color::Black).fg(Color::White);
+            let status_widget = Paragraph::new(status).style(status_style);
+            f.render_widget(status_widget, area);
         }
 
         InputMode::Command => {
@@ -468,7 +555,79 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
 
             f.render_widget(text_area.widget(), chunks[1]);
         }
+
+        InputMode::Help => {
+            let status = "Help Mode - Press Enter or Esc to close".to_string();
+            let status_style = Style::default().bg(Color::Black).fg(Color::White);
+            let status_widget = Paragraph::new(status).style(status_style);
+            f.render_widget(status_widget, area);
+        }
     }
+}
+
+fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
+    let overlay = Block::default()
+        .style(Style::default().bg(Color::Black))
+        .borders(Borders::NONE);
+    f.render_widget(Clear, area);
+    f.render_widget(overlay, area);
+
+    let line_count = app_state.help_text.lines().count() as u16;
+
+    let content_height = line_count + 2; // +2 for borders
+
+    let max_line_width = app_state
+        .help_text
+        .lines()
+        .map(|line| line.len() as u16)
+        .max()
+        .unwrap_or(40) as u16;
+
+    let content_width = max_line_width + 4; // +4 for borders and padding
+
+    let popup_width = content_width.min(area.width.saturating_sub(4));
+    let popup_height = content_height.min(area.height.saturating_sub(4));
+
+    // Center the popup on screen
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    let visible_lines = popup_height.saturating_sub(2) as usize; // Subtract 2 for top and bottom borders
+    app_state.help_visible_lines = visible_lines;
+
+    let line_count = app_state.help_text.lines().count();
+    let max_scroll = line_count.saturating_sub(visible_lines).max(0);
+
+    app_state.help_scroll = app_state.help_scroll.min(max_scroll);
+
+    let help_block = Block::default()
+        .title(" HELP ")
+        .title_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::LightCyan))
+        .style(Style::default().bg(Color::Blue).fg(Color::White));
+
+    f.render_widget(help_block.clone(), popup_area);
+
+    let inner_area = help_block.inner(popup_area);
+    let padded_area = Rect {
+        x: inner_area.x + 1, // Add 1 character padding on the left
+        y: inner_area.y,
+        width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
+        height: inner_area.height,
+    };
+
+    let help_paragraph = Paragraph::new(app_state.help_text.clone())
+        .wrap(ratatui::widgets::Wrap { trim: false })
+        .scroll((app_state.help_scroll as u16, 0));
+
+    f.render_widget(help_paragraph, padded_area);
 }
 
 fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
@@ -484,6 +643,7 @@ fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
         InputMode::Command => handle_command_mode(app_state, key.code),
         InputMode::SearchForward => handle_search_mode(app_state, key.code),
         InputMode::SearchBackward => handle_search_mode(app_state, key.code),
+        InputMode::Help => handle_help_mode(app_state, key.code),
     }
 }
 
@@ -533,26 +693,30 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
             app_state.g_pressed = false;
             app_state.move_cursor(0, 1);
         }
-
+        KeyCode::Char('=') | KeyCode::Char('+') => {
+            app_state.g_pressed = false;
+            app_state.adjust_info_panel_height(1);
+        }
+        KeyCode::Char('-') => {
+            app_state.g_pressed = false;
+            app_state.adjust_info_panel_height(-1);
+        }
         KeyCode::Char('[') => {
             app_state.g_pressed = false;
             if let Err(e) = app_state.prev_sheet() {
-                app_state.status_message = format!("Failed to switch to previous sheet: {}", e);
+                app_state.add_notification(format!("Failed to switch to previous sheet: {}", e));
             }
         }
-
         KeyCode::Char(']') => {
             app_state.g_pressed = false;
             if let Err(e) = app_state.next_sheet() {
-                app_state.status_message = format!("Failed to switch to next sheet: {}", e);
+                app_state.add_notification(format!("Failed to switch to next sheet: {}", e));
             }
         }
-
         KeyCode::Char('i') => {
             app_state.g_pressed = false;
             app_state.start_editing();
         }
-
         KeyCode::Char('g') => {
             if app_state.g_pressed {
                 app_state.jump_to_first_row();
@@ -561,27 +725,22 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
                 app_state.g_pressed = true;
             }
         }
-
         KeyCode::Char('G') => {
             app_state.g_pressed = false;
             app_state.jump_to_last_row();
         }
-
         KeyCode::Char('0') => {
             app_state.g_pressed = false;
             app_state.jump_to_first_column();
         }
-
         KeyCode::Char('^') => {
             app_state.g_pressed = false;
             app_state.jump_to_first_non_empty_column();
         }
-
         KeyCode::Char('$') => {
             app_state.g_pressed = false;
             app_state.jump_to_last_column();
         }
-
         KeyCode::Char('y') => {
             app_state.g_pressed = false;
             app_state.copy_cell();
@@ -589,31 +748,27 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Char('d') => {
             app_state.g_pressed = false;
             if let Err(e) = app_state.cut_cell() {
-                app_state.status_message = format!("Cut failed: {}", e);
+                app_state.add_notification(format!("Cut failed: {}", e));
             }
         }
         KeyCode::Char('p') => {
             app_state.g_pressed = false;
             if let Err(e) = app_state.paste_cell() {
-                app_state.status_message = format!("Paste failed: {}", e);
+                app_state.add_notification(format!("Paste failed: {}", e));
             }
         }
-
         KeyCode::Char(':') => {
             app_state.g_pressed = false;
             app_state.start_command_mode();
         }
-
         KeyCode::Char('/') => {
             app_state.g_pressed = false;
             app_state.start_search_forward();
         }
-
         KeyCode::Char('?') => {
             app_state.g_pressed = false;
             app_state.start_search_backward();
         }
-
         KeyCode::Char('n') => {
             app_state.g_pressed = false;
             if !app_state.search_results.is_empty() {
@@ -666,7 +821,7 @@ fn handle_editing_mode(app_state: &mut AppState, key_code: KeyCode) {
     match key_code {
         KeyCode::Enter => {
             if let Err(e) = app_state.confirm_edit() {
-                app_state.status_message = format!("Error: {}", e);
+                app_state.add_notification(format!("Error: {}", e));
             }
         }
         KeyCode::Esc => app_state.cancel_input(),
@@ -702,11 +857,49 @@ fn handle_search_mode(app_state: &mut AppState, key_code: KeyCode) {
     }
 }
 
+fn handle_help_mode(app_state: &mut AppState, key_code: KeyCode) {
+    let line_count = app_state.help_text.lines().count();
+
+    let visible_lines = app_state.help_visible_lines;
+
+    let max_scroll = line_count.saturating_sub(visible_lines).max(0);
+
+    match key_code {
+        KeyCode::Enter | KeyCode::Esc => {
+            app_state.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            // Scroll down, but not beyond the last line
+            app_state.help_scroll = (app_state.help_scroll + 1).min(max_scroll);
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            // Scroll up
+            app_state.help_scroll = app_state.help_scroll.saturating_sub(1);
+        }
+        KeyCode::PageDown => {
+            // Scroll down by a larger amount, but not beyond the last line
+            app_state.help_scroll = (app_state.help_scroll + 10).min(max_scroll);
+        }
+        KeyCode::PageUp => {
+            // Scroll up by a larger amount
+            app_state.help_scroll = app_state.help_scroll.saturating_sub(10);
+        }
+        KeyCode::Home => {
+            // Scroll to the top
+            app_state.help_scroll = 0;
+        }
+        KeyCode::End => {
+            // Scroll to the bottom
+            app_state.help_scroll = max_scroll;
+        }
+        _ => {}
+    }
+}
+
 fn cell_reference(cell: (usize, usize)) -> String {
     format!("{}{}", index_to_col_name(cell.1), cell.0)
 }
 
-// Draw title bar with sheet tabs
 fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
     let sheet_names = app_state.workbook.get_sheet_names();
     let current_index = app_state.workbook.get_current_sheet_index();

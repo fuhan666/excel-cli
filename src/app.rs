@@ -9,8 +9,9 @@ pub enum InputMode {
     Normal,
     Editing,
     Command,
-    SearchForward,  // For / search
-    SearchBackward, // For ? search
+    SearchForward,
+    SearchBackward,
+    Help,
 }
 
 pub struct AppState<'a> {
@@ -24,7 +25,6 @@ pub struct AppState<'a> {
     pub input_mode: InputMode,
     pub input_buffer: String,
     pub text_area: TextArea<'a>,
-    pub status_message: String,
     pub should_quit: bool,
     pub column_widths: Vec<usize>, // Store width for current sheet's columns
     pub sheet_column_widths: std::collections::HashMap<String, Vec<usize>>, // Store column widths for each sheet
@@ -35,6 +35,12 @@ pub struct AppState<'a> {
     pub current_search_idx: Option<usize>, // Index of current search result
     pub search_direction: bool,    // true for forward, false for backward
     pub highlight_enabled: bool,   // Control whether search results are highlighted
+    pub info_panel_height: usize,
+    pub notification_messages: Vec<String>,
+    pub max_notifications: usize,
+    pub help_text: String,
+    pub help_scroll: usize,
+    pub help_visible_lines: usize,
 }
 
 impl<'a> AppState<'a> {
@@ -75,7 +81,6 @@ impl<'a> AppState<'a> {
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             text_area,
-            status_message: String::new(),
             should_quit: false,
             column_widths,
             sheet_column_widths,
@@ -86,6 +91,12 @@ impl<'a> AppState<'a> {
             current_search_idx: None,
             search_direction: true,  // Default to forward search
             highlight_enabled: true, // Default to showing highlights
+            info_panel_height: 5,
+            notification_messages: Vec::new(),
+            max_notifications: 5,
+            help_text: String::new(),
+            help_scroll: 0,
+            help_visible_lines: 20,
         })
     }
 
@@ -126,6 +137,22 @@ impl<'a> AppState<'a> {
         }
     }
 
+    pub fn add_notification(&mut self, message: String) {
+        self.notification_messages.push(message);
+
+        if self.notification_messages.len() > self.max_notifications {
+            self.notification_messages.remove(0);
+        }
+    }
+
+    pub fn adjust_info_panel_height(&mut self, delta: isize) {
+        let new_height = (self.info_panel_height as isize + delta).max(3).min(15) as usize;
+        if new_height != self.info_panel_height {
+            self.info_panel_height = new_height;
+            self.add_notification(format!("Info panel height: {}", self.info_panel_height));
+        }
+    }
+
     pub fn start_editing(&mut self) {
         self.input_mode = InputMode::Editing;
         let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
@@ -137,9 +164,79 @@ impl<'a> AppState<'a> {
     }
 
     pub fn cancel_input(&mut self) {
+        // If in help mode, just close the help window
+        if let InputMode::Help = self.input_mode {
+            self.input_mode = InputMode::Normal;
+            return;
+        }
+
+        // Otherwise, cancel the current input
         self.input_mode = InputMode::Normal;
         self.input_buffer = String::new();
         self.text_area = TextArea::default();
+    }
+
+    pub fn show_help(&mut self) {
+        self.help_scroll = 0;
+
+        self.help_text = format!(
+            "FILE OPERATIONS:\n\
+             :w          - Save file\n\
+             :wq, :x     - Save and quit\n\
+             :q          - Quit (will warn if unsaved changes)\n\
+             :q!         - Force quit without saving\n\n\
+             NAVIGATION:\n\
+             :[cell]     - Jump to cell (e.g., :B10)\n\
+             hjkl        - Move cursor (left, down, up, right)\n\
+             0           - Jump to first column\n\
+             ^           - Jump to first non-empty column\n\
+             $           - Jump to last column\n\
+             gg          - Jump to first row\n\
+             G           - Jump to last row\n\
+             Ctrl+arrows - Jump to next non-empty cell\n\
+             [           - Switch to previous sheet\n\
+             ]           - Switch to next sheet\n\
+             :sheet [name/number] - Switch to sheet by name or index\n\n\
+             EDITING:\n\
+             i           - Edit current cell\n\
+             :y          - Copy current cell\n\
+             :d          - Cut current cell\n\
+             :put, :pu   - Paste to current cell\n\n\
+             SEARCH:\n\
+             /           - Search forward\n\
+             ?           - Search backward\n\
+             n           - Jump to next search result\n\
+             N           - Jump to previous search result\n\
+             :nohlsearch, :noh - Disable search highlighting\n\n\
+             COLUMN OPERATIONS:\n\
+             :cw fit     - Adjust width of current column to fit its content\n\
+             :cw fit all - Adjust width of all columns to fit their content\n\
+             :cw min     - Set current column width to minimum (5 characters)\n\
+             :cw min all - Set all columns width to minimum\n\
+             :cw [number] - Set current column width to specific number of characters\n\
+             :dc         - Delete current column\n\
+             :dc [col]   - Delete specific column (e.g., :dc A or :dc 1)\n\
+             :dc [start] [end] - Delete columns from start to end (e.g., :dc A C)\n\n\
+             ROW OPERATIONS:\n\
+             :dr         - Delete current row\n\
+             :dr [row]   - Delete specific row\n\
+             :dr [start] [end] - Delete rows from start to end\n\n\
+             EXPORT:\n\
+             :ej [h|v] [rows]  - Export current sheet to JSON\n\
+             :eja [h|v] [rows] - Export all sheets to a single JSON file\n\
+                                h=horizontal (default), v=vertical\n\
+                                [rows]=number of header rows (default: 1)\n\n\
+             SHEET OPERATIONS:\n\
+             :delsheet   - Delete the current sheet\n\n\
+             UI ADJUSTMENTS:\n\
+             +/=         - Increase info panel height\n\
+             -           - Decrease info panel height\n\n\
+             HELP NAVIGATION:\n\
+             j/k, Up/Down  - Scroll help text up/down\n\
+             Enter/Esc     - Close help window"
+        );
+
+        self.input_mode = InputMode::Help;
     }
 
     pub fn confirm_edit(&mut self) -> Result<()> {
@@ -160,7 +257,7 @@ impl<'a> AppState<'a> {
         let current_col = self.selected_cell.1;
         self.selected_cell = (1, current_col);
         self.handle_scrolling();
-        self.status_message = "Jumped to first row".to_string();
+        self.add_notification("Jumped to first row".to_string());
     }
 
     pub fn jump_to_last_row(&mut self) {
@@ -171,14 +268,14 @@ impl<'a> AppState<'a> {
 
         self.selected_cell = (max_row, current_col);
         self.handle_scrolling();
-        self.status_message = "Jumped to last row".to_string();
+        self.add_notification("Jumped to last row".to_string());
     }
 
     pub fn jump_to_first_column(&mut self) {
         let current_row = self.selected_cell.0;
         self.selected_cell = (current_row, 1); // First column is 1 in our system
         self.handle_scrolling();
-        self.status_message = "Jumped to first column".to_string();
+        self.add_notification("Jumped to first column".to_string());
     }
 
     pub fn jump_to_first_non_empty_column(&mut self) {
@@ -200,7 +297,7 @@ impl<'a> AppState<'a> {
 
         self.selected_cell = (current_row, first_non_empty_col);
         self.handle_scrolling();
-        self.status_message = "Jumped to first non-empty column".to_string();
+        self.add_notification("Jumped to first non-empty column".to_string());
     }
 
     pub fn jump_to_last_column(&mut self) {
@@ -211,7 +308,7 @@ impl<'a> AppState<'a> {
 
         self.selected_cell = (current_row, max_col);
         self.handle_scrolling();
-        self.status_message = "Jumped to last column".to_string();
+        self.add_notification("Jumped to last column".to_string());
     }
 
     pub fn jump_to_prev_non_empty_cell_left(&mut self) {
@@ -247,7 +344,7 @@ impl<'a> AppState<'a> {
 
             self.selected_cell = (row, target_col);
             self.handle_scrolling();
-            self.status_message = "Jumped to first non-empty cell (left)".to_string();
+            self.add_notification("Jumped to first non-empty cell (left)".to_string());
         } else {
             let mut target_col = 1;
             let mut last_non_empty_col = col;
@@ -275,7 +372,7 @@ impl<'a> AppState<'a> {
 
             self.selected_cell = (row, target_col);
             self.handle_scrolling();
-            self.status_message = "Jumped to last non-empty cell (left)".to_string();
+            self.add_notification("Jumped to last non-empty cell (left)".to_string());
         }
     }
 
@@ -313,7 +410,7 @@ impl<'a> AppState<'a> {
 
             self.selected_cell = (row, target_col);
             self.handle_scrolling();
-            self.status_message = "Jumped to first non-empty cell (right)".to_string();
+            self.add_notification("Jumped to first non-empty cell (right)".to_string());
         } else {
             let mut target_col = max_col;
             let mut last_non_empty_col = col;
@@ -341,7 +438,7 @@ impl<'a> AppState<'a> {
 
             self.selected_cell = (row, target_col);
             self.handle_scrolling();
-            self.status_message = "Jumped to last non-empty cell (right)".to_string();
+            self.add_notification("Jumped to last non-empty cell (right)".to_string());
         }
     }
 
@@ -378,7 +475,7 @@ impl<'a> AppState<'a> {
 
             self.selected_cell = (target_row, col);
             self.handle_scrolling();
-            self.status_message = "Jumped to first non-empty cell (up)".to_string();
+            self.add_notification("Jumped to first non-empty cell (up)".to_string());
         } else {
             let mut target_row = 1;
             let mut last_non_empty_row = row;
@@ -406,7 +503,7 @@ impl<'a> AppState<'a> {
 
             self.selected_cell = (target_row, col);
             self.handle_scrolling();
-            self.status_message = "Jumped to last non-empty cell (up)".to_string();
+            self.add_notification("Jumped to last non-empty cell (up)".to_string());
         }
     }
 
@@ -444,7 +541,7 @@ impl<'a> AppState<'a> {
 
             self.selected_cell = (target_row, col);
             self.handle_scrolling();
-            self.status_message = "Jumped to first non-empty cell (down)".to_string();
+            self.add_notification("Jumped to first non-empty cell (down)".to_string());
         } else {
             let mut target_row = max_row;
             let mut last_non_empty_row = row;
@@ -472,7 +569,7 @@ impl<'a> AppState<'a> {
 
             self.selected_cell = (target_row, col);
             self.handle_scrolling();
-            self.status_message = "Jumped to last non-empty cell (down)".to_string();
+            self.add_notification("Jumped to last non-empty cell (down)".to_string());
         }
     }
 
@@ -480,7 +577,7 @@ impl<'a> AppState<'a> {
         self.input_mode = InputMode::SearchForward;
         self.input_buffer = String::new();
         self.text_area = TextArea::default();
-        self.status_message = String::new();
+        self.add_notification("Search forward mode".to_string());
         self.highlight_enabled = true;
     }
 
@@ -496,7 +593,7 @@ impl<'a> AppState<'a> {
         self.input_mode = InputMode::SearchBackward;
         self.input_buffer = String::new();
         self.text_area = TextArea::default();
-        self.status_message = String::new();
+        self.add_notification("Search backward mode".to_string());
         self.highlight_enabled = true;
     }
 
@@ -523,13 +620,16 @@ impl<'a> AppState<'a> {
         self.search_results = self.find_all_matches(&query);
 
         if self.search_results.is_empty() {
-            self.status_message = format!("Pattern not found: {}", query);
+            self.add_notification(format!("Pattern not found: {}", query));
             self.current_search_idx = None;
         } else {
             // Find the appropriate result to jump to based on search direction and current position
             self.jump_to_next_search_result();
-            self.status_message =
-                format!("{} matches found for: {}", self.search_results.len(), query);
+            self.add_notification(format!(
+                "{} matches found for: {}",
+                self.search_results.len(),
+                query
+            ));
         }
 
         self.input_mode = InputMode::Normal;
@@ -588,7 +688,7 @@ impl<'a> AppState<'a> {
                     // Wrap around to the first result
                     self.current_search_idx = Some(0);
                     self.selected_cell = self.search_results[0];
-                    self.status_message = "Search wrapped to top".to_string();
+                    self.add_notification("Search wrapped to top".to_string());
                 }
             }
         } else {
@@ -609,7 +709,7 @@ impl<'a> AppState<'a> {
                     let last_idx = self.search_results.len() - 1;
                     self.current_search_idx = Some(last_idx);
                     self.selected_cell = self.search_results[last_idx];
-                    self.status_message = "Search wrapped to bottom".to_string();
+                    self.add_notification("Search wrapped to bottom".to_string());
                 }
             }
         }
@@ -633,13 +733,12 @@ impl<'a> AppState<'a> {
     // Disable search highlighting (nohlsearch in Vim)
     pub fn disable_search_highlight(&mut self) {
         self.highlight_enabled = false;
-        self.status_message = "Search highlighting disabled".to_string();
+        self.add_notification("Search highlighting disabled".to_string());
     }
 
     pub fn save_and_exit(&mut self) {
-        // Check if there are changes to save
         if !self.workbook.is_modified() {
-            self.status_message = "No changes to save".to_string();
+            self.add_notification("No changes to save".to_string());
             self.should_quit = true;
             return;
         }
@@ -647,11 +746,11 @@ impl<'a> AppState<'a> {
         // Try to save the file
         match self.workbook.save() {
             Ok(_) => {
-                self.status_message = "File saved".to_string();
+                self.add_notification("File saved".to_string());
                 self.should_quit = true;
             }
             Err(e) => {
-                self.status_message = format!("Save failed: {}", e);
+                self.add_notification(format!("Save failed: {}", e));
                 self.input_mode = InputMode::Normal;
             }
         }
@@ -659,16 +758,16 @@ impl<'a> AppState<'a> {
 
     pub fn save(&mut self) -> Result<()> {
         if !self.workbook.is_modified() {
-            self.status_message = "No changes to save".to_string();
+            self.add_notification("No changes to save".to_string());
             return Ok(());
         }
 
         match self.workbook.save() {
             Ok(_) => {
-                self.status_message = "File saved".to_string();
+                self.add_notification("File saved".to_string());
             }
             Err(e) => {
-                self.status_message = format!("Save failed: {}", e);
+                self.add_notification(format!("Save failed: {}", e));
             }
         }
         Ok(())
@@ -682,26 +781,22 @@ impl<'a> AppState<'a> {
         let sheet_count = self.workbook.get_sheet_names().len();
         let current_index = self.workbook.get_current_sheet_index();
 
-        // Check if we're already at the last sheet
         if current_index >= sheet_count - 1 {
-            self.status_message = "Already at the last sheet".to_string();
+            self.add_notification("Already at the last sheet".to_string());
             return Ok(());
         }
 
-        // Move to the next sheet
         self.switch_sheet_by_index(current_index + 1)
     }
 
     pub fn prev_sheet(&mut self) -> Result<()> {
         let current_index = self.workbook.get_current_sheet_index();
 
-        // Check if we're already at the first sheet
         if current_index == 0 {
-            self.status_message = "Already at the first sheet".to_string();
+            self.add_notification("Already at the first sheet".to_string());
             return Ok(());
         }
 
-        // Move to the previous sheet
         self.switch_sheet_by_index(current_index - 1)
     }
 
@@ -735,7 +830,7 @@ impl<'a> AppState<'a> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.status_message = format!("Switched to sheet: {}", new_sheet_name);
+        self.add_notification(format!("Switched to sheet: {}", new_sheet_name));
         Ok(())
     }
 
@@ -752,7 +847,10 @@ impl<'a> AppState<'a> {
                 match self.switch_sheet_by_index(zero_based_index) {
                     Ok(_) => return,
                     Err(e) => {
-                        self.status_message = format!("Failed to switch to sheet {}: {}", index, e);
+                        self.add_notification(format!(
+                            "Failed to switch to sheet {}: {}",
+                            index, e
+                        ));
                         return;
                     }
                 }
@@ -765,8 +863,10 @@ impl<'a> AppState<'a> {
                 match self.switch_sheet_by_index(i) {
                     Ok(_) => return,
                     Err(e) => {
-                        self.status_message =
-                            format!("Failed to switch to sheet '{}': {}", name_or_index, e);
+                        self.add_notification(format!(
+                            "Failed to switch to sheet '{}': {}",
+                            name_or_index, e
+                        ));
                         return;
                     }
                 }
@@ -774,7 +874,7 @@ impl<'a> AppState<'a> {
         }
 
         // If we get here, no matching sheet was found
-        self.status_message = format!("Sheet '{}' not found", name_or_index);
+        self.add_notification(format!("Sheet '{}' not found", name_or_index));
     }
 
     pub fn delete_current_sheet(&mut self) {
@@ -806,10 +906,10 @@ impl<'a> AppState<'a> {
                 self.search_results.clear();
                 self.current_search_idx = None;
 
-                self.status_message = format!("Deleted sheet: {}", current_sheet_name);
+                self.add_notification(format!("Deleted sheet: {}", current_sheet_name));
             }
             Err(e) => {
-                self.status_message = format!("Failed to delete sheet: {}", e);
+                self.add_notification(format!("Failed to delete sheet: {}", e));
             }
         }
     }
@@ -830,7 +930,7 @@ impl<'a> AppState<'a> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.status_message = format!("Deleted row {}", row);
+        self.add_notification(format!("Deleted row {}", row));
         Ok(())
     }
 
@@ -848,7 +948,7 @@ impl<'a> AppState<'a> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.status_message = format!("Deleted row {}", row);
+        self.add_notification(format!("Deleted row {}", row));
         Ok(())
     }
 
@@ -866,7 +966,7 @@ impl<'a> AppState<'a> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.status_message = format!("Deleted rows {} to {}", start_row, end_row);
+        self.add_notification(format!("Deleted rows {} to {}", start_row, end_row));
         Ok(())
     }
 
@@ -892,7 +992,7 @@ impl<'a> AppState<'a> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.status_message = format!("Deleted column {}", index_to_col_name(col));
+        self.add_notification(format!("Deleted column {}", index_to_col_name(col)));
         Ok(())
     }
 
@@ -916,7 +1016,7 @@ impl<'a> AppState<'a> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.status_message = format!("Deleted column {}", index_to_col_name(col));
+        self.add_notification(format!("Deleted column {}", index_to_col_name(col)));
         Ok(())
     }
 
@@ -945,18 +1045,18 @@ impl<'a> AppState<'a> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.status_message = format!(
+        self.add_notification(format!(
             "Deleted columns {} to {}",
             index_to_col_name(start_col),
             index_to_col_name(end_col)
-        );
+        ));
         Ok(())
     }
 
     pub fn copy_cell(&mut self) {
         let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
         self.clipboard = Some(content);
-        self.status_message = "Cell content copied".to_string();
+        self.add_notification("Cell content copied".to_string());
     }
 
     pub fn cut_cell(&mut self) -> Result<()> {
@@ -967,7 +1067,7 @@ impl<'a> AppState<'a> {
         self.workbook
             .set_cell_value(self.selected_cell.0, self.selected_cell.1, String::new())?;
 
-        self.status_message = "Cell content cut".to_string();
+        self.add_notification("Cell content cut".to_string());
         Ok(())
     }
 
@@ -978,9 +1078,9 @@ impl<'a> AppState<'a> {
                 self.selected_cell.1,
                 content.clone(),
             )?;
-            self.status_message = "Content pasted".to_string();
+            self.add_notification("Content pasted".to_string());
         } else {
-            self.status_message = "Clipboard is empty".to_string();
+            self.add_notification("Clipboard is empty".to_string());
         }
         Ok(())
     }
@@ -1002,12 +1102,12 @@ impl<'a> AppState<'a> {
 
                     self.ensure_column_visible(column);
 
-                    self.status_message = format!(
+                    self.add_notification(format!(
                         "Column {} width adjusted from {} to {}",
                         index_to_col_name(column),
                         old_width,
                         self.column_widths[column]
-                    );
+                    ));
                 }
             }
             // Adjust all columns
@@ -1020,7 +1120,7 @@ impl<'a> AppState<'a> {
                 let column = self.selected_cell.1;
                 self.ensure_column_visible(column);
 
-                self.status_message = "All column widths adjusted".to_string();
+                self.add_notification("All column widths adjusted".to_string());
             }
         }
     }
@@ -1107,12 +1207,12 @@ impl<'a> AppState<'a> {
 
                     self.ensure_column_visible(column);
 
-                    self.status_message = format!(
+                    self.add_notification(format!(
                         "Column {} width minimized from {} to {}",
                         index_to_col_name(column),
                         current_width,
                         new_width
-                    );
+                    ));
                 }
             }
             // Minimize all columns
@@ -1139,7 +1239,7 @@ impl<'a> AppState<'a> {
                 let column = self.selected_cell.1;
                 self.ensure_column_visible(column);
 
-                self.status_message = "Minimized the width of all columns".to_string();
+                self.add_notification("Minimized the width of all columns".to_string());
             }
         }
     }
@@ -1198,11 +1298,9 @@ impl<'a> AppState<'a> {
         }
     }
 
-    // Enter command mode
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
-        self.status_message = "Commands: :w, :wq, :q, :q!, :y, :d, :put, :cw fit, :cw fit all, :cw min, :cw min all, :cw [number], :ej [h|v] [rows], :eja [h|v] [rows], :sheet [name/number], :delsheet, :dr, :dc, :help".to_string();
     }
 
     fn handle_json_export_command(&mut self, cmd: &str) {
@@ -1227,46 +1325,42 @@ impl<'a> AppState<'a> {
             // No arguments provided, use default values
             vec!["h", "1"] // Default to horizontal headers with 1 header row
         } else {
-            self.status_message = "Invalid JSON export command".to_string();
+            self.add_notification("Invalid JSON export command".to_string());
             return;
         };
 
         // Check if we have enough arguments for direction and header count
         if parts.len() < 2 {
             if export_all {
-                self.status_message = "Usage: :eja [h|v] [rows]".to_string();
+                self.add_notification("Usage: :eja [h|v] [rows]".to_string());
             } else {
-                self.status_message = "Usage: :ej [h|v] [rows]".to_string();
+                self.add_notification("Usage: :ej [h|v] [rows]".to_string());
             }
             return;
         }
 
-        // Extract arguments
         let direction_str = parts[0];
         let header_count_str = parts[1];
 
-        // Parse header direction
         let direction = match HeaderDirection::from_str(direction_str) {
             Some(dir) => dir,
             None => {
-                self.status_message = format!(
+                self.add_notification(format!(
                     "Invalid header direction: {}. Use 'h' or 'v'",
                     direction_str
-                );
+                ));
                 return;
             }
         };
 
-        // Parse header count
         let header_count = match header_count_str.parse::<usize>() {
             Ok(count) => count,
             Err(_) => {
-                self.status_message = format!("Invalid header count: {}", header_count_str);
+                self.add_notification(format!("Invalid header count: {}", header_count_str));
                 return;
             }
         };
 
-        // Get current sheet name for filename
         let sheet_name = self.workbook.get_current_sheet_name();
 
         // Get original file name without extension
@@ -1307,10 +1401,10 @@ impl<'a> AppState<'a> {
 
         match result {
             Ok(_) => {
-                self.status_message = format!("Successfully exported to {}", new_filename);
+                self.add_notification(format!("Successfully exported to {}", new_filename));
             }
             Err(e) => {
-                self.status_message = format!("Failed to export JSON: {}", e);
+                self.add_notification(format!("Failed to export JSON: {}", e));
             }
         }
     }
@@ -1325,7 +1419,7 @@ impl<'a> AppState<'a> {
                 // Save and continue editing
                 "w" => {
                     if let Err(e) = self.save() {
-                        self.status_message = format!("Save failed: {}", e);
+                        self.add_notification(format!("Save failed: {}", e));
                     }
                 }
                 // Save and quit
@@ -1335,8 +1429,9 @@ impl<'a> AppState<'a> {
                 // Quit without saving
                 "q" => {
                     if self.workbook.is_modified() {
-                        self.status_message =
-                            "File modified. Use :q! to force quit without saving".to_string();
+                        self.add_notification(
+                            "File modified. Use :q! to force quit without saving".to_string(),
+                        );
                     } else {
                         self.should_quit = true;
                     }
@@ -1387,16 +1482,18 @@ impl<'a> AppState<'a> {
 
                                         self.ensure_column_visible(column);
 
-                                        self.status_message = format!(
+                                        self.add_notification(format!(
                                             "Column {} width changed from {} to {}",
                                             index_to_col_name(column),
                                             old_width,
                                             width
-                                        );
+                                        ));
                                     }
                                 } else {
-                                    self.status_message =
-                                        format!("Unknown column command: {}", subcmd);
+                                    self.add_notification(format!(
+                                        "Unknown column command: {}",
+                                        subcmd
+                                    ));
                                 }
                             }
                         }
@@ -1431,13 +1528,13 @@ impl<'a> AppState<'a> {
                 // Cut command
                 "d" => {
                     if let Err(e) = self.cut_cell() {
-                        self.status_message = format!("Cut failed: {}", e);
+                        self.add_notification(format!("Cut failed: {}", e));
                     }
                 }
                 // Paste command (using Vim's Ex mode paste command)
                 "put" | "pu" => {
                     if let Err(e) = self.paste_cell() {
-                        self.status_message = format!("Paste failed: {}", e);
+                        self.add_notification(format!("Paste failed: {}", e));
                     }
                 }
                 // Disable search highlighting
@@ -1452,18 +1549,20 @@ impl<'a> AppState<'a> {
                     if cmd_parts.len() == 1 {
                         // Just :dr - delete current row
                         if let Err(e) = self.delete_current_row() {
-                            self.status_message = format!("Failed to delete row: {}", e);
+                            self.add_notification(format!("Failed to delete row: {}", e));
                         }
                     } else if cmd_parts.len() == 2 {
                         // :dr N - delete specific row
                         if let Ok(row) = cmd_parts[1].parse::<usize>() {
                             let row_num = row; // Store the value to avoid borrowing issues
                             if let Err(e) = self.delete_row(row) {
-                                self.status_message =
-                                    format!("Failed to delete row {}: {}", row_num, e);
+                                self.add_notification(format!(
+                                    "Failed to delete row {}: {}",
+                                    row_num, e
+                                ));
                             }
                         } else {
-                            self.status_message = "Invalid row number".to_string();
+                            self.add_notification("Invalid row number".to_string());
                         }
                     } else if cmd_parts.len() == 3 {
                         // :dr N M - delete rows N to M
@@ -1473,14 +1572,16 @@ impl<'a> AppState<'a> {
                             let start = start_row; // Store the values to avoid borrowing issues
                             let end = end_row;
                             if let Err(e) = self.delete_rows(start_row, end_row) {
-                                self.status_message =
-                                    format!("Failed to delete rows {} to {}: {}", start, end, e);
+                                self.add_notification(format!(
+                                    "Failed to delete rows {} to {}: {}",
+                                    start, end, e
+                                ));
                             }
                         } else {
-                            self.status_message = "Invalid row range".to_string();
+                            self.add_notification("Invalid row range".to_string());
                         }
                     } else {
-                        self.status_message = "Usage: :dr [row] [end_row]".to_string();
+                        self.add_notification("Usage: :dr [row] [end_row]".to_string());
                     }
                 }
 
@@ -1492,7 +1593,7 @@ impl<'a> AppState<'a> {
                     if cmd_parts.len() == 1 {
                         // Just :dc - delete current column
                         if let Err(e) = self.delete_current_column() {
-                            self.status_message = format!("Failed to delete column: {}", e);
+                            self.add_notification(format!("Failed to delete column: {}", e));
                         }
                     } else if cmd_parts.len() == 2 {
                         // :dc COL - delete specific column
@@ -1500,18 +1601,22 @@ impl<'a> AppState<'a> {
                         if let Some(col) = col_name_to_index(&cmd_parts[1]) {
                             let col_name = cmd_parts[1].clone();
                             if let Err(e) = self.delete_column(col) {
-                                self.status_message =
-                                    format!("Failed to delete column {}: {}", col_name, e);
+                                self.add_notification(format!(
+                                    "Failed to delete column {}: {}",
+                                    col_name, e
+                                ));
                             }
                         } else if let Ok(col) = cmd_parts[1].parse::<usize>() {
                             // Try to parse as column number
                             let col_num = col; // Store the value to avoid borrowing issues
                             if let Err(e) = self.delete_column(col) {
-                                self.status_message =
-                                    format!("Failed to delete column {}: {}", col_num, e);
+                                self.add_notification(format!(
+                                    "Failed to delete column {}: {}",
+                                    col_num, e
+                                ));
                             }
                         } else {
-                            self.status_message = "Invalid column reference".to_string();
+                            self.add_notification("Invalid column reference".to_string());
                         }
                     } else if cmd_parts.len() == 3 {
                         // :dc COL1 COL2 - delete columns COL1 to COL2
@@ -1520,7 +1625,7 @@ impl<'a> AppState<'a> {
                         } else if let Ok(col) = cmd_parts[1].parse::<usize>() {
                             col
                         } else {
-                            self.status_message = "Invalid start column reference".to_string();
+                            self.add_notification("Invalid start column reference".to_string());
                             return;
                         };
 
@@ -1529,7 +1634,7 @@ impl<'a> AppState<'a> {
                         } else if let Ok(col) = cmd_parts[2].parse::<usize>() {
                             col
                         } else {
-                            self.status_message = "Invalid end column reference".to_string();
+                            self.add_notification("Invalid end column reference".to_string());
                             return;
                         };
 
@@ -1537,41 +1642,19 @@ impl<'a> AppState<'a> {
                         let col2_name = cmd_parts[2].clone();
 
                         if let Err(e) = self.delete_columns(start_col, end_col) {
-                            self.status_message = format!(
+                            self.add_notification(format!(
                                 "Failed to delete columns {} to {}: {}",
                                 col1_name, col2_name, e
-                            );
+                            ));
                         }
                     } else {
-                        self.status_message = "Usage: :dc [column] [end_column]".to_string();
+                        self.add_notification("Usage: :dc [column] [end_column]".to_string());
                     }
                 }
 
-                // Help command
                 "help" => {
-                    self.status_message = format!(
-                        "Commands:\n\
-                         :w - Save file\n\
-                         :wq, :x - Save and quit\n\
-                         :q - Quit (will warn if unsaved changes)\n\
-                         :q! - Force quit without saving\n\
-                         :y - Copy current cell\n\
-                         :d - Cut current cell\n\
-                         :put, :pu - Paste to current cell\n\
-                         :[cell] - Jump to cell (e.g., :A1, :B10)\n\
-                         :nohlsearch, :noh - Disable search highlighting\n\
-                         :cw fit, :cw fit all, :cw min, :cw min all, :cw [number] - Column width commands\n\
-                         :ej [h|v] [rows] - Export current sheet to JSON (h=horizontal, v=vertical)\n\
-                         :eja [h|v] [rows] - Export all sheets to a single JSON file\n\
-                         :sheet [name/number] - Switch to sheet by name or index\n\
-                         :delsheet - Delete the current sheet\n\
-                         :dr - Delete current row\n\
-                         :dr [row] - Delete specific row\n\
-                         :dr [start] [end] - Delete rows from start to end\n\
-                         :dc - Delete current column\n\
-                         :dc [col] - Delete specific column (e.g., :dc A or :dc 1)\n\
-                         :dc [start] [end] - Delete columns from start to end (e.g., :dc A C)"
-                    );
+                    self.show_help();
+                    return;
                 }
                 // Try to parse as cell reference (e.g., A1, B10)
                 _ => {
@@ -1580,9 +1663,9 @@ impl<'a> AppState<'a> {
                     if let Some(cell_ref) = parse_cell_reference(cmd) {
                         self.selected_cell = cell_ref;
                         self.handle_scrolling();
-                        self.status_message = format!("Jumped to cell {}", cmd_clone);
+                        self.add_notification(format!("Jumped to cell {}", cmd_clone));
                     } else {
-                        self.status_message = format!("Unknown command: {}", cmd_clone);
+                        self.add_notification(format!("Unknown command: {}", cmd_clone));
                     }
                 }
             }
