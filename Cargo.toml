@@ -1,7 +1,12 @@
 [package]
 name = "sheet-cli"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+description = "A lightweight terminal-based Excel viewer with Vim-like navigation, it allows basic Excel file viewing and provides a simple way to export Excel data to JSON format."
+license = "MIT"
+repository = "https://github.com/fuhan666/sheet-cli"
+keywords = ["Excel", "Excel-export", "Excel-json", "calamine", "ratatui"]
+categories = ["command-line-utilities", "development-tools", "data-structures", "parsing"]
 
 [dependencies]
 ratatui = "0.24.0"
@@ -15,3 +20,9 @@ serde_json = "1.0"
 chrono = "0.4"
 indexmap = { version = "2.0", features = ["serde"] }
 ratatui-textarea = "0.4.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
