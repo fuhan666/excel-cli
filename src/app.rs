@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 use crate::excel::Workbook;
-use crate::json_export::{export_all_sheets_json, export_json, HeaderDirection};
+use crate::json_export::{HeaderDirection, export_all_sheets_json, export_json};
 use ratatui_textarea::TextArea;
 
 pub enum InputMode {
@@ -26,7 +26,8 @@ pub struct AppState<'a> {
     pub text_area: TextArea<'a>,
     pub status_message: String,
     pub should_quit: bool,
-    pub column_widths: Vec<usize>, // Store width for each column
+    pub column_widths: Vec<usize>, // Store width for current sheet's columns
+    pub sheet_column_widths: std::collections::HashMap<String, Vec<usize>>, // Store column widths for each sheet
     pub clipboard: Option<String>, // Store copied/cut cell content
     pub g_pressed: bool,           // Track if 'g' was pressed for 'gg' command
     pub search_query: String,      // Current search query
@@ -38,10 +39,27 @@ pub struct AppState<'a> {
 
 impl<'a> AppState<'a> {
     pub fn new(workbook: Workbook, file_path: PathBuf) -> Result<Self> {
-        // Initialize default column widths
+        // Initialize default column widths for current sheet
         let max_cols = workbook.get_current_sheet().max_cols;
         let default_width = 15;
         let column_widths = vec![default_width; max_cols + 1];
+
+        // Initialize column widths for all sheets
+        let mut sheet_column_widths = std::collections::HashMap::new();
+        let sheet_names = workbook.get_sheet_names();
+
+        for (i, name) in sheet_names.iter().enumerate() {
+            if i == workbook.get_current_sheet_index() {
+                sheet_column_widths.insert(name.clone(), column_widths.clone());
+            } else {
+                let sheet_max_cols = if let Some(sheet) = workbook.get_sheet_by_index(i) {
+                    sheet.max_cols
+                } else {
+                    max_cols // Fallback to current sheet's max_cols
+                };
+                sheet_column_widths.insert(name.clone(), vec![default_width; sheet_max_cols + 1]);
+            }
+        }
 
         // Initialize TextArea
         let text_area = TextArea::default();
@@ -60,6 +78,7 @@ impl<'a> AppState<'a> {
             status_message: String::new(),
             should_quit: false,
             column_widths,
+            sheet_column_widths,
             clipboard: None,
             g_pressed: false,
             search_query: String::new(),
@@ -687,27 +706,36 @@ impl<'a> AppState<'a> {
     }
 
     pub fn switch_sheet_by_index(&mut self, index: usize) -> Result<()> {
+        let current_sheet_name = self.workbook.get_current_sheet_name();
+        self.sheet_column_widths
+            .insert(current_sheet_name, self.column_widths.clone());
+
         // Reset cell selection and view position when switching sheets
         self.selected_cell = (1, 1);
         self.start_row = 1;
         self.start_col = 1;
 
-        // Switch sheet in workbook
         self.workbook.switch_sheet(index)?;
 
-        // Update column widths for the new sheet
-        let max_cols = self.workbook.get_current_sheet().max_cols;
-        let default_width = 15;
-        self.column_widths = vec![default_width; max_cols + 1];
+        let new_sheet_name = self.workbook.get_current_sheet_name();
+
+        // Restore column widths for the new sheet
+        if let Some(saved_widths) = self.sheet_column_widths.get(&new_sheet_name) {
+            self.column_widths = saved_widths.clone();
+        } else {
+            let max_cols = self.workbook.get_current_sheet().max_cols;
+            let default_width = 15;
+            self.column_widths = vec![default_width; max_cols + 1];
+
+            self.sheet_column_widths
+                .insert(new_sheet_name.clone(), self.column_widths.clone());
+        }
 
         // Clear search results as they're specific to the previous sheet
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.status_message = format!(
-            "Switched to sheet: {}",
-            self.workbook.get_current_sheet_name()
-        );
+        self.status_message = format!("Switched to sheet: {}", new_sheet_name);
         Ok(())
     }
 
@@ -754,15 +782,25 @@ impl<'a> AppState<'a> {
 
         match self.workbook.delete_current_sheet() {
             Ok(_) => {
+                self.sheet_column_widths.remove(&current_sheet_name);
+
                 // Reset cell selection and view position for the current sheet
                 self.selected_cell = (1, 1);
                 self.start_row = 1;
                 self.start_col = 1;
 
-                // Update column widths for the current sheet
-                let max_cols = self.workbook.get_current_sheet().max_cols;
-                let default_width = 15;
-                self.column_widths = vec![default_width; max_cols + 1];
+                let new_sheet_name = self.workbook.get_current_sheet_name();
+
+                if let Some(saved_widths) = self.sheet_column_widths.get(&new_sheet_name) {
+                    self.column_widths = saved_widths.clone();
+                } else {
+                    let max_cols = self.workbook.get_current_sheet().max_cols;
+                    let default_width = 15;
+                    self.column_widths = vec![default_width; max_cols + 1];
+
+                    self.sheet_column_widths
+                        .insert(new_sheet_name.clone(), self.column_widths.clone());
+                }
 
                 // Clear search results as they're specific to the previous sheet
                 self.search_results.clear();

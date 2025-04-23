@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use calamine::{open_workbook_auto, DataType, Reader};
+use calamine::{DataType, Reader, open_workbook_auto};
 use chrono::Local;
 use rust_xlsxwriter::{Format, Workbook as XlsxWorkbook};
 use std::path::Path;
@@ -193,6 +193,10 @@ fn create_sheet_from_range(name: &str, range: calamine::Range<DataType>) -> Shee
 impl Workbook {
     pub fn get_current_sheet(&self) -> &Sheet {
         &self.sheets[self.current_sheet_index]
+    }
+
+    pub fn get_sheet_by_index(&self, index: usize) -> Option<&Sheet> {
+        self.sheets.get(index)
     }
 
     pub fn set_cell_value(&mut self, row: usize, col: usize, value: String) -> Result<()> {
