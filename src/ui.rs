@@ -146,16 +146,16 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
                     let content = if app_state.selected_cell == (*row, *col)
                         && matches!(app_state.input_mode, InputMode::Editing)
                     {
-                        let buf = &app_state.input_buffer;
+                        let current_content = app_state.text_area.lines().join("\n");
                         let col_width = app_state.get_column_width(*col);
 
-                        let display_width = buf
+                        let display_width = current_content
                             .chars()
                             .fold(0, |acc, c| acc + if c.is_ascii() { 1 } else { 2 });
 
                         if display_width > col_width.saturating_sub(2) {
                             let mut cumulative_width = 0;
-                            let chars_to_show = buf
+                            let chars_to_show = current_content
                                 .chars()
                                 .rev()
                                 .take_while(|&c| {
@@ -172,7 +172,7 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
 
                             chars_to_show.into_iter().rev().collect()
                         } else {
-                            buf.clone()
+                            current_content
                         }
                     } else {
                         let content = app_state.get_cell_content(*row, *col);
@@ -833,6 +833,9 @@ fn handle_editing_mode(app_state: &mut AppState, key_code: KeyCode) {
                 state: crossterm::event::KeyEventState::NONE,
             };
             app_state.text_area.input(key_event);
+
+            // Update input_buffer with the current TextArea content to sync with cell display
+            app_state.input_buffer = app_state.text_area.lines().join("\n");
         }
     }
 }
