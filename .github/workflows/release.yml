@@ -73,7 +73,7 @@ jobs:
         id: changelog_reader
         uses: mindsers/changelog-reader-action@v2
         with:
-          changelog_path: "./CHANGELOG.md"
+          path: "./CHANGELOG.md"
           version: ${{ github.ref_name }}
 
       - name: Download all artifacts
