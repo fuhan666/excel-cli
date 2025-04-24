@@ -1128,54 +1128,40 @@ impl<'a> AppState<'a> {
 
     fn calculate_column_width(&self, col: usize) -> usize {
         let sheet = self.workbook.get_current_sheet();
-        let mut max_width = 3; // Minimum width
 
-        // Calculate header width
+        // Start with minimum width and header width
         let col_name = index_to_col_name(col);
-        max_width = max_width.max(col_name.len());
+        let mut max_width = 3.max(col_name.len());
 
-        // Check width of each cell content
-        for row in 1..=sheet.max_rows {
-            if row < sheet.data.len() && col < sheet.data[row].len() {
+        // Calculate max width from all cells in the column
+        let cell_max_width = (1..=sheet.max_rows)
+            .filter(|&row| row < sheet.data.len() && col < sheet.data[row].len())
+            .map(|row| {
                 let content = &sheet.data[row][col].value;
 
-                // Calculate display width with better handling for different character types
-                let display_width = content.chars().fold(0, |acc, c| {
-                    // More accurate width calculation:
-                    // - CJK characters: 2 units wide
-                    // - ASCII letters/numbers: 1 unit wide
-                    // - Other characters may need special handling
-                    if c.is_ascii() {
-                        // All ASCII characters count as 1 unit wide in the base calculation
-                        acc + 1
-                    } else {
-                        // CJK characters are double-width
-                        acc + 2
-                    }
-                });
+                // Calculate display width based on character types
+                let display_width = content
+                    .chars()
+                    .fold(0, |acc, c| acc + if c.is_ascii() { 1 } else { 2 });
 
-                // For English text, add extra width to ensure it fits completely
-                let adjusted_width = if content.chars().all(|c| c.is_ascii()) {
-                    // For pure English text, add extra space to ensure it fits
-                    // The factor 1.3 accounts for proportional font spacing in terminals
-                    // and wider characters like 'W', 'M', etc.
+                // Adjust width for better readability
+                if content.chars().all(|c| c.is_ascii()) {
+                    // For pure ASCII text, add proportional padding
                     (display_width as f32 * 1.3).ceil() as usize
                 } else {
                     display_width
-                };
+                }
+            })
+            .max()
+            .unwrap_or(0);
 
-                max_width = max_width.max(adjusted_width);
-            }
-        }
+        max_width = max_width.max(cell_max_width);
 
-        // Add padding to ensure content fits
-        // Use different padding for different content types
+        // Add appropriate padding based on content width
         if max_width > 20 {
-            // For very wide content, less padding is needed proportionally
-            max_width + 3
+            max_width + 3 // Less padding for wide content
         } else {
-            // For narrower content, more padding helps readability
-            max_width + 4
+            max_width + 4 // More padding for narrow content
         }
     }
 
@@ -1250,52 +1236,29 @@ impl<'a> AppState<'a> {
     }
 
     pub fn ensure_column_visible(&mut self, column: usize) {
-        let desired_right_margin_chars = 15;
-
+        // If column is to the left of visible area, adjust start_col
         if column < self.start_col {
-            // If column is to the left of visible area, adjust start_col
             self.start_col = column;
             return;
         }
 
         let last_visible_col = self.start_col + self.visible_cols - 1;
 
+        // If column is to the right of visible area, adjust start_col to make it visible
         if column > last_visible_col {
-            // If column is to the right of visible area, adjust start_col to make it visible
-            self.start_col = column - self.visible_cols + 1;
-            self.start_col = self.start_col.max(1);
+            self.start_col = (column - self.visible_cols + 1).max(1);
             return;
         }
 
-        // If we're here, the column is already visible
-        // add a right margin if possible
-
+        // If the column is already visible but at the right edge, try to add a margin
         let sheet = self.workbook.get_current_sheet();
         let max_col = sheet.max_cols;
 
-        if column < max_col {
-            let cols_to_right = last_visible_col - column;
-
-            if cols_to_right > 0 {
-                return;
-            }
-
-            let next_col = column + 1;
-            if next_col <= max_col {
-                let next_col_width = self.get_column_width(next_col);
-
-                if next_col_width <= desired_right_margin_chars {
-                    if self.visible_cols > 1 {
-                        self.start_col = column - (self.visible_cols - 2);
-                        self.start_col = self.start_col.max(1);
-                    }
-                } else {
-                    if self.visible_cols > 1 {
-                        self.start_col = column - (self.visible_cols - 2);
-                        self.start_col = self.start_col.max(1);
-                    }
-                }
-            }
+        // Only apply margin logic if not at the max column
+        if column < max_col && column == last_visible_col && self.visible_cols > 1 {
+            // Adjust start column to show more columns to the left
+            // This creates a margin on the right
+            self.start_col = (column - (self.visible_cols - 2)).max(1);
         }
     }
 

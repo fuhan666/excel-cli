@@ -50,20 +50,24 @@ pub fn run_app(mut app_state: AppState) -> Result<()> {
 }
 
 fn update_visible_area(app_state: &mut AppState, area: Rect) {
-    let visible_rows = (area.height as usize).saturating_sub(3);
-    app_state.visible_rows = visible_rows;
+    // Calculate visible rows based on available height
+    app_state.visible_rows = (area.height as usize).saturating_sub(3);
 
-    let total_width = area.width as usize;
-    let available_width = total_width.saturating_sub(5 + 2); // 5 for row numbers, 2 for borders
-
+    // Ensure the selected column is visible
     app_state.ensure_column_visible(app_state.selected_cell.1);
 
+    // Calculate available width for columns (subtract row numbers and borders)
+    let available_width = (area.width as usize).saturating_sub(7); // 5 for row numbers + 2 for borders
+
+    // Calculate how many columns can fit in the available width
     let mut visible_cols = 0;
     let mut width_used = 0;
 
+    // Start from the leftmost visible column and add columns until run out of space
     for col_idx in app_state.start_col.. {
         let col_width = app_state.get_column_width(col_idx);
 
+        // Always include the first column even if it's wider than available space
         if col_idx == app_state.start_col {
             width_used += col_width;
             visible_cols += 1;
@@ -71,21 +75,24 @@ fn update_visible_area(app_state: &mut AppState, area: Rect) {
             if width_used >= available_width {
                 break;
             }
-        } else {
-            if width_used + col_width <= available_width {
-                width_used += col_width;
-                visible_cols += 1;
-            }
-            // Excel-like behavior: include a partially visible column if there's space
-            else if width_used < available_width {
-                visible_cols += 1;
-                break;
-            } else {
-                break;
-            }
+        }
+        // For subsequent columns, add them if they fit completely
+        else if width_used + col_width <= available_width {
+            width_used += col_width;
+            visible_cols += 1;
+        }
+        // Excel-like behavior: include one partially visible column if there's any space left
+        else if width_used < available_width {
+            visible_cols += 1;
+            break;
+        }
+        // No more space available
+        else {
+            break;
         }
     }
 
+    // Ensure at least one column is visible
     app_state.visible_cols = visible_cols.max(1);
 }
 
@@ -253,7 +260,6 @@ fn parse_command(input: &str) -> Vec<Span> {
         return vec![Span::raw("")];
     }
 
-    // Define known commands and their parameters
     let known_commands = [
         "w",
         "wq",
@@ -270,121 +276,45 @@ fn parse_command(input: &str) -> Vec<Span> {
         "delsheet",
     ];
 
-    // Commands with parameters
-    let commands_with_params = ["cw", "ej", "sheet", "dr", "dc"];
+    let commands_with_params = ["cw", "ej", "eja", "sheet", "dr", "dc"];
+
+    let special_keywords = ["fit", "min", "all", "h", "v", "horizontal", "vertical"];
 
     // Check if input is a simple command without parameters
     if known_commands.contains(&input) {
         return vec![Span::styled(input, Style::default().fg(Color::Yellow))];
     }
 
-    // Check for commands with parameters
-    for &cmd in &commands_with_params {
-        if input.starts_with(cmd)
-            && (input.len() == cmd.len() || input.chars().nth(cmd.len()) == Some(' '))
-        {
-            let mut spans = Vec::new();
-
-            // Add the command part with yellow color
-            spans.push(Span::styled(cmd, Style::default().fg(Color::Yellow)));
-
-            // If there are parameters, add them with a different color
-            if input.len() > cmd.len() {
-                let params = &input[cmd.len()..];
-                spans.push(Span::styled(params, Style::default().fg(Color::LightCyan)));
-            }
-
-            return spans;
-        }
+    // Extract command and parameters
+    let parts: Vec<&str> = input.split_whitespace().collect();
+    if parts.is_empty() {
+        return vec![Span::raw(input)];
     }
 
-    if input.starts_with("ej ") {
-        let mut spans = Vec::new();
-        let parts: Vec<&str> = input.split_whitespace().collect();
+    let cmd = parts[0];
 
-        // Handle "ej" command
-        spans.push(Span::styled("ej", Style::default().fg(Color::Yellow)));
+    // Check if it's a known command with parameters
+    if commands_with_params.contains(&cmd) || (cmd.starts_with("ej") && cmd.len() <= 3) {
+        let mut spans = Vec::new();
+
+        // Add the command part with yellow color
+        spans.push(Span::styled(cmd, Style::default().fg(Color::Yellow)));
 
         // Add parameters if they exist
         if parts.len() > 1 {
             spans.push(Span::raw(" "));
+
             for i in 1..parts.len() {
-                spans.push(Span::styled(
-                    parts[i],
-                    Style::default().fg(Color::LightCyan),
-                ));
-                if i < parts.len() - 1 {
-                    spans.push(Span::raw(" "));
-                }
-            }
-        }
-
-        return spans;
-    }
-
-    if input.starts_with("cw ") {
-        let mut spans = Vec::new();
-        let parts: Vec<&str> = input.split_whitespace().collect();
-
-        spans.push(Span::styled("cw", Style::default().fg(Color::Yellow)));
-
-        // Add parameters if they exist
-        if parts.len() > 1 {
-            spans.push(Span::raw(" "));
-            for i in 1..parts.len() {
-                let style = if parts[i] == "fit" || parts[i] == "min" || parts[i] == "all" {
+                // Determine style based on whether it's a special keyword
+                let style = if special_keywords.contains(&parts[i]) {
                     Style::default().fg(Color::Yellow) // Keywords are yellow
                 } else {
                     Style::default().fg(Color::LightCyan) // Parameters are cyan
                 };
 
                 spans.push(Span::styled(parts[i], style));
-                if i < parts.len() - 1 {
-                    spans.push(Span::raw(" "));
-                }
-            }
-        }
 
-        return spans;
-    }
-
-    if input.starts_with("dr") {
-        let mut spans = Vec::new();
-        let parts: Vec<&str> = input.split_whitespace().collect();
-
-        spans.push(Span::styled("dr", Style::default().fg(Color::Yellow)));
-
-        // Add parameters if they exist
-        if parts.len() > 1 {
-            spans.push(Span::raw(" "));
-            for i in 1..parts.len() {
-                spans.push(Span::styled(
-                    parts[i],
-                    Style::default().fg(Color::LightCyan),
-                ));
-                if i < parts.len() - 1 {
-                    spans.push(Span::raw(" "));
-                }
-            }
-        }
-
-        return spans;
-    }
-
-    if input.starts_with("dc") {
-        let mut spans = Vec::new();
-        let parts: Vec<&str> = input.split_whitespace().collect();
-
-        spans.push(Span::styled("dc", Style::default().fg(Color::Yellow)));
-
-        // Add parameters if they exist
-        if parts.len() > 1 {
-            spans.push(Span::raw(" "));
-            for i in 1..parts.len() {
-                spans.push(Span::styled(
-                    parts[i],
-                    Style::default().fg(Color::LightCyan),
-                ));
+                // Add space between parameters
                 if i < parts.len() - 1 {
                     spans.push(Span::raw(" "));
                 }

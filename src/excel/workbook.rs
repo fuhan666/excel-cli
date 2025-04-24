@@ -276,31 +276,34 @@ impl Workbook {
 
         let now = Local::now();
         let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
-
         let path = Path::new(&self.file_path);
         let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("sheet");
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("xlsx");
-
         let parent_dir = path.parent().unwrap_or_else(|| Path::new(""));
         let new_filename = format!("{}_{}.{}", file_stem, timestamp, extension);
         let new_filepath = parent_dir.join(new_filename);
 
+        // Create formats
         let number_format = Format::new().set_num_format("General");
         let date_format = Format::new().set_num_format("yyyy-mm-dd");
 
+        // Process each sheet
         for sheet in &self.sheets {
-            let worksheet = workbook.add_worksheet().set_name(&sheet.name)?;
+            let mut worksheet = workbook.add_worksheet().set_name(&sheet.name)?;
 
+            // Set column widths
             for col in 0..sheet.max_cols {
                 worksheet.set_column_width(col as u16, 15)?;
             }
 
+            // Write cell data
             for row in 1..sheet.data.len() {
                 if row <= sheet.max_rows {
                     for col in 1..sheet.data[0].len() {
                         if col <= sheet.max_cols {
                             let cell = &sheet.data[row][col];
 
+                            // Skip empty cells
                             if cell.value.is_empty() {
                                 continue;
                             }
@@ -308,6 +311,7 @@ impl Workbook {
                             let row_idx = (row - 1) as u32;
                             let col_idx = (col - 1) as u16;
 
+                            // Write cell based on its type
                             match cell.cell_type {
                                 CellType::Number => {
                                     if let Ok(num) = cell.value.parse::<f64>() {
@@ -353,9 +357,6 @@ impl Workbook {
         }
 
         workbook.save(&new_filepath)?;
-
-        println!("File saved as: {}", new_filepath.display());
-
         self.is_modified = false;
 
         Ok(())
