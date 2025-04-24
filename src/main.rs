@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 mod app;
@@ -31,6 +32,11 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    if !std::io::stdout().is_terminal() && !cli.json_export {
+        eprintln!("Excel-cli error: Pipe detected but -j or --json-export flag not provided.");
+        std::process::exit(1);
+    }
 
     // Open Excel file
     let workbook = excel::open_workbook(&cli.file_path)?;
