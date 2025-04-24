@@ -12,18 +12,36 @@ A lightweight terminal-based Excel viewer with Vim-like navigation, it allows ba
 - Save changes to Excel files
 - Export data to JSON format
 
-## Installation
+## Installation & Uninstallation
+
+### Installation
+
+#### Option 1: Install from Cargo (Recommended)
+
+The package is published to crates.io and can be installed directly using:
+
+```bash
+cargo install excel-cli
+```
+
+#### Option 2: Compile from Source
 
 Requires Rust and Cargo. Install using the following commands:
 
 ```bash
-# Compile from source
-git clone https://github.com/yourusername/excel-cli.git
+# Clone the repository
+git clone https://github.com/fuhan666/excel-cli.git
 cd excel-cli
 cargo build --release
 
 # Install to system
 cargo install --path .
+```
+
+### Uninstallation
+
+```bash
+cargo uninstall excel-cli
 ```
 
 ## Usage
@@ -39,7 +57,7 @@ excel-cli path/to/your/file.xlsx --json-export
 excel-cli path/to/your/file.xlsx -j -d v -r 2
 
 # Pipe JSON output to another command
-excel-cli path/to/your/file.xlsx -j | jq '.SheetName[0]'
+excel-cli path/to/your/file.xlsx -j > data.json # (example) Save JSON output to a file
 ```
 
 ### Command-line Options

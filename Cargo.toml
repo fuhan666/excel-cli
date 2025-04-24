@@ -1,6 +1,6 @@
 [package]
 name = "excel-cli"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "A lightweight terminal-based Excel viewer with Vim-like navigation, it allows basic Excel file viewing and provides a simple way to export Excel data to JSON format."
 license = "MIT"
