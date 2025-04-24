@@ -506,12 +506,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
             f.render_widget(text_area.widget(), chunks[1]);
         }
 
-        InputMode::Help => {
-            let status = "Help Mode - Press Enter or Esc to close".to_string();
-            let status_style = Style::default().bg(Color::Black).fg(Color::White);
-            let status_widget = Paragraph::new(status).style(status_style);
-            f.render_widget(status_widget, area);
-        }
+        InputMode::Help => {}
     }
 }
 
@@ -552,8 +547,25 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
 
     app_state.help_scroll = app_state.help_scroll.min(max_scroll);
 
+    let mut title = " HELP ".to_string();
+
+    let exit_instructions = " [ESC/Enter to close] ";
+    title.push_str(exit_instructions);
+
+    // Add scroll indicators if content is scrollable
+    if max_scroll > 0 {
+        let scroll_indicator = if app_state.help_scroll == 0 {
+            " [↓ or j to scroll] "
+        } else if app_state.help_scroll >= max_scroll {
+            " [↑ or k to scroll] "
+        } else {
+            " [↑↓ or j/k to scroll] "
+        };
+        title.push_str(scroll_indicator);
+    }
+
     let help_block = Block::default()
-        .title(" HELP ")
+        .title(title)
         .title_style(
             Style::default()
                 .fg(Color::Yellow)

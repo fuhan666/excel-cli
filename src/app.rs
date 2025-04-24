@@ -233,10 +233,7 @@ impl AppState<'_> {
              :delsheet   - Delete the current sheet\n\n\
              UI ADJUSTMENTS:\n\
              +/=         - Increase info panel height\n\
-             -           - Decrease info panel height\n\n\
-             HELP NAVIGATION:\n\
-             j/k, Up/Down  - Scroll help text up/down\n\
-             Enter/Esc     - Close help window"
+             -           - Decrease info panel height"
             .to_string();
 
         self.input_mode = InputMode::Help;

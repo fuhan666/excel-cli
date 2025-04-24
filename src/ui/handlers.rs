@@ -252,14 +252,6 @@ fn handle_help_mode(app_state: &mut AppState, key_code: KeyCode) {
             // Scroll up
             app_state.help_scroll = app_state.help_scroll.saturating_sub(1);
         }
-        KeyCode::PageDown => {
-            // Scroll down by a larger amount, but not beyond the last line
-            app_state.help_scroll = (app_state.help_scroll + 10).min(max_scroll);
-        }
-        KeyCode::PageUp => {
-            // Scroll up by a larger amount
-            app_state.help_scroll = app_state.help_scroll.saturating_sub(10);
-        }
         KeyCode::Home => {
             // Scroll to the top
             app_state.help_scroll = 0;
