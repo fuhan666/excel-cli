@@ -1,4 +1,4 @@
-# Sheet-CLI
+# Excel-CLI
 
 A lightweight terminal-based Excel viewer with Vim-like navigation, it allows basic Excel file viewing and provides a simple way to export Excel data to JSON format.
 
@@ -18,8 +18,8 @@ Requires Rust and Cargo. Install using the following commands:
 
 ```bash
 # Compile from source
-git clone https://github.com/yourusername/sheet-cli.git
-cd sheet-cli
+git clone https://github.com/yourusername/excel-cli.git
+cd excel-cli
 cargo build --release
 
 # Install to system
@@ -30,16 +30,16 @@ cargo install --path .
 
 ```bash
 # Open an Excel file in interactive mode
-sheet-cli path/to/your/file.xlsx
+excel-cli path/to/your/file.xlsx
 
 # Export all sheets to JSON and output to stdout (for piping)
-sheet-cli path/to/your/file.xlsx --json-export
+excel-cli path/to/your/file.xlsx --json-export
 
 # Export with custom header direction and count
-sheet-cli path/to/your/file.xlsx -j -d v -r 2
+excel-cli path/to/your/file.xlsx -j -d v -r 2
 
 # Pipe JSON output to another command
-sheet-cli path/to/your/file.xlsx -j | jq '.SheetName[0]'
+excel-cli path/to/your/file.xlsx -j | jq '.SheetName[0]'
 ```
 
 ### Command-line Options
@@ -162,7 +162,7 @@ The output filename is automatically generated in one of these formats:
 
 ## File Saving Logic
 
-Sheet-CLI uses a non-destructive approach to file saving:
+Excel-CLI uses a non-destructive approach to file saving:
 
 - When you save a file (using `:w`, `:wq`, or `:x`), the application checks if any changes have been made.
 - If no changes have been made, no new file is created, and a "No changes to save" message is displayed.

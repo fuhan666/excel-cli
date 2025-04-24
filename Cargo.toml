@@ -1,10 +1,10 @@
 [package]
-name = "sheet-cli"
+name = "excel-cli"
 version = "0.1.0"
 edition = "2024"
 description = "A lightweight terminal-based Excel viewer with Vim-like navigation, it allows basic Excel file viewing and provides a simple way to export Excel data to JSON format."
 license = "MIT"
-repository = "https://github.com/fuhan666/sheet-cli"
+repository = "https://github.com/fuhan666/excel-cli"
 keywords = ["Excel", "Excel-export", "Excel-json", "calamine", "ratatui"]
 categories = ["command-line-utilities", "development-tools", "data-structures", "parsing"]
 
