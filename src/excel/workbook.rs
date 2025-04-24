@@ -4,96 +4,14 @@ use chrono::Local;
 use rust_xlsxwriter::{Format, Workbook as XlsxWorkbook};
 use std::path::Path;
 
+use crate::excel::{Cell, CellType, DataTypeInfo, Sheet};
+
 #[derive(Clone)]
 pub struct Workbook {
     sheets: Vec<Sheet>,
     current_sheet_index: usize,
     file_path: String,
     is_modified: bool,
-}
-
-#[derive(Clone)]
-pub struct Sheet {
-    pub name: String,
-    pub data: Vec<Vec<Cell>>,
-    pub max_rows: usize,
-    pub max_cols: usize,
-}
-
-#[derive(Clone)]
-pub struct Cell {
-    pub value: String,
-    pub is_formula: bool,
-    pub cell_type: CellType,
-    pub original_type: Option<DataTypeInfo>,
-}
-
-#[derive(Clone, PartialEq)]
-pub enum CellType {
-    Text,
-    Number,
-    Date,
-    Boolean,
-    Empty,
-}
-
-#[derive(Clone, PartialEq)]
-pub enum DataTypeInfo {
-    Empty,
-    String,
-    Float(f64),
-    Int(i64),
-    Bool(bool),
-    DateTime(f64),
-    Duration(f64),
-    DateTimeIso(String),
-    DurationIso(String),
-    Error,
-}
-
-impl Cell {
-    pub fn new(value: String, is_formula: bool) -> Self {
-        let cell_type = if value.is_empty() {
-            CellType::Empty
-        } else if is_formula {
-            CellType::Text
-        } else if value.parse::<f64>().is_ok() {
-            CellType::Number
-        } else if value.contains('/') && value.split('/').count() == 3 {
-            CellType::Date
-        } else if value.contains('-') && value.split('-').count() == 3 {
-            CellType::Date
-        } else if value == "true" || value == "false" {
-            CellType::Boolean
-        } else {
-            CellType::Text
-        };
-
-        Self::new_with_type(value, is_formula, cell_type, None)
-    }
-
-    pub fn new_with_type(
-        value: String,
-        is_formula: bool,
-        cell_type: CellType,
-        original_type: Option<DataTypeInfo>,
-    ) -> Self {
-        Self {
-            value,
-            is_formula,
-            cell_type,
-            original_type,
-        }
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            value: String::new(),
-            is_formula: false,
-            cell_type: CellType::Empty,
-            original_type: Some(DataTypeInfo::Empty),
-        }
-    }
 }
 
 pub fn open_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
@@ -133,49 +51,72 @@ fn create_sheet_from_range(name: &str, range: calamine::Range<DataType>) -> Shee
 
     for (row_idx, row) in range.rows().enumerate() {
         for (col_idx, cell) in row.iter().enumerate() {
+            if let DataType::Empty = cell {
+                continue;
+            }
+
             // Extract value, cell_type, and original_type from the DataType
             let (value, cell_type, original_type) = match cell {
                 DataType::Empty => (String::new(), CellType::Empty, Some(DataTypeInfo::Empty)),
-                DataType::String(s) => (s.to_string(), CellType::Text, Some(DataTypeInfo::String)),
-                DataType::Float(f) => (
-                    f.to_string(),
-                    CellType::Number,
-                    Some(DataTypeInfo::Float(*f)),
-                ),
+                DataType::String(s) => {
+                    let mut value = String::with_capacity(s.len());
+                    value.push_str(s);
+                    (value, CellType::Text, Some(DataTypeInfo::String))
+                }
+                DataType::Float(f) => {
+                    let value = if *f == (*f as i64) as f64 && f.abs() < 1e10 {
+                        (*f as i64).to_string()
+                    } else {
+                        f.to_string()
+                    };
+                    (value, CellType::Number, Some(DataTypeInfo::Float(*f)))
+                }
                 DataType::Int(i) => (i.to_string(), CellType::Number, Some(DataTypeInfo::Int(*i))),
                 DataType::Bool(b) => (
-                    b.to_string(),
+                    if *b {
+                        "TRUE".to_string()
+                    } else {
+                        "FALSE".to_string()
+                    },
                     CellType::Boolean,
                     Some(DataTypeInfo::Bool(*b)),
                 ),
-                DataType::Error(e) => (
-                    format!("Error: {:?}", e),
-                    CellType::Text,
-                    Some(DataTypeInfo::Error),
-                ),
+                DataType::Error(e) => {
+                    // Pre-allocate with capacity for error message
+                    let mut value = String::with_capacity(15);
+                    value.push_str("Error: ");
+                    value.push_str(&format!("{:?}", e));
+                    (value, CellType::Text, Some(DataTypeInfo::Error))
+                }
                 DataType::DateTime(dt) => (
-                    format!("{}", dt),
+                    dt.to_string(),
                     CellType::Date,
                     Some(DataTypeInfo::DateTime(*dt)),
                 ),
                 DataType::Duration(d) => (
-                    format!("{}", d),
+                    d.to_string(),
                     CellType::Text,
                     Some(DataTypeInfo::Duration(*d)),
                 ),
-                DataType::DateTimeIso(s) => (
-                    s.to_string(),
-                    CellType::Date,
-                    Some(DataTypeInfo::DateTimeIso(s.to_string())),
-                ),
-                DataType::DurationIso(s) => (
-                    s.to_string(),
-                    CellType::Text,
-                    Some(DataTypeInfo::DurationIso(s.to_string())),
-                ),
+                DataType::DateTimeIso(s) => {
+                    let value = s.to_string();
+                    (
+                        value.clone(),
+                        CellType::Date,
+                        Some(DataTypeInfo::DateTimeIso(value)),
+                    )
+                }
+                DataType::DurationIso(s) => {
+                    let value = s.to_string();
+                    (
+                        value.clone(),
+                        CellType::Text,
+                        Some(DataTypeInfo::DurationIso(value)),
+                    )
+                }
             };
 
-            let is_formula = value.starts_with('=');
+            let is_formula = !value.is_empty() && value.starts_with('=');
 
             data[row_idx + 1][col_idx + 1] =
                 Cell::new_with_type(value, is_formula, cell_type, original_type);
@@ -216,7 +157,11 @@ impl Workbook {
     }
 
     pub fn get_sheet_names(&self) -> Vec<String> {
-        self.sheets.iter().map(|s| s.name.clone()).collect()
+        let mut names = Vec::with_capacity(self.sheets.len());
+        for sheet in &self.sheets {
+            names.push(sheet.name.clone());
+        }
+        names
     }
 
     pub fn get_current_sheet_name(&self) -> String {
@@ -358,31 +303,34 @@ impl Workbook {
 
         let now = Local::now();
         let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
-
         let path = Path::new(&self.file_path);
         let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("sheet");
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("xlsx");
-
         let parent_dir = path.parent().unwrap_or_else(|| Path::new(""));
         let new_filename = format!("{}_{}.{}", file_stem, timestamp, extension);
         let new_filepath = parent_dir.join(new_filename);
 
+        // Create formats
         let number_format = Format::new().set_num_format("General");
         let date_format = Format::new().set_num_format("yyyy-mm-dd");
 
+        // Process each sheet
         for sheet in &self.sheets {
             let worksheet = workbook.add_worksheet().set_name(&sheet.name)?;
 
+            // Set column widths
             for col in 0..sheet.max_cols {
                 worksheet.set_column_width(col as u16, 15)?;
             }
 
+            // Write cell data
             for row in 1..sheet.data.len() {
                 if row <= sheet.max_rows {
                     for col in 1..sheet.data[0].len() {
                         if col <= sheet.max_cols {
                             let cell = &sheet.data[row][col];
 
+                            // Skip empty cells
                             if cell.value.is_empty() {
                                 continue;
                             }
@@ -390,6 +338,7 @@ impl Workbook {
                             let row_idx = (row - 1) as u32;
                             let col_idx = (col - 1) as u16;
 
+                            // Write cell based on its type
                             match cell.cell_type {
                                 CellType::Number => {
                                     if let Ok(num) = cell.value.parse::<f64>() {
@@ -435,9 +384,6 @@ impl Workbook {
         }
 
         workbook.save(&new_filepath)?;
-
-        println!("File saved as: {}", new_filepath.display());
-
         self.is_modified = false;
 
         Ok(())

@@ -302,6 +302,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "excel-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "calamine",
+ "chrono",
+ "clap",
+ "crossterm",
+ "indexmap",
+ "ratatui",
+ "ratatui-textarea",
+ "rust_xlsxwriter",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "flate2"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -636,23 +653,6 @@ dependencies = [
  "memchr",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "excel-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "calamine",
- "chrono",
- "clap",
- "crossterm",
- "indexmap",
- "ratatui",
- "ratatui-textarea",
- "rust_xlsxwriter",
- "serde",
- "serde_json",
 ]
 
 [[package]]

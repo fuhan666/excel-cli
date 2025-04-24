@@ -1,9 +1,10 @@
 use anyhow::Result;
-use std::path::{Path, PathBuf};
+use ratatui_textarea::TextArea;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::excel::Workbook;
-use crate::json_export::{HeaderDirection, export_all_sheets_json, export_json};
-use ratatui_textarea::TextArea;
+use crate::utils::{Direction, find_non_empty_cell};
 
 pub enum InputMode {
     Normal,
@@ -27,7 +28,7 @@ pub struct AppState<'a> {
     pub text_area: TextArea<'a>,
     pub should_quit: bool,
     pub column_widths: Vec<usize>, // Store width for current sheet's columns
-    pub sheet_column_widths: std::collections::HashMap<String, Vec<usize>>, // Store column widths for each sheet
+    pub sheet_column_widths: HashMap<String, Vec<usize>>, // Store column widths for each sheet
     pub clipboard: Option<String>, // Store copied/cut cell content
     pub g_pressed: bool,           // Track if 'g' was pressed for 'gg' command
     pub search_query: String,      // Current search query
@@ -43,7 +44,7 @@ pub struct AppState<'a> {
     pub help_visible_lines: usize,
 }
 
-impl<'a> AppState<'a> {
+impl AppState<'_> {
     pub fn new(workbook: Workbook, file_path: PathBuf) -> Result<Self> {
         // Initialize default column widths for current sheet
         let max_cols = workbook.get_current_sheet().max_cols;
@@ -51,7 +52,7 @@ impl<'a> AppState<'a> {
         let column_widths = vec![default_width; max_cols + 1];
 
         // Initialize column widths for all sheets
-        let mut sheet_column_widths = std::collections::HashMap::new();
+        let mut sheet_column_widths = HashMap::new();
         let sheet_names = workbook.get_sheet_names();
 
         for (i, name) in sheet_names.iter().enumerate() {
@@ -128,7 +129,10 @@ impl<'a> AppState<'a> {
         if row < sheet.data.len() && col < sheet.data[0].len() {
             let cell = &sheet.data[row][col];
             if cell.is_formula {
-                format!("Formula: {}", cell.value)
+                let mut result = String::with_capacity(9 + cell.value.len());
+                result.push_str("Formula: ");
+                result.push_str(&cell.value);
+                result
             } else {
                 cell.value.clone()
             }
@@ -146,7 +150,7 @@ impl<'a> AppState<'a> {
     }
 
     pub fn adjust_info_panel_height(&mut self, delta: isize) {
-        let new_height = (self.info_panel_height as isize + delta).max(3).min(15) as usize;
+        let new_height = (self.info_panel_height as isize + delta).clamp(3, 15) as usize;
         if new_height != self.info_panel_height {
             self.info_panel_height = new_height;
             self.add_notification(format!("Info panel height: {}", self.info_panel_height));
@@ -179,8 +183,7 @@ impl<'a> AppState<'a> {
     pub fn show_help(&mut self) {
         self.help_scroll = 0;
 
-        self.help_text = format!(
-            "FILE OPERATIONS:\n\
+        self.help_text = "FILE OPERATIONS:\n\
              :w          - Save file\n\
              :wq, :x     - Save and quit\n\
              :q          - Quit (will warn if unsaved changes)\n\
@@ -234,7 +237,7 @@ impl<'a> AppState<'a> {
              HELP NAVIGATION:\n\
              j/k, Up/Down  - Scroll help text up/down\n\
              Enter/Esc     - Close help window"
-        );
+            .to_string();
 
         self.input_mode = InputMode::Help;
     }
@@ -311,266 +314,57 @@ impl<'a> AppState<'a> {
         self.add_notification("Jumped to last column".to_string());
     }
 
-    pub fn jump_to_prev_non_empty_cell_left(&mut self) {
+    /// Generic method for navigating to non-empty cells
+    fn jump_to_non_empty_cell(&mut self, direction: Direction) {
         let sheet = self.workbook.get_current_sheet();
-        let (row, col) = self.selected_cell;
+        let max_bounds = (sheet.max_rows, sheet.max_cols);
+        let current_pos = self.selected_cell;
 
-        if col <= 1 {
-            return;
-        }
-
-        let current_cell_is_empty = row >= sheet.data.len()
-            || col >= sheet.data[row].len()
-            || sheet.data[row][col].value.is_empty();
-
-        if current_cell_is_empty {
-            let mut target_col = 1;
-            let mut found_non_empty = false;
-
-            for c in (1..col).rev() {
-                if row < sheet.data.len()
-                    && c < sheet.data[row].len()
-                    && !sheet.data[row][c].value.is_empty()
-                {
-                    target_col = c;
-                    found_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_non_empty {
-                target_col = 1;
-            }
-
-            self.selected_cell = (row, target_col);
+        if let Some(new_pos) = find_non_empty_cell(sheet, current_pos, direction, max_bounds) {
+            self.selected_cell = new_pos;
             self.handle_scrolling();
-            self.add_notification("Jumped to first non-empty cell (left)".to_string());
-        } else {
-            let mut target_col = 1;
-            let mut last_non_empty_col = col;
-            let mut found_empty_after_non_empty = false;
 
-            for c in (1..col).rev() {
-                if row < sheet.data.len() && c < sheet.data[row].len() {
-                    if sheet.data[row][c].value.is_empty() {
-                        target_col = c + 1;
-                        found_empty_after_non_empty = true;
-                        break;
-                    } else {
-                        last_non_empty_col = c;
-                    }
-                } else {
-                    target_col = c + 1;
-                    found_empty_after_non_empty = true;
-                    break;
-                }
-            }
+            let dir_name = match direction {
+                Direction::Left => "left",
+                Direction::Right => "right",
+                Direction::Up => "up",
+                Direction::Down => "down",
+            };
 
-            if !found_empty_after_non_empty {
-                target_col = last_non_empty_col;
-            }
+            // Re-fetch sheet to avoid borrow conflict
+            let sheet = self.workbook.get_current_sheet();
 
-            self.selected_cell = (row, target_col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to last non-empty cell (left)".to_string());
+            let (row, col) = self.selected_cell;
+            let is_cell_empty = row >= sheet.data.len()
+                || col >= sheet.data[row].len()
+                || sheet.data[row][col].value.is_empty();
+
+            let message = if is_cell_empty {
+                format!("Jumped to first non-empty cell ({})", dir_name)
+            } else {
+                format!("Jumped to last non-empty cell ({})", dir_name)
+            };
+
+            self.add_notification(message);
         }
+    }
+
+    // Direction-specific convenience methods
+
+    pub fn jump_to_prev_non_empty_cell_left(&mut self) {
+        self.jump_to_non_empty_cell(Direction::Left);
     }
 
     pub fn jump_to_prev_non_empty_cell_right(&mut self) {
-        let sheet = self.workbook.get_current_sheet();
-        let (row, col) = self.selected_cell;
-        let max_col = sheet.max_cols;
-
-        if col >= max_col {
-            return;
-        }
-
-        let current_cell_is_empty = row >= sheet.data.len()
-            || col >= sheet.data[row].len()
-            || sheet.data[row][col].value.is_empty();
-
-        if current_cell_is_empty {
-            let mut target_col = max_col;
-            let mut found_non_empty = false;
-
-            for c in (col + 1)..=max_col {
-                if row < sheet.data.len()
-                    && c < sheet.data[row].len()
-                    && !sheet.data[row][c].value.is_empty()
-                {
-                    target_col = c;
-                    found_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_non_empty {
-                target_col = max_col;
-            }
-
-            self.selected_cell = (row, target_col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to first non-empty cell (right)".to_string());
-        } else {
-            let mut target_col = max_col;
-            let mut last_non_empty_col = col;
-            let mut found_empty_after_non_empty = false;
-
-            for c in (col + 1)..=max_col {
-                if row < sheet.data.len() && c < sheet.data[row].len() {
-                    if sheet.data[row][c].value.is_empty() {
-                        target_col = c - 1;
-                        found_empty_after_non_empty = true;
-                        break;
-                    } else {
-                        last_non_empty_col = c;
-                    }
-                } else {
-                    target_col = c - 1;
-                    found_empty_after_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_empty_after_non_empty {
-                target_col = last_non_empty_col;
-            }
-
-            self.selected_cell = (row, target_col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to last non-empty cell (right)".to_string());
-        }
+        self.jump_to_non_empty_cell(Direction::Right);
     }
 
     pub fn jump_to_prev_non_empty_cell_up(&mut self) {
-        let sheet = self.workbook.get_current_sheet();
-        let (row, col) = self.selected_cell;
-
-        if row <= 1 {
-            return;
-        }
-
-        let current_cell_is_empty = row >= sheet.data.len()
-            || col >= sheet.data[row].len()
-            || sheet.data[row][col].value.is_empty();
-
-        if current_cell_is_empty {
-            let mut target_row = 1;
-            let mut found_non_empty = false;
-
-            for r in (1..row).rev() {
-                if r < sheet.data.len()
-                    && col < sheet.data[r].len()
-                    && !sheet.data[r][col].value.is_empty()
-                {
-                    target_row = r;
-                    found_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_non_empty {
-                target_row = 1;
-            }
-
-            self.selected_cell = (target_row, col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to first non-empty cell (up)".to_string());
-        } else {
-            let mut target_row = 1;
-            let mut last_non_empty_row = row;
-            let mut found_empty_after_non_empty = false;
-
-            for r in (1..row).rev() {
-                if r < sheet.data.len() && col < sheet.data[r].len() {
-                    if sheet.data[r][col].value.is_empty() {
-                        target_row = r + 1;
-                        found_empty_after_non_empty = true;
-                        break;
-                    } else {
-                        last_non_empty_row = r;
-                    }
-                } else {
-                    target_row = r + 1;
-                    found_empty_after_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_empty_after_non_empty {
-                target_row = last_non_empty_row;
-            }
-
-            self.selected_cell = (target_row, col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to last non-empty cell (up)".to_string());
-        }
+        self.jump_to_non_empty_cell(Direction::Up);
     }
 
     pub fn jump_to_prev_non_empty_cell_down(&mut self) {
-        let sheet = self.workbook.get_current_sheet();
-        let (row, col) = self.selected_cell;
-        let max_row = sheet.max_rows;
-
-        if row >= max_row {
-            return;
-        }
-
-        let current_cell_is_empty = row >= sheet.data.len()
-            || col >= sheet.data[row].len()
-            || sheet.data[row][col].value.is_empty();
-
-        if current_cell_is_empty {
-            let mut target_row = max_row;
-            let mut found_non_empty = false;
-
-            for r in (row + 1)..=max_row {
-                if r < sheet.data.len()
-                    && col < sheet.data[r].len()
-                    && !sheet.data[r][col].value.is_empty()
-                {
-                    target_row = r;
-                    found_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_non_empty {
-                target_row = max_row;
-            }
-
-            self.selected_cell = (target_row, col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to first non-empty cell (down)".to_string());
-        } else {
-            let mut target_row = max_row;
-            let mut last_non_empty_row = row;
-            let mut found_empty_after_non_empty = false;
-
-            for r in (row + 1)..=max_row {
-                if r < sheet.data.len() && col < sheet.data[r].len() {
-                    if sheet.data[r][col].value.is_empty() {
-                        target_row = r - 1;
-                        found_empty_after_non_empty = true;
-                        break;
-                    } else {
-                        last_non_empty_row = r;
-                    }
-                } else {
-                    target_row = r - 1;
-                    found_empty_after_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_empty_after_non_empty {
-                target_row = last_non_empty_row;
-            }
-
-            self.selected_cell = (target_row, col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to last non-empty cell (down)".to_string());
-        }
+        self.jump_to_non_empty_cell(Direction::Down);
     }
 
     pub fn start_search_forward(&mut self) {
@@ -641,22 +435,35 @@ impl<'a> AppState<'a> {
     pub fn find_all_matches(&self, query: &str) -> Vec<(usize, usize)> {
         let sheet = self.workbook.get_current_sheet();
         let query_lower = query.to_lowercase();
-        let mut results = Vec::new();
+
+        let mut results = Vec::with_capacity(32);
 
         // Search through all cells in the sheet using row-first, column-second order
         for row in 1..=sheet.max_rows {
             for col in 1..=sheet.max_cols {
                 if row < sheet.data.len() && col < sheet.data[row].len() {
                     let cell_content = &sheet.data[row][col].value;
-                    if cell_content.to_lowercase().contains(&query_lower) {
+
+                    if self.case_insensitive_contains(cell_content, &query_lower) {
                         results.push((row, col));
                     }
                 }
             }
         }
 
-        // The search already uses row-first, column-second order, so no need to sort
         results
+    }
+
+    fn case_insensitive_contains(&self, haystack: &str, needle: &str) -> bool {
+        if needle.is_empty() {
+            return true;
+        }
+        if haystack.is_empty() {
+            return false;
+        }
+
+        let haystack_lower = haystack.to_lowercase();
+        haystack_lower.contains(needle)
     }
 
     // Jump to the next search result based on current position and search direction
@@ -730,7 +537,6 @@ impl<'a> AppState<'a> {
         self.search_direction = !self.search_direction;
     }
 
-    // Disable search highlighting (nohlsearch in Vim)
     pub fn disable_search_highlight(&mut self) {
         self.highlight_enabled = false;
         self.add_notification("Search highlighting disabled".to_string());
@@ -802,8 +608,13 @@ impl<'a> AppState<'a> {
 
     pub fn switch_sheet_by_index(&mut self, index: usize) -> Result<()> {
         let current_sheet_name = self.workbook.get_current_sheet_name();
-        self.sheet_column_widths
-            .insert(current_sheet_name, self.column_widths.clone());
+
+        if !self.sheet_column_widths.contains_key(&current_sheet_name)
+            || self.sheet_column_widths[&current_sheet_name] != self.column_widths
+        {
+            self.sheet_column_widths
+                .insert(current_sheet_name, self.column_widths.clone());
+        }
 
         // Reset cell selection and view position when switching sheets
         self.selected_cell = (1, 1);
@@ -816,7 +627,9 @@ impl<'a> AppState<'a> {
 
         // Restore column widths for the new sheet
         if let Some(saved_widths) = self.sheet_column_widths.get(&new_sheet_name) {
-            self.column_widths = saved_widths.clone();
+            if &self.column_widths != saved_widths {
+                self.column_widths = saved_widths.clone();
+            }
         } else {
             let max_cols = self.workbook.get_current_sheet().max_cols;
             let default_width = 15;
@@ -827,8 +640,10 @@ impl<'a> AppState<'a> {
         }
 
         // Clear search results as they're specific to the previous sheet
-        self.search_results.clear();
-        self.current_search_idx = None;
+        if !self.search_results.is_empty() {
+            self.search_results.clear();
+            self.current_search_idx = None;
+        }
 
         self.add_notification(format!("Switched to sheet: {}", new_sheet_name));
         Ok(())
@@ -1127,54 +942,48 @@ impl<'a> AppState<'a> {
 
     fn calculate_column_width(&self, col: usize) -> usize {
         let sheet = self.workbook.get_current_sheet();
-        let mut max_width = 3; // Minimum width
 
-        // Calculate header width
+        // Start with minimum width and header width
         let col_name = index_to_col_name(col);
-        max_width = max_width.max(col_name.len());
+        let mut max_width = 3.max(col_name.len());
 
-        // Check width of each cell content
+        // Calculate max width from all cells in the column
         for row in 1..=sheet.max_rows {
-            if row < sheet.data.len() && col < sheet.data[row].len() {
-                let content = &sheet.data[row][col].value;
-
-                // Calculate display width with better handling for different character types
-                let display_width = content.chars().fold(0, |acc, c| {
-                    // More accurate width calculation:
-                    // - CJK characters: 2 units wide
-                    // - ASCII letters/numbers: 1 unit wide
-                    // - Other characters may need special handling
-                    if c.is_ascii() {
-                        // All ASCII characters count as 1 unit wide in the base calculation
-                        acc + 1
-                    } else {
-                        // CJK characters are double-width
-                        acc + 2
-                    }
-                });
-
-                // For English text, add extra width to ensure it fits completely
-                let adjusted_width = if content.chars().all(|c| c.is_ascii()) {
-                    // For pure English text, add extra space to ensure it fits
-                    // The factor 1.3 accounts for proportional font spacing in terminals
-                    // and wider characters like 'W', 'M', etc.
-                    (display_width as f32 * 1.3).ceil() as usize
-                } else {
-                    display_width
-                };
-
-                max_width = max_width.max(adjusted_width);
+            if row >= sheet.data.len() || col >= sheet.data[row].len() {
+                continue;
             }
+
+            let content = &sheet.data[row][col].value;
+            if content.is_empty() {
+                continue;
+            }
+
+            let mut is_ascii_only = true;
+            let mut display_width = 0;
+
+            for c in content.chars() {
+                if c.is_ascii() {
+                    display_width += 1;
+                } else {
+                    is_ascii_only = false;
+                    display_width += 2;
+                }
+            }
+
+            let cell_width = if is_ascii_only {
+                display_width + (display_width / 3)
+            } else {
+                display_width
+            };
+
+            max_width = max_width.max(cell_width);
         }
 
-        // Add padding to ensure content fits
-        // Use different padding for different content types
+        // Add appropriate padding based on content width
         if max_width > 20 {
-            // For very wide content, less padding is needed proportionally
-            max_width + 3
+            max_width + 3 // Less padding for wide content
         } else {
-            // For narrower content, more padding helps readability
-            max_width + 4
+            max_width + 4 // More padding for narrow content
         }
     }
 
@@ -1186,115 +995,34 @@ impl<'a> AppState<'a> {
         }
     }
 
-    // Adjust column width to a reasonable minimum (max 15 or actual content width)
-    pub fn shrink_column_width(&mut self, col: Option<usize>) {
-        let max_width = 15; // Maximum column width limit
-        let min_width = 5; // Minimum column width
-
-        match col {
-            // Minimize specific column
-            Some(column) => {
-                if column < self.column_widths.len() {
-                    // Record current width
-                    let current_width = self.column_widths[column];
-
-                    // Calculate actual content width
-                    let content_width = self.calculate_column_width(column);
-
-                    // Set width to the minimum of content width and max width, but not less than min width
-                    let new_width = content_width.min(max_width).max(min_width);
-                    self.column_widths[column] = new_width;
-
-                    self.ensure_column_visible(column);
-
-                    self.add_notification(format!(
-                        "Column {} width minimized from {} to {}",
-                        index_to_col_name(column),
-                        current_width,
-                        new_width
-                    ));
-                }
-            }
-            // Minimize all columns
-            None => {
-                let sheet = self.workbook.get_current_sheet();
-
-                // Track how many columns changed for status message
-                let mut _changed_columns = 0;
-
-                for col_idx in 1..=sheet.max_cols {
-                    // Calculate actual content width
-                    let content_width = self.calculate_column_width(col_idx);
-
-                    // Set width to the minimum of content width and max width, but not less than min width
-                    let new_width = content_width.min(max_width).max(min_width);
-
-                    // Track if width changed
-                    if self.column_widths[col_idx] != new_width {
-                        self.column_widths[col_idx] = new_width;
-                        _changed_columns += 1;
-                    }
-                }
-
-                let column = self.selected_cell.1;
-                self.ensure_column_visible(column);
-
-                self.add_notification("Minimized the width of all columns".to_string());
-            }
-        }
-    }
-
     fn handle_column_scrolling(&mut self) {
         self.ensure_column_visible(self.selected_cell.1);
     }
 
     pub fn ensure_column_visible(&mut self, column: usize) {
-        let desired_right_margin_chars = 15;
-
+        // If column is to the left of visible area, adjust start_col
         if column < self.start_col {
-            // If column is to the left of visible area, adjust start_col
             self.start_col = column;
             return;
         }
 
         let last_visible_col = self.start_col + self.visible_cols - 1;
 
+        // If column is to the right of visible area, adjust start_col to make it visible
         if column > last_visible_col {
-            // If column is to the right of visible area, adjust start_col to make it visible
-            self.start_col = column - self.visible_cols + 1;
-            self.start_col = self.start_col.max(1);
+            self.start_col = (column - self.visible_cols + 1).max(1);
             return;
         }
 
-        // If we're here, the column is already visible
-        // add a right margin if possible
-
+        // If the column is already visible but at the right edge, try to add a margin
         let sheet = self.workbook.get_current_sheet();
         let max_col = sheet.max_cols;
 
-        if column < max_col {
-            let cols_to_right = last_visible_col - column;
-
-            if cols_to_right > 0 {
-                return;
-            }
-
-            let next_col = column + 1;
-            if next_col <= max_col {
-                let next_col_width = self.get_column_width(next_col);
-
-                if next_col_width <= desired_right_margin_chars {
-                    if self.visible_cols > 1 {
-                        self.start_col = column - (self.visible_cols - 2);
-                        self.start_col = self.start_col.max(1);
-                    }
-                } else {
-                    if self.visible_cols > 1 {
-                        self.start_col = column - (self.visible_cols - 2);
-                        self.start_col = self.start_col.max(1);
-                    }
-                }
-            }
+        // Only apply margin logic if not at the max column
+        if column < max_col && column == last_visible_col && self.visible_cols > 1 {
+            // Adjust start column to show more columns to the left
+            // This creates a margin on the right
+            self.start_col = (column - (self.visible_cols - 2)).max(1);
         }
     }
 
@@ -1302,440 +1030,6 @@ impl<'a> AppState<'a> {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
     }
-
-    fn handle_json_export_command(&mut self, cmd: &str) {
-        // Check if this is an export all command
-        let export_all = cmd.starts_with("eja ") || cmd == "eja";
-
-        // Parse command
-        let parts: Vec<&str> = if cmd.starts_with("ej ") {
-            cmd.strip_prefix("ej ")
-                .unwrap()
-                .split_whitespace()
-                .collect()
-        } else if cmd == "ej" {
-            // No arguments provided, use default values
-            vec!["h", "1"] // Default to horizontal headers with 1 header row
-        } else if cmd.starts_with("eja ") {
-            cmd.strip_prefix("eja ")
-                .unwrap()
-                .split_whitespace()
-                .collect()
-        } else if cmd == "eja" {
-            // No arguments provided, use default values
-            vec!["h", "1"] // Default to horizontal headers with 1 header row
-        } else {
-            self.add_notification("Invalid JSON export command".to_string());
-            return;
-        };
-
-        // Check if we have enough arguments for direction and header count
-        if parts.len() < 2 {
-            if export_all {
-                self.add_notification("Usage: :eja [h|v] [rows]".to_string());
-            } else {
-                self.add_notification("Usage: :ej [h|v] [rows]".to_string());
-            }
-            return;
-        }
-
-        let direction_str = parts[0];
-        let header_count_str = parts[1];
-
-        let direction = match HeaderDirection::from_str(direction_str) {
-            Some(dir) => dir,
-            None => {
-                self.add_notification(format!(
-                    "Invalid header direction: {}. Use 'h' or 'v'",
-                    direction_str
-                ));
-                return;
-            }
-        };
-
-        let header_count = match header_count_str.parse::<usize>() {
-            Ok(count) => count,
-            Err(_) => {
-                self.add_notification(format!("Invalid header count: {}", header_count_str));
-                return;
-            }
-        };
-
-        let sheet_name = self.workbook.get_current_sheet_name();
-
-        // Get original file name without extension
-        let file_path = self.workbook.get_file_path().to_string();
-        let original_file = Path::new(&file_path);
-        let file_stem = original_file
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("export");
-
-        // Create timestamp for the filename
-        let now = chrono::Local::now();
-        let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
-
-        // Create new filename with original name, timestamp, and sheet info
-        let new_filename = if export_all {
-            format!("{}_all_sheets_{}.json", file_stem, timestamp)
-        } else {
-            format!("{}_sheet_{}_{}.json", file_stem, sheet_name, timestamp)
-        };
-
-        // Export to JSON
-        let result = if export_all {
-            export_all_sheets_json(
-                &self.workbook,
-                direction,
-                header_count,
-                Path::new(&new_filename),
-            )
-        } else {
-            export_json(
-                self.workbook.get_current_sheet(),
-                direction,
-                header_count,
-                Path::new(&new_filename),
-            )
-        };
-
-        match result {
-            Ok(_) => {
-                self.add_notification(format!("Successfully exported to {}", new_filename));
-            }
-            Err(e) => {
-                self.add_notification(format!("Failed to export JSON: {}", e));
-            }
-        }
-    }
-
-    // Execute command
-    pub fn execute_command(&mut self) {
-        if let InputMode::Command = self.input_mode {
-            let cmd = self.input_buffer.trim();
-
-            // Handle Vim-style save and exit commands
-            match cmd {
-                // Save and continue editing
-                "w" => {
-                    if let Err(e) = self.save() {
-                        self.add_notification(format!("Save failed: {}", e));
-                    }
-                }
-                // Save and quit
-                "wq" | "x" => {
-                    self.save_and_exit();
-                }
-                // Quit without saving
-                "q" => {
-                    if self.workbook.is_modified() {
-                        self.add_notification(
-                            "File modified. Use :q! to force quit without saving".to_string(),
-                        );
-                    } else {
-                        self.should_quit = true;
-                    }
-                }
-                // Force quit without saving
-                "q!" => {
-                    self.exit_without_saving();
-                }
-                // Handle column width commands
-                _ if cmd.starts_with("cw ") => {
-                    if let Some(subcmd) = cmd.strip_prefix("cw ") {
-                        match subcmd {
-                            // Auto-adjust current column width
-                            "fit" => {
-                                self.auto_adjust_column_width(Some(self.selected_cell.1));
-                            }
-                            // Auto-adjust all column widths
-                            "fit all" => {
-                                self.auto_adjust_column_width(None);
-                            }
-                            // Minimize current column width
-                            "min" => {
-                                self.shrink_column_width(Some(self.selected_cell.1));
-                            }
-                            // Minimize all column widths
-                            "min all" => {
-                                self.shrink_column_width(None);
-                            }
-                            // Try to parse subcommand as a number to set current column width
-                            _ => {
-                                if let Ok(width) = subcmd.parse::<usize>() {
-                                    let min_width = 5;
-                                    let max_width = 100;
-                                    let column = self.selected_cell.1;
-
-                                    // Ensure width is within reasonable range
-                                    let width = width.max(min_width).min(max_width);
-
-                                    if column < self.column_widths.len() {
-                                        // Record original width for status message
-                                        let old_width = self.column_widths[column];
-
-                                        // Record starting column to detect changes (unused but kept for future use)
-                                        let _original_start_col = self.start_col;
-
-                                        // Set new column width
-                                        self.column_widths[column] = width;
-
-                                        self.ensure_column_visible(column);
-
-                                        self.add_notification(format!(
-                                            "Column {} width changed from {} to {}",
-                                            index_to_col_name(column),
-                                            old_width,
-                                            width
-                                        ));
-                                    }
-                                } else {
-                                    self.add_notification(format!(
-                                        "Unknown column command: {}",
-                                        subcmd
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-                // JSON export command
-                _ if cmd.starts_with("ej ")
-                    || cmd == "ej"
-                    || cmd.starts_with("eja ")
-                    || cmd == "eja" =>
-                {
-                    let cmd_str = cmd.to_string(); // Clone the command string to avoid borrowing issues
-                    self.handle_json_export_command(&cmd_str);
-                }
-                // Sheet switching command
-                _ if cmd.starts_with("sheet ") => {
-                    if let Some(sheet_name_or_index) = cmd.strip_prefix("sheet ") {
-                        let name_or_index = sheet_name_or_index.trim().to_string();
-                        self.switch_to_sheet(&name_or_index);
-                    }
-                }
-
-                // Delete current sheet command
-                "delsheet" => {
-                    self.delete_current_sheet();
-                }
-
-                // Copy command
-                "y" => {
-                    self.copy_cell();
-                }
-                // Cut command
-                "d" => {
-                    if let Err(e) = self.cut_cell() {
-                        self.add_notification(format!("Cut failed: {}", e));
-                    }
-                }
-                // Paste command (using Vim's Ex mode paste command)
-                "put" | "pu" => {
-                    if let Err(e) = self.paste_cell() {
-                        self.add_notification(format!("Paste failed: {}", e));
-                    }
-                }
-                // Disable search highlighting
-                "nohlsearch" | "noh" => {
-                    self.disable_search_highlight();
-                }
-                // Delete row command
-                _ if cmd.starts_with("dr") => {
-                    let cmd_parts: Vec<String> =
-                        cmd.split_whitespace().map(|s| s.to_string()).collect();
-
-                    if cmd_parts.len() == 1 {
-                        // Just :dr - delete current row
-                        if let Err(e) = self.delete_current_row() {
-                            self.add_notification(format!("Failed to delete row: {}", e));
-                        }
-                    } else if cmd_parts.len() == 2 {
-                        // :dr N - delete specific row
-                        if let Ok(row) = cmd_parts[1].parse::<usize>() {
-                            let row_num = row; // Store the value to avoid borrowing issues
-                            if let Err(e) = self.delete_row(row) {
-                                self.add_notification(format!(
-                                    "Failed to delete row {}: {}",
-                                    row_num, e
-                                ));
-                            }
-                        } else {
-                            self.add_notification("Invalid row number".to_string());
-                        }
-                    } else if cmd_parts.len() == 3 {
-                        // :dr N M - delete rows N to M
-                        if let (Ok(start_row), Ok(end_row)) =
-                            (cmd_parts[1].parse::<usize>(), cmd_parts[2].parse::<usize>())
-                        {
-                            let start = start_row; // Store the values to avoid borrowing issues
-                            let end = end_row;
-                            if let Err(e) = self.delete_rows(start_row, end_row) {
-                                self.add_notification(format!(
-                                    "Failed to delete rows {} to {}: {}",
-                                    start, end, e
-                                ));
-                            }
-                        } else {
-                            self.add_notification("Invalid row range".to_string());
-                        }
-                    } else {
-                        self.add_notification("Usage: :dr [row] [end_row]".to_string());
-                    }
-                }
-
-                // Delete column command
-                _ if cmd.starts_with("dc") => {
-                    let cmd_parts: Vec<String> =
-                        cmd.split_whitespace().map(|s| s.to_string()).collect();
-
-                    if cmd_parts.len() == 1 {
-                        // Just :dc - delete current column
-                        if let Err(e) = self.delete_current_column() {
-                            self.add_notification(format!("Failed to delete column: {}", e));
-                        }
-                    } else if cmd_parts.len() == 2 {
-                        // :dc COL - delete specific column
-                        // Try to parse as column letter (e.g., A, B, AA)
-                        if let Some(col) = col_name_to_index(&cmd_parts[1]) {
-                            let col_name = cmd_parts[1].clone();
-                            if let Err(e) = self.delete_column(col) {
-                                self.add_notification(format!(
-                                    "Failed to delete column {}: {}",
-                                    col_name, e
-                                ));
-                            }
-                        } else if let Ok(col) = cmd_parts[1].parse::<usize>() {
-                            // Try to parse as column number
-                            let col_num = col; // Store the value to avoid borrowing issues
-                            if let Err(e) = self.delete_column(col) {
-                                self.add_notification(format!(
-                                    "Failed to delete column {}: {}",
-                                    col_num, e
-                                ));
-                            }
-                        } else {
-                            self.add_notification("Invalid column reference".to_string());
-                        }
-                    } else if cmd_parts.len() == 3 {
-                        // :dc COL1 COL2 - delete columns COL1 to COL2
-                        let start_col = if let Some(col) = col_name_to_index(&cmd_parts[1]) {
-                            col
-                        } else if let Ok(col) = cmd_parts[1].parse::<usize>() {
-                            col
-                        } else {
-                            self.add_notification("Invalid start column reference".to_string());
-                            return;
-                        };
-
-                        let end_col = if let Some(col) = col_name_to_index(&cmd_parts[2]) {
-                            col
-                        } else if let Ok(col) = cmd_parts[2].parse::<usize>() {
-                            col
-                        } else {
-                            self.add_notification("Invalid end column reference".to_string());
-                            return;
-                        };
-
-                        let col1_name = cmd_parts[1].clone();
-                        let col2_name = cmd_parts[2].clone();
-
-                        if let Err(e) = self.delete_columns(start_col, end_col) {
-                            self.add_notification(format!(
-                                "Failed to delete columns {} to {}: {}",
-                                col1_name, col2_name, e
-                            ));
-                        }
-                    } else {
-                        self.add_notification("Usage: :dc [column] [end_column]".to_string());
-                    }
-                }
-
-                "help" => {
-                    self.show_help();
-                    return;
-                }
-                // Try to parse as cell reference (e.g., A1, B10)
-                _ => {
-                    // Clone cmd to avoid borrowing issues
-                    let cmd_clone = cmd.to_string();
-                    if let Some(cell_ref) = parse_cell_reference(cmd) {
-                        self.selected_cell = cell_ref;
-                        self.handle_scrolling();
-                        self.add_notification(format!("Jumped to cell {}", cmd_clone));
-                    } else {
-                        self.add_notification(format!("Unknown command: {}", cmd_clone));
-                    }
-                }
-            }
-
-            self.input_mode = InputMode::Normal;
-            self.input_buffer = String::new();
-        }
-    }
 }
 
-fn parse_cell_reference(input: &str) -> Option<(usize, usize)> {
-    // Simple regex pattern matching
-    let mut col_str = String::new();
-    let mut row_str = String::new();
-
-    // Separate column and row
-    for c in input.chars() {
-        if c.is_alphabetic() {
-            col_str.push(c.to_ascii_uppercase());
-        } else if c.is_numeric() {
-            row_str.push(c);
-        } else {
-            return None;
-        }
-    }
-
-    if col_str.is_empty() || row_str.is_empty() {
-        return None;
-    }
-
-    // Convert column name to index
-    let col = col_name_to_index(&col_str)?;
-
-    // Convert row to index
-    let row = row_str.parse::<usize>().ok()?;
-
-    Some((row, col))
-}
-
-fn col_name_to_index(col_name: &str) -> Option<usize> {
-    let mut index = 0;
-
-    for c in col_name.chars() {
-        if !c.is_ascii_alphabetic() {
-            return None;
-        }
-
-        // Convert to uppercase for calculation
-        let uppercase_c = c.to_ascii_uppercase();
-        index = index * 26 + (uppercase_c as usize - 'A' as usize + 1);
-    }
-
-    Some(index)
-}
-
-pub fn index_to_col_name(index: usize) -> String {
-    let mut name = String::new();
-    let mut idx = index;
-
-    while idx > 0 {
-        // Convert to 0-based for calculation
-        idx -= 1;
-        let remainder = idx % 26;
-        name.insert(0, (b'A' + remainder as u8) as char);
-        idx /= 26;
-    }
-
-    if name.is_empty() {
-        name = "A".to_string();
-    }
-
-    name
-}
+pub use crate::utils::index_to_col_name;
