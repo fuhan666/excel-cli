@@ -320,7 +320,7 @@ impl AppState<'_> {
 
         match result {
             Ok(_) => {
-                self.add_notification(format!("Successfully exported to {}", new_filename));
+                self.add_notification(format!("Exported to {}", new_filename));
             }
             Err(e) => {
                 self.add_notification(format!("Export failed: {}", e));

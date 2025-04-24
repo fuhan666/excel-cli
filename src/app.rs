@@ -905,9 +905,6 @@ impl AppState<'_> {
             // Adjust specific column
             Some(column) => {
                 if column < self.column_widths.len() {
-                    // Record original column width for debugging
-                    let old_width = self.column_widths[column];
-
                     // Calculate and set new column width
                     let width = self.calculate_column_width(column);
                     self.column_widths[column] = width.max(default_min_width);
@@ -915,10 +912,8 @@ impl AppState<'_> {
                     self.ensure_column_visible(column);
 
                     self.add_notification(format!(
-                        "Column {} width adjusted from {} to {}",
-                        index_to_col_name(column),
-                        old_width,
-                        self.column_widths[column]
+                        "Column {} width adjusted",
+                        index_to_col_name(column)
                     ));
                 }
             }
