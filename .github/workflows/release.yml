@@ -21,16 +21,16 @@ jobs:
             target: x86_64-pc-windows-msvc
             artifact_name: excel-cli.exe
             asset_name: excel-cli-windows-amd64.exe
-          - os: macos-14-large
-            target: x86_64-apple-darwin
-            artifact_name: excel-cli
-            asset_name: excel-cli-macos-amd64
+          # - os: macos-14-large
+          #   target: x86_64-apple-darwin
+          #   artifact_name: excel-cli
+          #   asset_name: excel-cli-macos-amd64
 
           # --- Apple Silicon (ARM) Target ---
-          - os: macos-14
-            target: aarch64-apple-darwin
-            artifact_name: excel-cli
-            asset_name: excel-cli-macos-arm64
+          # - os: macos-14
+          #   target: aarch64-apple-darwin
+          #   artifact_name: excel-cli
+          #   asset_name: excel-cli-macos-arm64
 
     steps:
       - uses: actions/checkout@v4
