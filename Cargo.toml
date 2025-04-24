@@ -7,6 +7,7 @@ license = "MIT"
 repository = "https://github.com/fuhan666/excel-cli"
 keywords = ["Excel", "Excel-export", "Excel-json", "calamine", "ratatui"]
 categories = ["command-line-utilities", "development-tools", "data-structures", "parsing"]
+exclude = ["/.github", "CHANGELOG.md", ".gitignore"]
 
 [dependencies]
 ratatui = "0.24.0"
