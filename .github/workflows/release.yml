@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    name: Build Binaries
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # --- Intel Targets ---
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: excel-cli
+            asset_name: excel-cli-linux-amd64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: excel-cli.exe
+            asset_name: excel-cli-windows-amd64.exe
+          - os: macos-14-large
+            target: x86_64-apple-darwin
+            artifact_name: excel-cli
+            asset_name: excel-cli-macos-amd64
+
+          # --- Apple Silicon (ARM) Target ---
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact_name: excel-cli
+            asset_name: excel-cli-macos-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain with target support
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Build for target
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Rename binary (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: mv target/${{ matrix.target }}/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+
+      - name: Rename binary (Windows)
+        if: runner.os == 'Windows'
+        run: move target\\${{ matrix.target }}\\release\\${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Parse Changelog Entry
+        id: changelog_reader
+        uses: mindsers/changelog-reader-action@v2
+        with:
+          changelog_path: "./CHANGELOG.md"
+          version: ${{ github.ref_name }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog_reader.outputs.changelog_content }}
+          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          files: artifacts/*/*
