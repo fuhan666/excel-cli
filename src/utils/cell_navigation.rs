@@ -1,5 +1,7 @@
 use crate::excel::Sheet;
 
+/// Navigation direction
+#[derive(Debug, Clone, Copy)]
 pub enum Direction {
     Left,
     Right,
@@ -7,7 +9,9 @@ pub enum Direction {
     Down,
 }
 
-// Generic function to find non-empty cells in any direction
+/// Find non-empty cell in specified direction
+///
+/// Returns the position of found cell, or None if already at boundary
 pub fn find_non_empty_cell(
     sheet: &Sheet,
     current_pos: (usize, usize),
@@ -17,7 +21,7 @@ pub fn find_non_empty_cell(
     let (row, col) = current_pos;
     let (max_row, max_col) = max_bounds;
 
-    // Check if already at the boundary
+    // Check if already at boundary
     match direction {
         Direction::Left if col <= 1 => return None,
         Direction::Right if col >= max_col => return None,
@@ -32,7 +36,7 @@ pub fn find_non_empty_cell(
         || sheet.data[row][col].value.is_empty();
 
     if current_cell_is_empty {
-        // Find first non-empty cell in the specified direction
+        // Current cell is empty, find first non-empty cell
         match direction {
             Direction::Left => {
                 for c in (1..col).rev() {
@@ -43,7 +47,7 @@ pub fn find_non_empty_cell(
                         return Some((row, c));
                     }
                 }
-                // If no non-empty cell found, return the boundary
+                // Return boundary if no non-empty cell found
                 Some((row, 1))
             }
             Direction::Right => {
@@ -55,7 +59,7 @@ pub fn find_non_empty_cell(
                         return Some((row, c));
                     }
                 }
-                // If no non-empty cell found, return the boundary
+                // Return boundary if no non-empty cell found
                 Some((row, max_col))
             }
             Direction::Up => {
@@ -67,7 +71,7 @@ pub fn find_non_empty_cell(
                         return Some((r, col));
                     }
                 }
-                // If no non-empty cell found, return the boundary
+                // Return boundary if no non-empty cell found
                 Some((1, col))
             }
             Direction::Down => {
@@ -79,12 +83,12 @@ pub fn find_non_empty_cell(
                         return Some((r, col));
                     }
                 }
-                // If no non-empty cell found, return the boundary
+                // Return boundary if no non-empty cell found
                 Some((max_row, col))
             }
         }
     } else {
-        // Find the boundary of non-empty cells in the specified direction
+        // Current cell is non-empty, find boundary
         match direction {
             Direction::Left => {
                 let mut last_non_empty = col;

@@ -1,10 +1,10 @@
 use anyhow::Result;
 use ratatui_textarea::TextArea;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::excel::Workbook;
-use crate::json_export::{HeaderDirection, export_all_sheets_json, export_json};
+use crate::utils::{Direction, find_non_empty_cell};
 
 pub enum InputMode {
     Normal,
@@ -44,7 +44,7 @@ pub struct AppState<'a> {
     pub help_visible_lines: usize,
 }
 
-impl<'a> AppState<'a> {
+impl AppState<'_> {
     pub fn new(workbook: Workbook, file_path: PathBuf) -> Result<Self> {
         // Initialize default column widths for current sheet
         let max_cols = workbook.get_current_sheet().max_cols;
@@ -150,7 +150,7 @@ impl<'a> AppState<'a> {
     }
 
     pub fn adjust_info_panel_height(&mut self, delta: isize) {
-        let new_height = (self.info_panel_height as isize + delta).max(3).min(15) as usize;
+        let new_height = (self.info_panel_height as isize + delta).clamp(3, 15) as usize;
         if new_height != self.info_panel_height {
             self.info_panel_height = new_height;
             self.add_notification(format!("Info panel height: {}", self.info_panel_height));
@@ -183,8 +183,7 @@ impl<'a> AppState<'a> {
     pub fn show_help(&mut self) {
         self.help_scroll = 0;
 
-        self.help_text = format!(
-            "FILE OPERATIONS:\n\
+        self.help_text = "FILE OPERATIONS:\n\
              :w          - Save file\n\
              :wq, :x     - Save and quit\n\
              :q          - Quit (will warn if unsaved changes)\n\
@@ -238,7 +237,7 @@ impl<'a> AppState<'a> {
              HELP NAVIGATION:\n\
              j/k, Up/Down  - Scroll help text up/down\n\
              Enter/Esc     - Close help window"
-        );
+            .to_string();
 
         self.input_mode = InputMode::Help;
     }
@@ -315,266 +314,57 @@ impl<'a> AppState<'a> {
         self.add_notification("Jumped to last column".to_string());
     }
 
-    pub fn jump_to_prev_non_empty_cell_left(&mut self) {
+    /// Generic method for navigating to non-empty cells
+    fn jump_to_non_empty_cell(&mut self, direction: Direction) {
         let sheet = self.workbook.get_current_sheet();
-        let (row, col) = self.selected_cell;
+        let max_bounds = (sheet.max_rows, sheet.max_cols);
+        let current_pos = self.selected_cell;
 
-        if col <= 1 {
-            return;
-        }
-
-        let current_cell_is_empty = row >= sheet.data.len()
-            || col >= sheet.data[row].len()
-            || sheet.data[row][col].value.is_empty();
-
-        if current_cell_is_empty {
-            let mut target_col = 1;
-            let mut found_non_empty = false;
-
-            for c in (1..col).rev() {
-                if row < sheet.data.len()
-                    && c < sheet.data[row].len()
-                    && !sheet.data[row][c].value.is_empty()
-                {
-                    target_col = c;
-                    found_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_non_empty {
-                target_col = 1;
-            }
-
-            self.selected_cell = (row, target_col);
+        if let Some(new_pos) = find_non_empty_cell(sheet, current_pos, direction, max_bounds) {
+            self.selected_cell = new_pos;
             self.handle_scrolling();
-            self.add_notification("Jumped to first non-empty cell (left)".to_string());
-        } else {
-            let mut target_col = 1;
-            let mut last_non_empty_col = col;
-            let mut found_empty_after_non_empty = false;
 
-            for c in (1..col).rev() {
-                if row < sheet.data.len() && c < sheet.data[row].len() {
-                    if sheet.data[row][c].value.is_empty() {
-                        target_col = c + 1;
-                        found_empty_after_non_empty = true;
-                        break;
-                    } else {
-                        last_non_empty_col = c;
-                    }
-                } else {
-                    target_col = c + 1;
-                    found_empty_after_non_empty = true;
-                    break;
-                }
-            }
+            let dir_name = match direction {
+                Direction::Left => "left",
+                Direction::Right => "right",
+                Direction::Up => "up",
+                Direction::Down => "down",
+            };
 
-            if !found_empty_after_non_empty {
-                target_col = last_non_empty_col;
-            }
+            // Re-fetch sheet to avoid borrow conflict
+            let sheet = self.workbook.get_current_sheet();
 
-            self.selected_cell = (row, target_col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to last non-empty cell (left)".to_string());
+            let (row, col) = self.selected_cell;
+            let is_cell_empty = row >= sheet.data.len()
+                || col >= sheet.data[row].len()
+                || sheet.data[row][col].value.is_empty();
+
+            let message = if is_cell_empty {
+                format!("Jumped to first non-empty cell ({})", dir_name)
+            } else {
+                format!("Jumped to last non-empty cell ({})", dir_name)
+            };
+
+            self.add_notification(message);
         }
+    }
+
+    // Direction-specific convenience methods
+
+    pub fn jump_to_prev_non_empty_cell_left(&mut self) {
+        self.jump_to_non_empty_cell(Direction::Left);
     }
 
     pub fn jump_to_prev_non_empty_cell_right(&mut self) {
-        let sheet = self.workbook.get_current_sheet();
-        let (row, col) = self.selected_cell;
-        let max_col = sheet.max_cols;
-
-        if col >= max_col {
-            return;
-        }
-
-        let current_cell_is_empty = row >= sheet.data.len()
-            || col >= sheet.data[row].len()
-            || sheet.data[row][col].value.is_empty();
-
-        if current_cell_is_empty {
-            let mut target_col = max_col;
-            let mut found_non_empty = false;
-
-            for c in (col + 1)..=max_col {
-                if row < sheet.data.len()
-                    && c < sheet.data[row].len()
-                    && !sheet.data[row][c].value.is_empty()
-                {
-                    target_col = c;
-                    found_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_non_empty {
-                target_col = max_col;
-            }
-
-            self.selected_cell = (row, target_col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to first non-empty cell (right)".to_string());
-        } else {
-            let mut target_col = max_col;
-            let mut last_non_empty_col = col;
-            let mut found_empty_after_non_empty = false;
-
-            for c in (col + 1)..=max_col {
-                if row < sheet.data.len() && c < sheet.data[row].len() {
-                    if sheet.data[row][c].value.is_empty() {
-                        target_col = c - 1;
-                        found_empty_after_non_empty = true;
-                        break;
-                    } else {
-                        last_non_empty_col = c;
-                    }
-                } else {
-                    target_col = c - 1;
-                    found_empty_after_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_empty_after_non_empty {
-                target_col = last_non_empty_col;
-            }
-
-            self.selected_cell = (row, target_col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to last non-empty cell (right)".to_string());
-        }
+        self.jump_to_non_empty_cell(Direction::Right);
     }
 
     pub fn jump_to_prev_non_empty_cell_up(&mut self) {
-        let sheet = self.workbook.get_current_sheet();
-        let (row, col) = self.selected_cell;
-
-        if row <= 1 {
-            return;
-        }
-
-        let current_cell_is_empty = row >= sheet.data.len()
-            || col >= sheet.data[row].len()
-            || sheet.data[row][col].value.is_empty();
-
-        if current_cell_is_empty {
-            let mut target_row = 1;
-            let mut found_non_empty = false;
-
-            for r in (1..row).rev() {
-                if r < sheet.data.len()
-                    && col < sheet.data[r].len()
-                    && !sheet.data[r][col].value.is_empty()
-                {
-                    target_row = r;
-                    found_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_non_empty {
-                target_row = 1;
-            }
-
-            self.selected_cell = (target_row, col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to first non-empty cell (up)".to_string());
-        } else {
-            let mut target_row = 1;
-            let mut last_non_empty_row = row;
-            let mut found_empty_after_non_empty = false;
-
-            for r in (1..row).rev() {
-                if r < sheet.data.len() && col < sheet.data[r].len() {
-                    if sheet.data[r][col].value.is_empty() {
-                        target_row = r + 1;
-                        found_empty_after_non_empty = true;
-                        break;
-                    } else {
-                        last_non_empty_row = r;
-                    }
-                } else {
-                    target_row = r + 1;
-                    found_empty_after_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_empty_after_non_empty {
-                target_row = last_non_empty_row;
-            }
-
-            self.selected_cell = (target_row, col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to last non-empty cell (up)".to_string());
-        }
+        self.jump_to_non_empty_cell(Direction::Up);
     }
 
     pub fn jump_to_prev_non_empty_cell_down(&mut self) {
-        let sheet = self.workbook.get_current_sheet();
-        let (row, col) = self.selected_cell;
-        let max_row = sheet.max_rows;
-
-        if row >= max_row {
-            return;
-        }
-
-        let current_cell_is_empty = row >= sheet.data.len()
-            || col >= sheet.data[row].len()
-            || sheet.data[row][col].value.is_empty();
-
-        if current_cell_is_empty {
-            let mut target_row = max_row;
-            let mut found_non_empty = false;
-
-            for r in (row + 1)..=max_row {
-                if r < sheet.data.len()
-                    && col < sheet.data[r].len()
-                    && !sheet.data[r][col].value.is_empty()
-                {
-                    target_row = r;
-                    found_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_non_empty {
-                target_row = max_row;
-            }
-
-            self.selected_cell = (target_row, col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to first non-empty cell (down)".to_string());
-        } else {
-            let mut target_row = max_row;
-            let mut last_non_empty_row = row;
-            let mut found_empty_after_non_empty = false;
-
-            for r in (row + 1)..=max_row {
-                if r < sheet.data.len() && col < sheet.data[r].len() {
-                    if sheet.data[r][col].value.is_empty() {
-                        target_row = r - 1;
-                        found_empty_after_non_empty = true;
-                        break;
-                    } else {
-                        last_non_empty_row = r;
-                    }
-                } else {
-                    target_row = r - 1;
-                    found_empty_after_non_empty = true;
-                    break;
-                }
-            }
-
-            if !found_empty_after_non_empty {
-                target_row = last_non_empty_row;
-            }
-
-            self.selected_cell = (target_row, col);
-            self.handle_scrolling();
-            self.add_notification("Jumped to last non-empty cell (down)".to_string());
-        }
+        self.jump_to_non_empty_cell(Direction::Down);
     }
 
     pub fn start_search_forward(&mut self) {
@@ -1205,64 +995,6 @@ impl<'a> AppState<'a> {
         }
     }
 
-    // Adjust column width to a reasonable minimum (max 15 or actual content width)
-    pub fn shrink_column_width(&mut self, col: Option<usize>) {
-        let max_width = 15; // Maximum column width limit
-        let min_width = 5; // Minimum column width
-
-        match col {
-            // Minimize specific column
-            Some(column) => {
-                if column < self.column_widths.len() {
-                    // Record current width
-                    let current_width = self.column_widths[column];
-
-                    // Calculate actual content width
-                    let content_width = self.calculate_column_width(column);
-
-                    // Set width to the minimum of content width and max width, but not less than min width
-                    let new_width = content_width.min(max_width).max(min_width);
-                    self.column_widths[column] = new_width;
-
-                    self.ensure_column_visible(column);
-
-                    self.add_notification(format!(
-                        "Column {} width minimized from {} to {}",
-                        index_to_col_name(column),
-                        current_width,
-                        new_width
-                    ));
-                }
-            }
-            // Minimize all columns
-            None => {
-                let sheet = self.workbook.get_current_sheet();
-
-                // Track how many columns changed for status message
-                let mut _changed_columns = 0;
-
-                for col_idx in 1..=sheet.max_cols {
-                    // Calculate actual content width
-                    let content_width = self.calculate_column_width(col_idx);
-
-                    // Set width to the minimum of content width and max width, but not less than min width
-                    let new_width = content_width.min(max_width).max(min_width);
-
-                    // Track if width changed
-                    if self.column_widths[col_idx] != new_width {
-                        self.column_widths[col_idx] = new_width;
-                        _changed_columns += 1;
-                    }
-                }
-
-                let column = self.selected_cell.1;
-                self.ensure_column_visible(column);
-
-                self.add_notification("Minimized the width of all columns".to_string());
-            }
-        }
-    }
-
     fn handle_column_scrolling(&mut self) {
         self.ensure_column_visible(self.selected_cell.1);
     }
@@ -1299,36 +1031,5 @@ impl<'a> AppState<'a> {
         self.input_buffer = String::new();
     }
 }
-
-fn parse_cell_reference(input: &str) -> Option<(usize, usize)> {
-    // Simple regex pattern matching
-    let mut col_str = String::new();
-    let mut row_str = String::new();
-
-    // Separate column and row
-    for c in input.chars() {
-        if c.is_alphabetic() {
-            col_str.push(c.to_ascii_uppercase());
-        } else if c.is_numeric() {
-            row_str.push(c);
-        } else {
-            return None;
-        }
-    }
-
-    if col_str.is_empty() || row_str.is_empty() {
-        return None;
-    }
-
-    // Convert column name to index
-    let col = col_name_to_index(&col_str)?;
-
-    // Convert row to index
-    let row = row_str.parse::<usize>().ok()?;
-
-    Some((row, col))
-}
-
-pub use crate::utils::col_name_to_index;
 
 pub use crate::utils::index_to_col_name;

@@ -20,14 +20,12 @@ pub fn extract_horizontal_headers(
                 if cell_value.is_empty() {
                     if let Some(last_value) = last_values_by_row.get(&row_idx) {
                         header_parts.push(last_value.clone());
-                    } else {
-                        if row_idx > 1 {
-                            let prev_row_idx = row_idx - 1;
-                            let prev_header_parts_len = header_parts.len();
+                    } else if row_idx > 1 {
+                        let prev_row_idx = row_idx - 1;
+                        let prev_header_parts_len = header_parts.len();
 
-                            if prev_header_parts_len > 0 && prev_row_idx >= 1 {
-                                header_parts.push(header_parts[prev_header_parts_len - 1].clone());
-                            }
+                        if prev_header_parts_len > 0 && prev_row_idx >= 1 {
+                            header_parts.push(header_parts[prev_header_parts_len - 1].clone());
                         }
                     }
                 } else {
@@ -64,14 +62,12 @@ pub fn extract_vertical_headers(
                 if cell_value.is_empty() {
                     if let Some(last_value) = last_values_by_col.get(&col_idx) {
                         header_parts.push(last_value.clone());
-                    } else {
-                        if col_idx > 1 {
-                            let prev_col_idx = col_idx - 1;
-                            let prev_header_parts_len = header_parts.len();
+                    } else if col_idx > 1 {
+                        let prev_col_idx = col_idx - 1;
+                        let prev_header_parts_len = header_parts.len();
 
-                            if prev_header_parts_len > 0 && prev_col_idx >= 1 {
-                                header_parts.push(header_parts[prev_header_parts_len - 1].clone());
-                            }
+                        if prev_header_parts_len > 0 && prev_col_idx >= 1 {
+                            header_parts.push(header_parts[prev_header_parts_len - 1].clone());
                         }
                     }
                 } else {

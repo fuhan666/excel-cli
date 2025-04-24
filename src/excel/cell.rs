@@ -1,5 +1,3 @@
-use calamine::DataType;
-
 #[derive(Clone)]
 pub struct Cell {
     pub value: String,
@@ -39,9 +37,9 @@ impl Cell {
             CellType::Text
         } else if value.parse::<f64>().is_ok() {
             CellType::Number
-        } else if value.contains('/') && value.split('/').count() == 3 {
-            CellType::Date
-        } else if value.contains('-') && value.split('-').count() == 3 {
+        } else if (value.contains('/') && value.split('/').count() == 3)
+            || (value.contains('-') && value.split('-').count() == 3)
+        {
             CellType::Date
         } else if value == "true" || value == "false" {
             CellType::Boolean

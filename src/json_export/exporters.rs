@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use indexmap::IndexMap;
 use serde::Serialize;
-use serde_json::Value;
+
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;

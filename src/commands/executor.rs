@@ -1,11 +1,10 @@
-use anyhow::Result;
 use std::path::Path;
 
 use crate::app::AppState;
 use crate::json_export::{HeaderDirection, export_all_sheets_json, export_json};
 use crate::utils::col_name_to_index;
 
-impl<'a> AppState<'a> {
+impl AppState<'_> {
     pub fn execute_command(&mut self) {
         let command = self.input_buffer.clone();
         self.input_mode = crate::app::InputMode::Normal;
@@ -112,7 +111,7 @@ impl<'a> AppState<'a> {
                 // Try to parse as a number
                 if let Ok(width) = action.parse::<usize>() {
                     let col = self.selected_cell.1;
-                    self.column_widths[col] = width.max(5).min(50); // Clamp between 5 and 50
+                    self.column_widths[col] = width.clamp(5, 50); // Clamp between 5 and 50
                     self.add_notification(format!("Column {} width set to {}", col, width));
                 } else {
                     self.add_notification(format!("Invalid column width: {}", action));

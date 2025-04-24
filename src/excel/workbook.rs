@@ -164,16 +164,8 @@ impl Workbook {
         names
     }
 
-    pub fn get_sheet_names_ref(&self) -> Vec<&str> {
-        self.sheets.iter().map(|s| s.name.as_str()).collect()
-    }
-
     pub fn get_current_sheet_name(&self) -> String {
         self.sheets[self.current_sheet_index].name.clone()
-    }
-
-    pub fn get_current_sheet_name_ref(&self) -> &str {
-        &self.sheets[self.current_sheet_index].name
     }
 
     pub fn get_current_sheet_index(&self) -> usize {
@@ -324,7 +316,7 @@ impl Workbook {
 
         // Process each sheet
         for sheet in &self.sheets {
-            let mut worksheet = workbook.add_worksheet().set_name(&sheet.name)?;
+            let worksheet = workbook.add_worksheet().set_name(&sheet.name)?;
 
             // Set column widths
             for col in 0..sheet.max_cols {

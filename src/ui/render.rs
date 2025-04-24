@@ -210,7 +210,7 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
 
                     for c in content.chars() {
                         let char_width = if c.is_ascii() { 1 } else { 2 };
-                        if current_width + char_width + 1 <= col_width {
+                        if current_width + char_width < col_width {
                             result.push(c);
                             current_width += char_width;
                         } else {
@@ -531,7 +531,7 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
         .lines()
         .map(|line| line.len() as u16)
         .max()
-        .unwrap_or(40) as u16;
+        .unwrap_or(40);
 
     let content_width = max_line_width + 4; // +4 for borders and padding
 
