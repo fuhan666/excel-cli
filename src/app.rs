@@ -129,7 +129,10 @@ impl<'a> AppState<'a> {
         if row < sheet.data.len() && col < sheet.data[0].len() {
             let cell = &sheet.data[row][col];
             if cell.is_formula {
-                format!("Formula: {}", cell.value)
+                let mut result = String::with_capacity(9 + cell.value.len());
+                result.push_str("Formula: ");
+                result.push_str(&cell.value);
+                result
             } else {
                 cell.value.clone()
             }
@@ -642,22 +645,35 @@ impl<'a> AppState<'a> {
     pub fn find_all_matches(&self, query: &str) -> Vec<(usize, usize)> {
         let sheet = self.workbook.get_current_sheet();
         let query_lower = query.to_lowercase();
-        let mut results = Vec::new();
+
+        let mut results = Vec::with_capacity(32);
 
         // Search through all cells in the sheet using row-first, column-second order
         for row in 1..=sheet.max_rows {
             for col in 1..=sheet.max_cols {
                 if row < sheet.data.len() && col < sheet.data[row].len() {
                     let cell_content = &sheet.data[row][col].value;
-                    if cell_content.to_lowercase().contains(&query_lower) {
+
+                    if self.case_insensitive_contains(cell_content, &query_lower) {
                         results.push((row, col));
                     }
                 }
             }
         }
 
-        // The search already uses row-first, column-second order, so no need to sort
         results
+    }
+
+    fn case_insensitive_contains(&self, haystack: &str, needle: &str) -> bool {
+        if needle.is_empty() {
+            return true;
+        }
+        if haystack.is_empty() {
+            return false;
+        }
+
+        let haystack_lower = haystack.to_lowercase();
+        haystack_lower.contains(needle)
     }
 
     // Jump to the next search result based on current position and search direction
@@ -731,7 +747,6 @@ impl<'a> AppState<'a> {
         self.search_direction = !self.search_direction;
     }
 
-    // Disable search highlighting (nohlsearch in Vim)
     pub fn disable_search_highlight(&mut self) {
         self.highlight_enabled = false;
         self.add_notification("Search highlighting disabled".to_string());
@@ -803,8 +818,13 @@ impl<'a> AppState<'a> {
 
     pub fn switch_sheet_by_index(&mut self, index: usize) -> Result<()> {
         let current_sheet_name = self.workbook.get_current_sheet_name();
-        self.sheet_column_widths
-            .insert(current_sheet_name, self.column_widths.clone());
+
+        if !self.sheet_column_widths.contains_key(&current_sheet_name)
+            || self.sheet_column_widths[&current_sheet_name] != self.column_widths
+        {
+            self.sheet_column_widths
+                .insert(current_sheet_name, self.column_widths.clone());
+        }
 
         // Reset cell selection and view position when switching sheets
         self.selected_cell = (1, 1);
@@ -817,7 +837,9 @@ impl<'a> AppState<'a> {
 
         // Restore column widths for the new sheet
         if let Some(saved_widths) = self.sheet_column_widths.get(&new_sheet_name) {
-            self.column_widths = saved_widths.clone();
+            if &self.column_widths != saved_widths {
+                self.column_widths = saved_widths.clone();
+            }
         } else {
             let max_cols = self.workbook.get_current_sheet().max_cols;
             let default_width = 15;
@@ -828,8 +850,10 @@ impl<'a> AppState<'a> {
         }
 
         // Clear search results as they're specific to the previous sheet
-        self.search_results.clear();
-        self.current_search_idx = None;
+        if !self.search_results.is_empty() {
+            self.search_results.clear();
+            self.current_search_idx = None;
+        }
 
         self.add_notification(format!("Switched to sheet: {}", new_sheet_name));
         Ok(())
@@ -1134,28 +1158,36 @@ impl<'a> AppState<'a> {
         let mut max_width = 3.max(col_name.len());
 
         // Calculate max width from all cells in the column
-        let cell_max_width = (1..=sheet.max_rows)
-            .filter(|&row| row < sheet.data.len() && col < sheet.data[row].len())
-            .map(|row| {
-                let content = &sheet.data[row][col].value;
+        for row in 1..=sheet.max_rows {
+            if row >= sheet.data.len() || col >= sheet.data[row].len() {
+                continue;
+            }
 
-                // Calculate display width based on character types
-                let display_width = content
-                    .chars()
-                    .fold(0, |acc, c| acc + if c.is_ascii() { 1 } else { 2 });
+            let content = &sheet.data[row][col].value;
+            if content.is_empty() {
+                continue;
+            }
 
-                // Adjust width for better readability
-                if content.chars().all(|c| c.is_ascii()) {
-                    // For pure ASCII text, add proportional padding
-                    (display_width as f32 * 1.3).ceil() as usize
+            let mut is_ascii_only = true;
+            let mut display_width = 0;
+
+            for c in content.chars() {
+                if c.is_ascii() {
+                    display_width += 1;
                 } else {
-                    display_width
+                    is_ascii_only = false;
+                    display_width += 2;
                 }
-            })
-            .max()
-            .unwrap_or(0);
+            }
 
-        max_width = max_width.max(cell_max_width);
+            let cell_width = if is_ascii_only {
+                display_width + (display_width / 3)
+            } else {
+                display_width
+            };
+
+            max_width = max_width.max(cell_width);
+        }
 
         // Add appropriate padding based on content width
         if max_width > 20 {

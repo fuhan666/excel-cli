@@ -51,49 +51,72 @@ fn create_sheet_from_range(name: &str, range: calamine::Range<DataType>) -> Shee
 
     for (row_idx, row) in range.rows().enumerate() {
         for (col_idx, cell) in row.iter().enumerate() {
+            if let DataType::Empty = cell {
+                continue;
+            }
+
             // Extract value, cell_type, and original_type from the DataType
             let (value, cell_type, original_type) = match cell {
                 DataType::Empty => (String::new(), CellType::Empty, Some(DataTypeInfo::Empty)),
-                DataType::String(s) => (s.to_string(), CellType::Text, Some(DataTypeInfo::String)),
-                DataType::Float(f) => (
-                    f.to_string(),
-                    CellType::Number,
-                    Some(DataTypeInfo::Float(*f)),
-                ),
+                DataType::String(s) => {
+                    let mut value = String::with_capacity(s.len());
+                    value.push_str(s);
+                    (value, CellType::Text, Some(DataTypeInfo::String))
+                }
+                DataType::Float(f) => {
+                    let value = if *f == (*f as i64) as f64 && f.abs() < 1e10 {
+                        (*f as i64).to_string()
+                    } else {
+                        f.to_string()
+                    };
+                    (value, CellType::Number, Some(DataTypeInfo::Float(*f)))
+                }
                 DataType::Int(i) => (i.to_string(), CellType::Number, Some(DataTypeInfo::Int(*i))),
                 DataType::Bool(b) => (
-                    b.to_string(),
+                    if *b {
+                        "TRUE".to_string()
+                    } else {
+                        "FALSE".to_string()
+                    },
                     CellType::Boolean,
                     Some(DataTypeInfo::Bool(*b)),
                 ),
-                DataType::Error(e) => (
-                    format!("Error: {:?}", e),
-                    CellType::Text,
-                    Some(DataTypeInfo::Error),
-                ),
+                DataType::Error(e) => {
+                    // Pre-allocate with capacity for error message
+                    let mut value = String::with_capacity(15);
+                    value.push_str("Error: ");
+                    value.push_str(&format!("{:?}", e));
+                    (value, CellType::Text, Some(DataTypeInfo::Error))
+                }
                 DataType::DateTime(dt) => (
-                    format!("{}", dt),
+                    dt.to_string(),
                     CellType::Date,
                     Some(DataTypeInfo::DateTime(*dt)),
                 ),
                 DataType::Duration(d) => (
-                    format!("{}", d),
+                    d.to_string(),
                     CellType::Text,
                     Some(DataTypeInfo::Duration(*d)),
                 ),
-                DataType::DateTimeIso(s) => (
-                    s.to_string(),
-                    CellType::Date,
-                    Some(DataTypeInfo::DateTimeIso(s.to_string())),
-                ),
-                DataType::DurationIso(s) => (
-                    s.to_string(),
-                    CellType::Text,
-                    Some(DataTypeInfo::DurationIso(s.to_string())),
-                ),
+                DataType::DateTimeIso(s) => {
+                    let value = s.to_string();
+                    (
+                        value.clone(),
+                        CellType::Date,
+                        Some(DataTypeInfo::DateTimeIso(value)),
+                    )
+                }
+                DataType::DurationIso(s) => {
+                    let value = s.to_string();
+                    (
+                        value.clone(),
+                        CellType::Text,
+                        Some(DataTypeInfo::DurationIso(value)),
+                    )
+                }
             };
 
-            let is_formula = value.starts_with('=');
+            let is_formula = !value.is_empty() && value.starts_with('=');
 
             data[row_idx + 1][col_idx + 1] =
                 Cell::new_with_type(value, is_formula, cell_type, original_type);
@@ -134,11 +157,23 @@ impl Workbook {
     }
 
     pub fn get_sheet_names(&self) -> Vec<String> {
-        self.sheets.iter().map(|s| s.name.clone()).collect()
+        let mut names = Vec::with_capacity(self.sheets.len());
+        for sheet in &self.sheets {
+            names.push(sheet.name.clone());
+        }
+        names
+    }
+
+    pub fn get_sheet_names_ref(&self) -> Vec<&str> {
+        self.sheets.iter().map(|s| s.name.as_str()).collect()
     }
 
     pub fn get_current_sheet_name(&self) -> String {
         self.sheets[self.current_sheet_index].name.clone()
+    }
+
+    pub fn get_current_sheet_name_ref(&self) -> &str {
+        &self.sheets[self.current_sheet_index].name
     }
 
     pub fn get_current_sheet_index(&self) -> usize {

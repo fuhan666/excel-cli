@@ -123,133 +123,132 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
 }
 
 fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
-    let visible_rows = (app_state.start_row..=(app_state.start_row + app_state.visible_rows - 1))
-        .collect::<Vec<_>>();
-    let visible_cols = (app_state.start_col..=(app_state.start_col + app_state.visible_cols - 1))
-        .collect::<Vec<_>>();
+    // Calculate visible row and column ranges
+    let start_row = app_state.start_row;
+    let end_row = start_row + app_state.visible_rows - 1;
+    let start_col = app_state.start_col;
+    let end_col = start_col + app_state.visible_cols - 1;
 
-    let mut col_constraints = vec![Constraint::Length(5)];
-    col_constraints.extend(
-        visible_cols
-            .iter()
-            .map(|col| Constraint::Length(app_state.get_column_width(*col) as u16)),
-    );
+    let mut col_constraints = Vec::with_capacity(app_state.visible_cols + 1);
+    col_constraints.push(Constraint::Length(5)); // Row header width
 
-    let header_cells = {
-        let mut cells = vec![Cell::from("")];
-        cells.extend(visible_cols.iter().map(|col| {
-            let col_name = index_to_col_name(*col);
-            Cell::from(col_name).style(Style::default().bg(Color::Blue).fg(Color::White))
-        }));
-        Row::new(cells).height(1)
-    };
+    for col in start_col..=end_col {
+        col_constraints.push(Constraint::Length(app_state.get_column_width(col) as u16));
+    }
 
-    let rows = visible_rows
-        .iter()
-        .map(|row| {
-            let row_header = Cell::from(row.to_string())
-                .style(Style::default().bg(Color::Blue).fg(Color::White));
+    let mut header_cells = Vec::with_capacity(app_state.visible_cols + 1);
+    header_cells.push(Cell::from(""));
 
-            let row_cells = visible_cols
-                .iter()
-                .map(|col| {
-                    let content = if app_state.selected_cell == (*row, *col)
-                        && matches!(app_state.input_mode, InputMode::Editing)
-                    {
-                        let current_content = app_state.text_area.lines().join("\n");
-                        let col_width = app_state.get_column_width(*col);
+    // Add column headers
+    for col in start_col..=end_col {
+        let col_name = index_to_col_name(col);
+        header_cells
+            .push(Cell::from(col_name).style(Style::default().bg(Color::Blue).fg(Color::White)));
+    }
 
-                        let display_width = current_content
-                            .chars()
-                            .fold(0, |acc, c| acc + if c.is_ascii() { 1 } else { 2 });
+    let header_row = Row::new(header_cells).height(1);
 
-                        if display_width > col_width.saturating_sub(2) {
-                            let mut cumulative_width = 0;
-                            let chars_to_show = current_content
-                                .chars()
-                                .rev()
-                                .take_while(|&c| {
-                                    let char_width = if c.is_ascii() { 1 } else { 2 };
-                                    if cumulative_width + char_width <= col_width.saturating_sub(2)
-                                    {
-                                        cumulative_width += char_width;
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                })
-                                .collect::<Vec<_>>();
+    let mut rows = Vec::with_capacity(app_state.visible_rows);
 
-                            chars_to_show.into_iter().rev().collect()
+    // Create data rows
+    for row in start_row..=end_row {
+        let row_header =
+            Cell::from(row.to_string()).style(Style::default().bg(Color::Blue).fg(Color::White));
+
+        let mut cells = Vec::with_capacity(app_state.visible_cols + 1);
+        cells.push(row_header);
+
+        // Add cells for this row
+        for col in start_col..=end_col {
+            let content = if app_state.selected_cell == (row, col)
+                && matches!(app_state.input_mode, InputMode::Editing)
+            {
+                // Handle editing mode content
+                let current_content = app_state.text_area.lines().join("\n");
+                let col_width = app_state.get_column_width(col);
+
+                // Calculate display width
+                let display_width = current_content
+                    .chars()
+                    .fold(0, |acc, c| acc + if c.is_ascii() { 1 } else { 2 });
+
+                if display_width > col_width.saturating_sub(2) {
+                    // Truncate content if it's too wide
+                    let mut result = String::with_capacity(col_width);
+                    let mut cumulative_width = 0;
+
+                    // Process characters from the end to show the most recent input
+                    for c in current_content.chars().rev().take(col_width * 2) {
+                        let char_width = if c.is_ascii() { 1 } else { 2 };
+                        if cumulative_width + char_width <= col_width.saturating_sub(2) {
+                            cumulative_width += char_width;
+                            result.push(c);
                         } else {
-                            current_content
+                            break;
                         }
-                    } else {
-                        let content = app_state.get_cell_content(*row, *col);
-                        let col_width = app_state.get_column_width(*col);
+                    }
 
-                        let display_width = content
-                            .chars()
-                            .fold(0, |acc, c| acc + if c.is_ascii() { 1 } else { 2 });
+                    // Reverse the characters to get the correct order
+                    result.chars().rev().collect::<String>()
+                } else {
+                    current_content
+                }
+            } else {
+                // Handle normal cell content
+                let content = app_state.get_cell_content(row, col);
+                let col_width = app_state.get_column_width(col);
 
-                        if display_width > col_width {
-                            let mut result = String::new();
-                            let mut current_width = 0;
+                // Calculate display width
+                let display_width = content
+                    .chars()
+                    .fold(0, |acc, c| acc + if c.is_ascii() { 1 } else { 2 });
 
-                            for c in content.chars() {
-                                let char_width = if c.is_ascii() { 1 } else { 2 };
-                                if current_width + char_width + 1 <= col_width {
-                                    result.push(c);
-                                    current_width += char_width;
-                                } else {
-                                    break;
-                                }
-                            }
+                if display_width > col_width {
+                    // Truncate content if it's too wide
+                    let mut result = String::with_capacity(col_width);
+                    let mut current_width = 0;
 
-                            if !content.is_empty() && result.len() < content.len() {
-                                result.push('…');
-                            }
-
-                            result
+                    for c in content.chars() {
+                        let char_width = if c.is_ascii() { 1 } else { 2 };
+                        if current_width + char_width + 1 <= col_width {
+                            result.push(c);
+                            current_width += char_width;
                         } else {
-                            content
+                            break;
                         }
-                    };
+                    }
 
-                    // Determine cell style based on selection and search results
-                    let style = if app_state.selected_cell == (*row, *col) {
-                        Style::default().bg(Color::DarkGray).fg(Color::White)
-                    } else if app_state.highlight_enabled
-                        && app_state.search_results.contains(&(*row, *col))
-                    {
-                        // Highlight search results only if highlighting is enabled
-                        Style::default().bg(Color::Yellow).fg(Color::Black)
-                    } else {
-                        Style::default()
-                    };
+                    if !content.is_empty() && result.len() < content.len() {
+                        result.push('…');
+                    }
 
-                    Cell::from(content).style(style)
-                })
-                .collect::<Vec<_>>();
+                    result
+                } else {
+                    content
+                }
+            };
 
-            let mut cells = vec![row_header];
-            cells.extend(row_cells);
+            // Determine cell style
+            let style = if app_state.selected_cell == (row, col) {
+                Style::default().bg(Color::DarkGray).fg(Color::White)
+            } else if app_state.highlight_enabled && app_state.search_results.contains(&(row, col))
+            {
+                Style::default().bg(Color::Yellow).fg(Color::Black)
+            } else {
+                Style::default()
+            };
 
-            Row::new(cells)
-        })
-        .collect::<Vec<_>>();
+            cells.push(Cell::from(content).style(style));
+        }
 
-    // Create a table with the rows
-    let mut table = Table::new(std::iter::once(header_cells).chain(rows));
+        rows.push(Row::new(cells));
+    }
 
-    // Set table properties
-    table = table
+    let table = Table::new(std::iter::once(header_row).chain(rows))
         .block(Block::default().borders(Borders::ALL))
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-        .highlight_symbol(">> ");
-
-    // Set column constraints
-    table = table.widths(&col_constraints);
+        .highlight_symbol(">> ")
+        .widths(&col_constraints);
 
     f.render_widget(table, area);
 }
@@ -346,16 +345,13 @@ fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
     match app_state.input_mode {
         InputMode::Editing => {
             // In editing mode, show the text area for editing
-            let text_area = app_state.text_area.clone();
+            // Create a block for the editing area with title
+            let title = format!(" Editing Cell {} ", cell_ref);
+            let edit_block = Block::default().borders(Borders::ALL).title(title);
 
-            // Create a block for the editing area
-            let edit_block = Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" Editing Cell {} ", cell_ref));
-
-            // First render the block
             f.render_widget(edit_block.clone(), chunks[0]);
 
+            // Calculate inner area with padding
             let inner_area = edit_block.inner(chunks[0]);
             let padded_area = Rect {
                 x: inner_area.x + 1, // Add 1 character padding on the left
@@ -363,17 +359,20 @@ fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
                 width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
                 height: inner_area.height,
             };
-            f.render_widget(text_area.widget(), padded_area);
+
+            f.render_widget(app_state.text_area.widget(), padded_area);
         }
         _ => {
+            // Get cell content
             let content = app_state.get_cell_content(row, col);
 
-            let cell_block = Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" Cell {} Content ", cell_ref));
+            // Create block with title
+            let title = format!(" Cell {} Content ", cell_ref);
+            let cell_block = Block::default().borders(Borders::ALL).title(title);
 
             f.render_widget(cell_block.clone(), chunks[0]);
 
+            // Calculate inner area with padding
             let inner_area = cell_block.inner(chunks[0]);
             let padded_area = Rect {
                 x: inner_area.x + 1, // Add 1 character padding on the left
@@ -390,29 +389,51 @@ fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
         }
     }
 
+    // Create notification block
     let notification_block = Block::default()
         .borders(Borders::ALL)
         .title(" Notifications ");
 
-    let notification_height = area.height as usize - 2; // Subtract 2 for the border
-
-    let notifications_to_show = if app_state.notification_messages.len() > notification_height {
-        let start_idx = app_state.notification_messages.len() - notification_height;
-        app_state.notification_messages[start_idx..].to_vec()
-    } else {
-        app_state.notification_messages.clone()
-    };
-
-    let notifications_text = notifications_to_show.join("\n");
-
     f.render_widget(notification_block.clone(), chunks[1]);
 
+    // Calculate inner area with padding
     let inner_area = notification_block.inner(chunks[1]);
     let padded_area = Rect {
         x: inner_area.x + 1, // Add 1 character padding on the left
         y: inner_area.y,
         width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
         height: inner_area.height,
+    };
+
+    // Calculate how many notifications can be shown
+    let notification_height = area.height as usize - 2; // Subtract 2 for the border
+
+    let notifications_text = if app_state.notification_messages.is_empty() {
+        String::new()
+    } else if app_state.notification_messages.len() <= notification_height {
+        app_state.notification_messages.join("\n")
+    } else {
+        let start_idx = app_state.notification_messages.len() - notification_height;
+
+        let mut result = String::with_capacity(
+            app_state.notification_messages[start_idx..]
+                .iter()
+                .map(|s| s.len())
+                .sum::<usize>()
+                + notification_height, // Account for newlines
+        );
+
+        for (i, msg) in app_state.notification_messages[start_idx..]
+            .iter()
+            .enumerate()
+        {
+            if i > 0 {
+                result.push('\n');
+            }
+            result.push_str(msg);
+        }
+
+        result
     };
 
     let notification_paragraph = Paragraph::new(notifications_text)
