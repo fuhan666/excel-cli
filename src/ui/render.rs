@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossterm::{
     ExecutableCommand,
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyEventKind},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
@@ -12,10 +12,13 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table},
 };
-use ratatui_textarea::TextArea;
 use std::{io, time::Duration};
 
-use crate::app::{AppState, InputMode, index_to_col_name};
+use crate::app::AppState;
+use crate::app::InputMode;
+use crate::ui::handlers::handle_key_event;
+use crate::utils::cell_reference;
+use crate::utils::index_to_col_name;
 
 pub fn run_app(mut app_state: AppState) -> Result<()> {
     // Setup terminal
@@ -295,7 +298,6 @@ fn parse_command(input: &str) -> Vec<Span> {
         }
     }
 
-    // Special case for "ej" command
     if input.starts_with("ej ") {
         let mut spans = Vec::new();
         let parts: Vec<&str> = input.split_whitespace().collect();
@@ -320,7 +322,6 @@ fn parse_command(input: &str) -> Vec<Span> {
         return spans;
     }
 
-    // Special case for "cw" commands
     if input.starts_with("cw ") {
         let mut spans = Vec::new();
         let parts: Vec<&str> = input.split_whitespace().collect();
@@ -347,7 +348,6 @@ fn parse_command(input: &str) -> Vec<Span> {
         return spans;
     }
 
-    // Special case for "dr" commands
     if input.starts_with("dr") {
         let mut spans = Vec::new();
         let parts: Vec<&str> = input.split_whitespace().collect();
@@ -371,7 +371,6 @@ fn parse_command(input: &str) -> Vec<Span> {
         return spans;
     }
 
-    // Special case for "dc" commands
     if input.starts_with("dc") {
         let mut spans = Vec::new();
         let parts: Vec<&str> = input.split_whitespace().collect();
@@ -628,279 +627,6 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
         .scroll((app_state.help_scroll as u16, 0));
 
     f.render_widget(help_paragraph, padded_area);
-}
-
-fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
-    match app_state.input_mode {
-        InputMode::Normal => {
-            if key.modifiers.contains(KeyModifiers::CONTROL) {
-                handle_ctrl_key(app_state, key.code);
-            } else {
-                handle_normal_mode(app_state, key.code);
-            }
-        }
-        InputMode::Editing => handle_editing_mode(app_state, key.code),
-        InputMode::Command => handle_command_mode(app_state, key.code),
-        InputMode::SearchForward => handle_search_mode(app_state, key.code),
-        InputMode::SearchBackward => handle_search_mode(app_state, key.code),
-        InputMode::Help => handle_help_mode(app_state, key.code),
-    }
-}
-
-fn handle_ctrl_key(app_state: &mut AppState, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Left => {
-            app_state.jump_to_prev_non_empty_cell_left();
-        }
-        KeyCode::Right => {
-            app_state.jump_to_prev_non_empty_cell_right();
-        }
-        KeyCode::Up => {
-            app_state.jump_to_prev_non_empty_cell_up();
-        }
-        KeyCode::Down => {
-            app_state.jump_to_prev_non_empty_cell_down();
-        }
-        _ => {}
-    }
-}
-
-fn handle_command_mode(app_state: &mut AppState, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Enter => app_state.execute_command(),
-        KeyCode::Esc => app_state.cancel_input(),
-        KeyCode::Backspace => app_state.delete_char_from_input(),
-        KeyCode::Char(c) => app_state.add_char_to_input(c),
-        _ => {}
-    }
-}
-
-fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Char('h') => {
-            app_state.g_pressed = false;
-            app_state.move_cursor(0, -1);
-        }
-        KeyCode::Char('j') => {
-            app_state.g_pressed = false;
-            app_state.move_cursor(1, 0);
-        }
-        KeyCode::Char('k') => {
-            app_state.g_pressed = false;
-            app_state.move_cursor(-1, 0);
-        }
-        KeyCode::Char('l') => {
-            app_state.g_pressed = false;
-            app_state.move_cursor(0, 1);
-        }
-        KeyCode::Char('=') | KeyCode::Char('+') => {
-            app_state.g_pressed = false;
-            app_state.adjust_info_panel_height(1);
-        }
-        KeyCode::Char('-') => {
-            app_state.g_pressed = false;
-            app_state.adjust_info_panel_height(-1);
-        }
-        KeyCode::Char('[') => {
-            app_state.g_pressed = false;
-            if let Err(e) = app_state.prev_sheet() {
-                app_state.add_notification(format!("Failed to switch to previous sheet: {}", e));
-            }
-        }
-        KeyCode::Char(']') => {
-            app_state.g_pressed = false;
-            if let Err(e) = app_state.next_sheet() {
-                app_state.add_notification(format!("Failed to switch to next sheet: {}", e));
-            }
-        }
-        KeyCode::Char('i') => {
-            app_state.g_pressed = false;
-            app_state.start_editing();
-        }
-        KeyCode::Char('g') => {
-            if app_state.g_pressed {
-                app_state.jump_to_first_row();
-                app_state.g_pressed = false;
-            } else {
-                app_state.g_pressed = true;
-            }
-        }
-        KeyCode::Char('G') => {
-            app_state.g_pressed = false;
-            app_state.jump_to_last_row();
-        }
-        KeyCode::Char('0') => {
-            app_state.g_pressed = false;
-            app_state.jump_to_first_column();
-        }
-        KeyCode::Char('^') => {
-            app_state.g_pressed = false;
-            app_state.jump_to_first_non_empty_column();
-        }
-        KeyCode::Char('$') => {
-            app_state.g_pressed = false;
-            app_state.jump_to_last_column();
-        }
-        KeyCode::Char('y') => {
-            app_state.g_pressed = false;
-            app_state.copy_cell();
-        }
-        KeyCode::Char('d') => {
-            app_state.g_pressed = false;
-            if let Err(e) = app_state.cut_cell() {
-                app_state.add_notification(format!("Cut failed: {}", e));
-            }
-        }
-        KeyCode::Char('p') => {
-            app_state.g_pressed = false;
-            if let Err(e) = app_state.paste_cell() {
-                app_state.add_notification(format!("Paste failed: {}", e));
-            }
-        }
-        KeyCode::Char(':') => {
-            app_state.g_pressed = false;
-            app_state.start_command_mode();
-        }
-        KeyCode::Char('/') => {
-            app_state.g_pressed = false;
-            app_state.start_search_forward();
-        }
-        KeyCode::Char('?') => {
-            app_state.g_pressed = false;
-            app_state.start_search_backward();
-        }
-        KeyCode::Char('n') => {
-            app_state.g_pressed = false;
-            if !app_state.search_results.is_empty() {
-                app_state.jump_to_next_search_result();
-            } else if !app_state.search_query.is_empty() {
-                // Re-run the last search if we have a query but no results
-                app_state.search_results = app_state.find_all_matches(&app_state.search_query);
-                if !app_state.search_results.is_empty() {
-                    app_state.jump_to_next_search_result();
-                }
-            }
-        }
-
-        KeyCode::Char('N') => {
-            app_state.g_pressed = false;
-            if !app_state.search_results.is_empty() {
-                app_state.jump_to_prev_search_result();
-            } else if !app_state.search_query.is_empty() {
-                // Re-run the last search if we have a query but no results
-                app_state.search_results = app_state.find_all_matches(&app_state.search_query);
-                if !app_state.search_results.is_empty() {
-                    app_state.jump_to_prev_search_result();
-                }
-            }
-        }
-
-        KeyCode::Left => {
-            app_state.g_pressed = false;
-            app_state.move_cursor(0, -1);
-        }
-        KeyCode::Right => {
-            app_state.g_pressed = false;
-            app_state.move_cursor(0, 1);
-        }
-        KeyCode::Up => {
-            app_state.g_pressed = false;
-            app_state.move_cursor(-1, 0);
-        }
-        KeyCode::Down => {
-            app_state.g_pressed = false;
-            app_state.move_cursor(1, 0);
-        }
-        _ => {
-            app_state.g_pressed = false;
-        }
-    }
-}
-
-fn handle_editing_mode(app_state: &mut AppState, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Enter => {
-            if let Err(e) = app_state.confirm_edit() {
-                app_state.add_notification(format!("Error: {}", e));
-            }
-        }
-        KeyCode::Esc => app_state.cancel_input(),
-        _ => {
-            let key_event = KeyEvent {
-                code: key_code,
-                modifiers: KeyModifiers::empty(),
-                kind: KeyEventKind::Press,
-                state: crossterm::event::KeyEventState::NONE,
-            };
-            app_state.text_area.input(key_event);
-
-            // Update input_buffer with the current TextArea content to sync with cell display
-            app_state.input_buffer = app_state.text_area.lines().join("\n");
-        }
-    }
-}
-
-fn handle_search_mode(app_state: &mut AppState, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Enter => app_state.execute_search(),
-        KeyCode::Esc => {
-            app_state.input_mode = InputMode::Normal;
-            app_state.input_buffer = String::new();
-            app_state.text_area = TextArea::default();
-        }
-        _ => {
-            let key_event = KeyEvent {
-                code: key_code,
-                modifiers: KeyModifiers::empty(),
-                kind: KeyEventKind::Press,
-                state: crossterm::event::KeyEventState::NONE,
-            };
-            app_state.text_area.input(key_event);
-        }
-    }
-}
-
-fn handle_help_mode(app_state: &mut AppState, key_code: KeyCode) {
-    let line_count = app_state.help_text.lines().count();
-
-    let visible_lines = app_state.help_visible_lines;
-
-    let max_scroll = line_count.saturating_sub(visible_lines).max(0);
-
-    match key_code {
-        KeyCode::Enter | KeyCode::Esc => {
-            app_state.input_mode = InputMode::Normal;
-        }
-        KeyCode::Char('j') | KeyCode::Down => {
-            // Scroll down, but not beyond the last line
-            app_state.help_scroll = (app_state.help_scroll + 1).min(max_scroll);
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            // Scroll up
-            app_state.help_scroll = app_state.help_scroll.saturating_sub(1);
-        }
-        KeyCode::PageDown => {
-            // Scroll down by a larger amount, but not beyond the last line
-            app_state.help_scroll = (app_state.help_scroll + 10).min(max_scroll);
-        }
-        KeyCode::PageUp => {
-            // Scroll up by a larger amount
-            app_state.help_scroll = app_state.help_scroll.saturating_sub(10);
-        }
-        KeyCode::Home => {
-            // Scroll to the top
-            app_state.help_scroll = 0;
-        }
-        KeyCode::End => {
-            // Scroll to the bottom
-            app_state.help_scroll = max_scroll;
-        }
-        _ => {}
-    }
-}
-
-fn cell_reference(cell: (usize, usize)) -> String {
-    format!("{}{}", index_to_col_name(cell.1), cell.0)
 }
 
 fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {

@@ -3,9 +3,11 @@ use clap::Parser;
 use std::path::PathBuf;
 
 mod app;
+mod commands;
 mod excel;
 mod json_export;
 mod ui;
+mod utils;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
