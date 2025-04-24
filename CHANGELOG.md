@@ -1,0 +1,30 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.0] - 2025-04-24
+
+This is the initial release of excel-cli, a lightweight terminal-based Excel viewer with Vim-like navigation.
+
+### Added
+
+- Browse and switch between worksheets in multi-sheet workbooks
+- Delete worksheets from multi-sheet workbooks
+- Delete column and row functionality
+- Edit cell contents with a text editor
+- Save changes to Excel files
+- Export data to JSON format with customizable header options
+- Vim-like commands for navigation and operations:
+  - `h`, `j`, `k`, `l` for cell navigation
+  - `0`, `^`, `$` for row navigation
+  - `gg`, `G` for column navigation
+  - `Ctrl+←→↑↓` for jumping to non-empty cells
+  - `/`, `?` for searching with `n`, `N` for navigation between matches
+  - `:` for command mode with various commands
+- Copy, cut, and paste functionality with `y`, `d`, and `p` keys
+- Support for pipe operator when exporting to JSON
+
+[0.1.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.1.0
