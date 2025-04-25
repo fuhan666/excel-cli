@@ -1,12 +1,13 @@
 # Excel-CLI
 
-A lightweight terminal-based Excel viewer with Vim-like navigation, it allows basic Excel file viewing and provides a simple way to export Excel data to JSON format.
+English | [中文](README_zh.md)
+
+A lightweight terminal-based Excel with Vim-like navigation, it allows Excel file viewing, simple editing, and provides a simple way to export Excel data to JSON format.
 
 ## Features
 
 - Browse Excel worksheets
-- Switch between sheets in multi-sheet workbooks
-- Delete worksheets from multi-sheet workbooks
+- Switch between sheets in multi-sheet workbooks, delete worksheets
 - Navigate through cells using Vim-like commands
 - Edit cell contents
 - Save changes to Excel files
@@ -24,7 +25,15 @@ The package is published to crates.io and can be installed directly using:
 cargo install excel-cli
 ```
 
-#### Option 2: Compile from Source
+#### Option 2: Download from GitHub Release
+
+1. Visit the [GitHub Releases](https://github.com/fuhan666/excel-cli/releases)
+2. Download the pre-compiled binary for your operating system
+3. Place the executable in your system path, or run it directly from the download location
+
+Linux and macOS users may need to add execute permissions first
+
+#### Option 3: Compile from Source
 
 Requires Rust and Cargo. Install using the following commands:
 
@@ -63,8 +72,8 @@ excel-cli path/to/your/file.xlsx -j > data.json # (example) Save JSON output to 
 ### Command-line Options
 
 - `--json-export`, `-j`: Export all sheets to JSON and output to stdout (for piping)
-- `--direction`, `-d`: Header direction for JSON export: 'h' for horizontal (top rows), 'v' for vertical (left columns). Default: 'h'
-- `--header-count`, `-r`: Number of header rows (for horizontal) or columns (for vertical) in JSON export. Default: 1
+- `--direction`, `-d`: Header direction in Excel: 'h' for horizontal (top rows), 'v' for vertical (left columns). Default: 'h'
+- `--header-count`, `-r`: Number of header rows (for horizontal) or columns (for vertical) in Excel. Default: 1
 
 ## User Interface
 
@@ -72,11 +81,13 @@ The application has a simple and intuitive interface:
 
 - **Title Bar with Sheet Tabs**: Displays the current file name and all available sheets with the current sheet highlighted
 - **Spreadsheet**: The main area displaying the Excel data
-- **Status Bar**: Shows current cell reference and available commands
+- **Content Panel**: Displays the full content of the currently selected cell
+- **Notification Panel**: Displays operation feedback and system notifications
+- **Status Bar**: Displays operation hints and current input commands
 
 ## Keyboard Shortcuts
 
-- `h`, `j`, `k`, `l` or arrow keys: Move selection (1 cell)
+- `h`, `j`, `k`, `l` or arrow keys: Move between cells (1 cell)
 - `[`: Switch to previous sheet (stops at first sheet)
 - `]`: Switch to next sheet (stops at last sheet)
 - `0`: Jump to first column in current row
@@ -104,7 +115,6 @@ In edit mode:
 
 - `Enter`: Confirm edit
 - `Esc`: Cancel edit
-- Formulas can be entered by starting with `=`
 
 ## Search Mode
 
@@ -157,12 +167,12 @@ The output filename is automatically generated in one of these formats:
 - `:y` - Copy current cell content
 - `:d` - Cut current cell content
 - `:put` or `:pu` - Paste clipboard content to current cell
-- `:[cell]` - Jump to cell (e.g., `:A1`, `:B10`). Supports both uppercase and lowercase column letters (`:a1` works the same as `:A1`)
+- `:[cell]` - Jump to cell (e.g., `:A1`, `:B10`). Supports both uppercase and lowercase letters (`:a1` works the same as `:A1`)
 
 ### Sheet Management Commands
 
 - `:sheet [name/number]` - Switch to sheet by name or index (1-based)
-- `:delsheet` - Delete the current sheet (prevents deleting the last sheet)
+- `:delsheet` - Delete the current sheet
 
 ### Row and Column Management Commands
 
