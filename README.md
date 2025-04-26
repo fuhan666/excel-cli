@@ -156,6 +156,8 @@ The output filename is automatically generated in one of these formats:
 - For single sheet: `original_filename_sheet_SheetName_YYYYMMDD_HHMMSS.json`
 - For all sheets: `original_filename_all_sheets_YYYYMMDD_HHMMSS.json`
 
+The JSON files are saved in the same directory as the original Excel file.
+
 ### Vim-like Commands
 
 - `:w` - Save file without exiting

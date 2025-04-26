@@ -156,6 +156,8 @@ excel-cli path/to/your/file.xlsx -j > data.json # （示例）将JSON输出保�
 - 单个工作表：`original_filename_sheet_SheetName_YYYYMMDD_HHMMSS.json`
 - 所有工作表：`original_filename_all_sheets_YYYYMMDD_HHMMSS.json`
 
+JSON 文件保存在原始 Excel 文件所在的目录中。
+
 ### 类 Vim 命令
 
 - `:w` - 保存文件但不退出

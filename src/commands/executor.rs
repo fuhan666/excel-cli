@@ -284,7 +284,6 @@ impl AppState<'_> {
 
         let sheet_name = self.workbook.get_current_sheet_name();
 
-        // Get original file name without extension
         let file_path = self.workbook.get_file_path().to_string();
         let original_file = Path::new(&file_path);
         let file_stem = original_file
@@ -292,35 +291,35 @@ impl AppState<'_> {
             .and_then(|s| s.to_str())
             .unwrap_or("export");
 
+        let parent_dir = original_file.parent().unwrap_or_else(|| Path::new(""));
+
         let now = chrono::Local::now();
         let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
 
-        let new_filename = if export_all {
+        let filename = if export_all {
             format!("{}_all_sheets_{}.json", file_stem, timestamp)
         } else {
             format!("{}_sheet_{}_{}.json", file_stem, sheet_name, timestamp)
         };
 
+        // Create the full path in the same directory as the original Excel file
+        let new_filepath = parent_dir.join(filename);
+
         // Export to JSON
         let result = if export_all {
-            export_all_sheets_json(
-                &self.workbook,
-                direction,
-                header_count,
-                Path::new(&new_filename),
-            )
+            export_all_sheets_json(&self.workbook, direction, header_count, &new_filepath)
         } else {
             export_json(
                 self.workbook.get_current_sheet(),
                 direction,
                 header_count,
-                Path::new(&new_filename),
+                &new_filepath,
             )
         };
 
         match result {
             Ok(_) => {
-                self.add_notification(format!("Exported to {}", new_filename));
+                self.add_notification(format!("Exported to {}", new_filepath.display()));
             }
             Err(e) => {
                 self.add_notification(format!("Export failed: {}", e));

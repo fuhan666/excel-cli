@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Changed the cell content panel and notification panel to vertical layout
+- Export JSON files to the same directory as the original Excel file
 
 ## [0.1.1] - 2025-04-24
 
