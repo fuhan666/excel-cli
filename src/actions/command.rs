@@ -1,4 +1,3 @@
-
 use super::types::{ActionCommand, ActionType};
 
 impl ActionCommand {

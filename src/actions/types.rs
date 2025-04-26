@@ -13,11 +13,26 @@ pub enum ActionType {
 // Executor for actions in the application
 pub trait ActionExecutor {
     fn execute_action(&mut self, action: &ActionCommand) -> Result<(), anyhow::Error>;
-    fn execute_cell_action(&mut self, action: &crate::actions::CellAction) -> Result<(), anyhow::Error>;
-    fn execute_row_action(&mut self, action: &crate::actions::RowAction) -> Result<(), anyhow::Error>;
-    fn execute_column_action(&mut self, action: &crate::actions::ColumnAction) -> Result<(), anyhow::Error>;
-    fn execute_sheet_action(&mut self, action: &crate::actions::SheetAction) -> Result<(), anyhow::Error>;
-    fn execute_multi_row_action(&mut self, action: &crate::actions::MultiRowAction) -> Result<(), anyhow::Error>;
+    fn execute_cell_action(
+        &mut self,
+        action: &crate::actions::CellAction,
+    ) -> Result<(), anyhow::Error>;
+    fn execute_row_action(
+        &mut self,
+        action: &crate::actions::RowAction,
+    ) -> Result<(), anyhow::Error>;
+    fn execute_column_action(
+        &mut self,
+        action: &crate::actions::ColumnAction,
+    ) -> Result<(), anyhow::Error>;
+    fn execute_sheet_action(
+        &mut self,
+        action: &crate::actions::SheetAction,
+    ) -> Result<(), anyhow::Error>;
+    fn execute_multi_row_action(
+        &mut self,
+        action: &crate::actions::MultiRowAction,
+    ) -> Result<(), anyhow::Error>;
     fn execute_multi_column_action(
         &mut self,
         action: &crate::actions::MultiColumnAction,
@@ -40,4 +55,4 @@ pub enum ActionCommand {
     Sheet(crate::actions::SheetAction),
     MultiRow(crate::actions::MultiRowAction),
     MultiColumn(crate::actions::MultiColumnAction),
-} 
+}

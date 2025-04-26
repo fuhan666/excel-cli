@@ -446,7 +446,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
     match app_state.input_mode {
         InputMode::Normal => {
             let status =
-                "hjkl=move 0=first-col ^=first-non-empty $=last-col gg=first-row G=last-row Ctrl+arrows=jump i=edit y=copy d=cut p=paste /=search ?=rev-search n=next N=prev :=command [ ]=prev/next-sheet +-=adjust-info-panel".to_string();
+                "Input :help for operating instructions | hjkl=move [ ]=prev/next-sheet i=edit y=copy d=cut p=paste /=search N/n=prev/next-search-result :=command ".to_string();
 
             let status_style = Style::default().bg(Color::Black).fg(Color::White);
             let status_widget = Paragraph::new(status).style(status_style);
@@ -546,10 +546,7 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
 
     app_state.help_scroll = app_state.help_scroll.min(max_scroll);
 
-    let mut title = " HELP ".to_string();
-
-    let exit_instructions = " [ESC/Enter to close] ";
-    title.push_str(exit_instructions);
+    let mut title = " [ESC/Enter to close] ".to_string();
 
     // Add scroll indicators if content is scrollable
     if max_scroll > 0 {
