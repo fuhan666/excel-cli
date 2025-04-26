@@ -1,14 +1,13 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::str::FromStr;
 
-mod app;
-mod commands;
-mod excel;
-mod json_export;
-mod ui;
-mod utils;
+use excel_cli::app;
+use excel_cli::excel;
+use excel_cli::json_export;
+use excel_cli::ui;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -44,8 +43,10 @@ fn main() -> Result<()> {
     // If JSON export flag is set, export to stdout and exit
     if cli.json_export {
         // Parse header direction
-        let direction = json_export::HeaderDirection::from_str(&cli.direction)
-            .with_context(|| format!("Invalid header direction: {}", cli.direction))?;
+        let direction = match json_export::HeaderDirection::from_str(&cli.direction) {
+            Ok(dir) => dir,
+            Err(_) => anyhow::bail!("Invalid header direction: {}", cli.direction),
+        };
 
         // Generate JSON for all sheets
         let all_sheets =

@@ -136,6 +136,10 @@ impl Workbook {
         &self.sheets[self.current_sheet_index]
     }
 
+    pub fn get_current_sheet_mut(&mut self) -> &mut Sheet {
+        &mut self.sheets[self.current_sheet_index]
+    }
+
     pub fn get_sheet_by_index(&self, index: usize) -> Option<&Sheet> {
         self.sheets.get(index)
     }
@@ -288,6 +292,10 @@ impl Workbook {
         self.is_modified
     }
 
+    pub fn set_modified(&mut self, modified: bool) {
+        self.is_modified = modified;
+    }
+
     pub fn get_file_path(&self) -> &str {
         &self.file_path
     }
@@ -386,6 +394,19 @@ impl Workbook {
         workbook.save(&new_filepath)?;
         self.is_modified = false;
 
+        Ok(())
+    }
+
+    pub fn insert_sheet_at_index(&mut self, sheet: Sheet, index: usize) -> Result<()> {
+        if index > self.sheets.len() {
+            anyhow::bail!(
+                "Cannot insert sheet at index {}: index out of bounds (max index: {})",
+                index,
+                self.sheets.len()
+            );
+        }
+        self.sheets.insert(index, sheet);
+        self.is_modified = true;
         Ok(())
     }
 }

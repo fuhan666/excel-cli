@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use serde_json::Value;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HeaderDirection {
@@ -7,12 +8,14 @@ pub enum HeaderDirection {
     Vertical,
 }
 
-impl HeaderDirection {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for HeaderDirection {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "h" | "horizontal" => Some(HeaderDirection::Horizontal),
-            "v" | "vertical" => Some(HeaderDirection::Vertical),
-            _ => None,
+            "h" | "horizontal" => Ok(HeaderDirection::Horizontal),
+            "v" | "vertical" => Ok(HeaderDirection::Vertical),
+            _ => Err(()),
         }
     }
 }

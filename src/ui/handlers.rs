@@ -34,6 +34,11 @@ fn handle_ctrl_key(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Down => {
             app_state.jump_to_prev_non_empty_cell_down();
         }
+        KeyCode::Char('r') => {
+            if let Err(e) = app_state.redo() {
+                app_state.add_notification(format!("Redo failed: {}", e));
+            }
+        }
         _ => {}
     }
 }
@@ -65,6 +70,12 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Char('l') => {
             app_state.g_pressed = false;
             app_state.move_cursor(0, 1);
+        }
+        KeyCode::Char('u') => {
+            app_state.g_pressed = false;
+            if let Err(e) = app_state.undo() {
+                app_state.add_notification(format!("Undo failed: {}", e));
+            }
         }
         KeyCode::Char('=') | KeyCode::Char('+') => {
             app_state.g_pressed = false;
