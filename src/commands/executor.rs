@@ -263,9 +263,9 @@ impl AppState<'_> {
         let direction_str = parts[0];
         let header_count_str = parts[1];
 
-        let direction = match HeaderDirection::from_str(direction_str) {
-            Some(dir) => dir,
-            None => {
+        let direction = match direction_str.parse::<HeaderDirection>() {
+            Ok(dir) => dir,
+            Err(_) => {
                 self.add_notification(format!(
                     "Invalid header direction: {}. Use 'h' or 'v'",
                     direction_str
