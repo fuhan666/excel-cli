@@ -328,9 +328,8 @@ fn parse_command(input: &str) -> Vec<Span> {
 }
 
 fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
-    // Create a layout to split the info panel into two sections
     let chunks = Layout::default()
-        .direction(Direction::Horizontal)
+        .direction(Direction::Vertical)
         .constraints([
             Constraint::Percentage(50), // Cell content/editing area
             Constraint::Percentage(50), // Notifications
@@ -341,7 +340,7 @@ fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
     let (row, col) = app_state.selected_cell;
     let cell_ref = cell_reference(app_state.selected_cell);
 
-    // Handle the left panel based on the input mode
+    // Handle the top panel based on the input mode
     match app_state.input_mode {
         InputMode::Editing => {
             // In editing mode, show the text area for editing
@@ -406,7 +405,7 @@ fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
     };
 
     // Calculate how many notifications can be shown
-    let notification_height = area.height as usize - 2; // Subtract 2 for the border
+    let notification_height = inner_area.height as usize;
 
     let notifications_text = if app_state.notification_messages.is_empty() {
         String::new()

@@ -92,7 +92,7 @@ impl AppState<'_> {
             current_search_idx: None,
             search_direction: true,  // Default to forward search
             highlight_enabled: true, // Default to showing highlights
-            info_panel_height: 5,
+            info_panel_height: 10,
             notification_messages: Vec::new(),
             max_notifications: 5,
             help_text: String::new(),
@@ -150,7 +150,7 @@ impl AppState<'_> {
     }
 
     pub fn adjust_info_panel_height(&mut self, delta: isize) {
-        let new_height = (self.info_panel_height as isize + delta).clamp(3, 15) as usize;
+        let new_height = (self.info_panel_height as isize + delta).clamp(6, 16) as usize;
         if new_height != self.info_panel_height {
             self.info_panel_height = new_height;
             self.add_notification(format!("Info panel height: {}", self.info_panel_height));

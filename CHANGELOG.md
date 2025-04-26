@@ -11,11 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added restriction to require `-j` or `--json-export` flag when using pipe redirection
 
+### Changed
+
+- Changed the cell content panel and notification panel to vertical layout
+
 ## [0.1.1] - 2025-04-24
 
 ### Changed
 
-- improve installation instructions in README.
+- improve installation instructions in README
 
 ## [0.1.0] - 2025-04-24
 
