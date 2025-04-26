@@ -8,6 +8,7 @@ mod commands;
 mod excel;
 mod json_export;
 mod ui;
+mod undo;
 mod utils;
 
 #[derive(Parser)]

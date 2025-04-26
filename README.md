@@ -103,6 +103,8 @@ The application has a simple and intuitive interface:
 - `y`: Copy current cell content
 - `d`: Cut current cell content
 - `p`: Paste clipboard content to current cell
+- `u`: Undo the last operation (edit, row/column/sheet deletion)
+- `Ctrl+r`: Redo the last undone operation
 - `/`: Start forward search
 - `?`: Start backward search
 - `n`: Jump to next search result

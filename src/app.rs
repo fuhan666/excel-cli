@@ -3,7 +3,11 @@ use ratatui_textarea::TextArea;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::excel::Workbook;
+use crate::excel::{Cell, Workbook};
+use crate::undo::{
+    ActionData, ActionType, CellAction, ColumnAction, MultiColumnAction, MultiRowAction, RowAction,
+    SheetAction, UndoAction, UndoHistory,
+};
 use crate::utils::{Direction, find_non_empty_cell};
 
 pub enum InputMode {
@@ -42,6 +46,7 @@ pub struct AppState<'a> {
     pub help_text: String,
     pub help_scroll: usize,
     pub help_visible_lines: usize,
+    pub undo_history: UndoHistory,
 }
 
 impl AppState<'_> {
@@ -98,6 +103,7 @@ impl AppState<'_> {
             help_text: String::new(),
             help_scroll: 0,
             help_visible_lines: 20,
+            undo_history: UndoHistory::new(),
         })
     }
 
@@ -204,7 +210,9 @@ impl AppState<'_> {
              i           - Edit current cell\n\
              :y          - Copy current cell\n\
              :d          - Cut current cell\n\
-             :put, :pu   - Paste to current cell\n\n\
+             :put, :pu   - Paste to current cell\n\
+             u           - Undo last operation\n\
+             Ctrl+r      - Redo last undone operation\n\n\
              SEARCH:\n\
              /           - Search forward\n\
              ?           - Search backward\n\
@@ -243,9 +251,33 @@ impl AppState<'_> {
         if let InputMode::Editing = self.input_mode {
             // Get content from TextArea
             let content = self.text_area.lines().join("\n");
+            let (row, col) = self.selected_cell;
 
-            self.workbook
-                .set_cell_value(self.selected_cell.0, self.selected_cell.1, content)?;
+            let sheet_index = self.workbook.get_current_sheet_index();
+            let sheet_name = self.workbook.get_current_sheet_name();
+
+            let old_cell = self.workbook.get_current_sheet().data[row][col].clone();
+
+            let mut new_cell = old_cell.clone();
+            new_cell.value = content.clone();
+
+            let cell_action = CellAction {
+                sheet_index,
+                sheet_name,
+                row,
+                col,
+                old_value: old_cell,
+                new_value: new_cell,
+            };
+
+            let undo_action = UndoAction {
+                action_type: ActionType::Edit,
+                action_data: ActionData::Cell(cell_action),
+            };
+
+            self.undo_history.push(undo_action);
+
+            self.workbook.set_cell_value(row, col, content)?;
             self.input_mode = InputMode::Normal;
             self.input_buffer = String::new();
             self.text_area = TextArea::default();
@@ -546,9 +578,9 @@ impl AppState<'_> {
             return;
         }
 
-        // Try to save the file
         match self.workbook.save() {
             Ok(_) => {
+                self.undo_history.clear();
                 self.add_notification("File saved".to_string());
                 self.should_quit = true;
             }
@@ -567,6 +599,7 @@ impl AppState<'_> {
 
         match self.workbook.save() {
             Ok(_) => {
+                self.undo_history.clear();
                 self.add_notification("File saved".to_string());
             }
             Err(e) => {
@@ -691,9 +724,29 @@ impl AppState<'_> {
 
     pub fn delete_current_sheet(&mut self) {
         let current_sheet_name = self.workbook.get_current_sheet_name();
+        let sheet_index = self.workbook.get_current_sheet_index();
+
+        // Save the sheet data for undo
+        let sheet_data = self.workbook.get_current_sheet().clone();
+        let column_widths = self.column_widths.clone();
 
         match self.workbook.delete_current_sheet() {
             Ok(_) => {
+                // Create the undo action
+                let sheet_action = SheetAction {
+                    sheet_index,
+                    sheet_name: current_sheet_name.clone(),
+                    sheet_data,
+                    column_widths,
+                };
+
+                let undo_action = UndoAction {
+                    action_type: ActionType::DeleteSheet,
+                    action_data: ActionData::Sheet(sheet_action),
+                };
+
+                self.undo_history.push(undo_action);
+
                 self.sheet_column_widths.remove(&current_sheet_name);
 
                 // Reset cell selection and view position for the current sheet
@@ -729,6 +782,33 @@ impl AppState<'_> {
     pub fn delete_current_row(&mut self) -> Result<()> {
         let row = self.selected_cell.0;
 
+        // Save row data for undo
+        let sheet_index = self.workbook.get_current_sheet_index();
+        let sheet_name = self.workbook.get_current_sheet_name();
+        let sheet = self.workbook.get_current_sheet();
+
+        // Create a copy of the row data before deletion
+        let row_data = if row < sheet.data.len() {
+            sheet.data[row].clone()
+        } else {
+            Vec::new()
+        };
+
+        // Create and add undo action
+        let row_action = RowAction {
+            sheet_index,
+            sheet_name,
+            row,
+            row_data,
+        };
+
+        let undo_action = UndoAction {
+            action_type: ActionType::DeleteRow,
+            action_data: ActionData::Row(row_action),
+        };
+
+        self.undo_history.push(undo_action);
+
         self.workbook.delete_row(row)?;
 
         // Adjust selected cell if needed
@@ -747,6 +827,33 @@ impl AppState<'_> {
     }
 
     pub fn delete_row(&mut self, row: usize) -> Result<()> {
+        // Save row data for undo
+        let sheet_index = self.workbook.get_current_sheet_index();
+        let sheet_name = self.workbook.get_current_sheet_name();
+        let sheet = self.workbook.get_current_sheet();
+
+        // Create a copy of the row data before deletion
+        let row_data = if row < sheet.data.len() {
+            sheet.data[row].clone()
+        } else {
+            Vec::new()
+        };
+
+        // Create and add undo action
+        let row_action = RowAction {
+            sheet_index,
+            sheet_name,
+            row,
+            row_data,
+        };
+
+        let undo_action = UndoAction {
+            action_type: ActionType::DeleteRow,
+            action_data: ActionData::Row(row_action),
+        };
+
+        self.undo_history.push(undo_action);
+
         self.workbook.delete_row(row)?;
 
         // Adjust selected cell if needed
@@ -765,9 +872,44 @@ impl AppState<'_> {
     }
 
     pub fn delete_rows(&mut self, start_row: usize, end_row: usize) -> Result<()> {
+        if start_row == end_row {
+            return self.delete_row(start_row);
+        }
+
+        // Save all row data for batch undo
+        let sheet_index = self.workbook.get_current_sheet_index();
+        let sheet_name = self.workbook.get_current_sheet_name();
+        let sheet = self.workbook.get_current_sheet();
+
+        // Save row data in the original order from top to bottom
+        let mut rows_data = Vec::with_capacity(end_row - start_row + 1);
+
+        for row in start_row..=end_row {
+            if row < sheet.data.len() {
+                rows_data.push(sheet.data[row].clone());
+            } else {
+                rows_data.push(Vec::new());
+            }
+        }
+
+        // Create and add batch undo action
+        let multi_row_action = MultiRowAction {
+            sheet_index,
+            sheet_name,
+            start_row,
+            end_row,
+            rows_data,
+        };
+
+        let undo_action = UndoAction {
+            action_type: ActionType::DeleteMultiRows,
+            action_data: ActionData::MultiRow(multi_row_action),
+        };
+
+        self.undo_history.push(undo_action);
+
         self.workbook.delete_rows(start_row, end_row)?;
 
-        // Adjust selected cell if needed
         let sheet = self.workbook.get_current_sheet();
         if self.selected_cell.0 > sheet.max_rows {
             self.selected_cell.0 = sheet.max_rows.max(1);
@@ -785,9 +927,45 @@ impl AppState<'_> {
     pub fn delete_current_column(&mut self) -> Result<()> {
         let col = self.selected_cell.1;
 
+        // Save column data for undo
+        let sheet_index = self.workbook.get_current_sheet_index();
+        let sheet_name = self.workbook.get_current_sheet_name();
+        let sheet = self.workbook.get_current_sheet();
+
+        // Extract the column data from each row
+        let mut column_data = Vec::new();
+        for row in &sheet.data {
+            if col < row.len() {
+                column_data.push(row[col].clone());
+            } else {
+                column_data.push(Cell::empty());
+            }
+        }
+
+        // Save the column width
+        let column_width = if col < self.column_widths.len() {
+            self.column_widths[col]
+        } else {
+            15 // Default width
+        };
+
+        let column_action = ColumnAction {
+            sheet_index,
+            sheet_name,
+            col,
+            column_data,
+            column_width,
+        };
+
+        let undo_action = UndoAction {
+            action_type: ActionType::DeleteColumn,
+            action_data: ActionData::Column(column_action),
+        };
+
+        self.undo_history.push(undo_action);
+
         self.workbook.delete_column(col)?;
 
-        // Adjust selected cell if needed
         let sheet = self.workbook.get_current_sheet();
         if col > sheet.max_cols {
             self.selected_cell.1 = sheet.max_cols.max(1);
@@ -809,9 +987,45 @@ impl AppState<'_> {
     }
 
     pub fn delete_column(&mut self, col: usize) -> Result<()> {
+        // Save column data for undo
+        let sheet_index = self.workbook.get_current_sheet_index();
+        let sheet_name = self.workbook.get_current_sheet_name();
+        let sheet = self.workbook.get_current_sheet();
+
+        // Extract the column data from each row
+        let mut column_data = Vec::new();
+        for row in &sheet.data {
+            if col < row.len() {
+                column_data.push(row[col].clone());
+            } else {
+                column_data.push(Cell::empty());
+            }
+        }
+
+        // Save the column width
+        let column_width = if col < self.column_widths.len() {
+            self.column_widths[col]
+        } else {
+            15 // Default width
+        };
+
+        let column_action = ColumnAction {
+            sheet_index,
+            sheet_name,
+            col,
+            column_data,
+            column_width,
+        };
+
+        let undo_action = UndoAction {
+            action_type: ActionType::DeleteColumn,
+            action_data: ActionData::Column(column_action),
+        };
+
+        self.undo_history.push(undo_action);
+
         self.workbook.delete_column(col)?;
 
-        // Adjust selected cell if needed
         let sheet = self.workbook.get_current_sheet();
         if self.selected_cell.1 > sheet.max_cols {
             self.selected_cell.1 = sheet.max_cols.max(1);
@@ -833,9 +1047,59 @@ impl AppState<'_> {
     }
 
     pub fn delete_columns(&mut self, start_col: usize, end_col: usize) -> Result<()> {
+        if start_col == end_col {
+            return self.delete_column(start_col);
+        }
+
+        // For multiple columns, save all column data for batch undo
+        let sheet_index = self.workbook.get_current_sheet_index();
+        let sheet_name = self.workbook.get_current_sheet_name();
+        let sheet = self.workbook.get_current_sheet();
+
+        // Save column data and widths for batch undo
+        let mut columns_data = Vec::with_capacity(end_col - start_col + 1);
+        let mut column_widths = Vec::with_capacity(end_col - start_col + 1);
+
+        for col in start_col..=end_col {
+            // Extract the column data from each row
+            let mut column_data = Vec::new();
+            for row in &sheet.data {
+                if col < row.len() {
+                    column_data.push(row[col].clone());
+                } else {
+                    column_data.push(Cell::empty());
+                }
+            }
+            columns_data.push(column_data);
+
+            // Save the column width
+            let column_width = if col < self.column_widths.len() {
+                self.column_widths[col]
+            } else {
+                15 // Default width
+            };
+            column_widths.push(column_width);
+        }
+
+        // Create and add batch undo action
+        let multi_column_action = MultiColumnAction {
+            sheet_index,
+            sheet_name,
+            start_col,
+            end_col,
+            columns_data,
+            column_widths,
+        };
+
+        let undo_action = UndoAction {
+            action_type: ActionType::DeleteMultiColumns,
+            action_data: ActionData::MultiColumn(multi_column_action),
+        };
+
+        self.undo_history.push(undo_action);
+
         self.workbook.delete_columns(start_col, end_col)?;
 
-        // Adjust selected cell if needed
         let sheet = self.workbook.get_current_sheet();
         if self.selected_cell.1 > sheet.max_cols {
             self.selected_cell.1 = sheet.max_cols.max(1);
@@ -872,12 +1136,35 @@ impl AppState<'_> {
     }
 
     pub fn cut_cell(&mut self) -> Result<()> {
-        let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
+        let (row, col) = self.selected_cell;
+        let content = self.get_cell_content(row, col);
         self.clipboard = Some(content);
 
-        // Clear the cell
-        self.workbook
-            .set_cell_value(self.selected_cell.0, self.selected_cell.1, String::new())?;
+        let sheet_index = self.workbook.get_current_sheet_index();
+        let sheet_name = self.workbook.get_current_sheet_name();
+
+        let old_cell = self.workbook.get_current_sheet().data[row][col].clone();
+
+        let mut new_cell = old_cell.clone();
+        new_cell.value = String::new();
+
+        let cell_action = CellAction {
+            sheet_index,
+            sheet_name,
+            row,
+            col,
+            old_value: old_cell,
+            new_value: new_cell,
+        };
+
+        let undo_action = UndoAction {
+            action_type: ActionType::Cut,
+            action_data: ActionData::Cell(cell_action),
+        };
+
+        self.undo_history.push(undo_action);
+
+        self.workbook.set_cell_value(row, col, String::new())?;
 
         self.add_notification("Cell content cut".to_string());
         Ok(())
@@ -885,11 +1172,33 @@ impl AppState<'_> {
 
     pub fn paste_cell(&mut self) -> Result<()> {
         if let Some(content) = &self.clipboard {
-            self.workbook.set_cell_value(
-                self.selected_cell.0,
-                self.selected_cell.1,
-                content.clone(),
-            )?;
+            let (row, col) = self.selected_cell;
+
+            let sheet_index = self.workbook.get_current_sheet_index();
+            let sheet_name = self.workbook.get_current_sheet_name();
+
+            let old_cell = self.workbook.get_current_sheet().data[row][col].clone();
+
+            let mut new_cell = old_cell.clone();
+            new_cell.value = content.clone();
+
+            let cell_action = CellAction {
+                sheet_index,
+                sheet_name,
+                row,
+                col,
+                old_value: old_cell,
+                new_value: new_cell,
+            };
+
+            let undo_action = UndoAction {
+                action_type: ActionType::Paste,
+                action_data: ActionData::Cell(cell_action),
+            };
+
+            self.undo_history.push(undo_action);
+
+            self.workbook.set_cell_value(row, col, content.clone())?;
             self.add_notification("Content pasted".to_string());
         } else {
             self.add_notification("Clipboard is empty".to_string());
@@ -1021,6 +1330,505 @@ impl AppState<'_> {
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
         self.input_buffer = String::new();
+    }
+
+    fn apply_action(&mut self, action: &UndoAction, is_undo: bool) -> Result<()> {
+        match &action.action_data {
+            ActionData::Cell(cell_action) => {
+                let value = if is_undo {
+                    &cell_action.old_value
+                } else {
+                    &cell_action.new_value
+                };
+                self.apply_cell_action(cell_action, value, is_undo, &action.action_type)?;
+            }
+            ActionData::Row(row_action) => {
+                self.apply_row_action(row_action, is_undo)?;
+            }
+            ActionData::Column(column_action) => {
+                self.apply_column_action(column_action, is_undo)?;
+            }
+            ActionData::Sheet(sheet_action) => {
+                self.apply_sheet_action(sheet_action, is_undo)?;
+            }
+            ActionData::MultiRow(multi_row_action) => {
+                self.apply_multi_row_action(multi_row_action, is_undo)?;
+            }
+            ActionData::MultiColumn(multi_column_action) => {
+                self.apply_multi_column_action(multi_column_action, is_undo)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_cell_action(
+        &mut self,
+        cell_action: &CellAction,
+        value: &Cell,
+        is_undo: bool,
+        action_type: &ActionType,
+    ) -> Result<()> {
+        let current_sheet_index = self.workbook.get_current_sheet_index();
+
+        if current_sheet_index != cell_action.sheet_index {
+            if let Err(e) = self.switch_sheet_by_index(cell_action.sheet_index) {
+                self.add_notification(format!(
+                    "Cannot switch to sheet {}: {}",
+                    cell_action.sheet_name, e
+                ));
+                return Ok(());
+            }
+        }
+
+        self.workbook.get_current_sheet_mut().data[cell_action.row][cell_action.col] =
+            value.clone();
+
+        self.selected_cell = (cell_action.row, cell_action.col);
+        self.handle_scrolling();
+
+        let cell_ref = format!(
+            "{}{}",
+            crate::utils::index_to_col_name(cell_action.col),
+            cell_action.row
+        );
+
+        let operation_text = match action_type {
+            ActionType::Edit => "edit",
+            ActionType::Cut => "cut",
+            ActionType::Paste => "paste",
+            _ => "cell operation",
+        };
+
+        if current_sheet_index != cell_action.sheet_index {
+            let action_word = if is_undo { "Undid" } else { "Redid" };
+            self.add_notification(format!(
+                "{} {} operation on cell {} in sheet {}",
+                action_word, operation_text, cell_ref, cell_action.sheet_name
+            ));
+        } else {
+            let action_word = if is_undo { "Undid" } else { "Redid" };
+            self.add_notification(format!(
+                "{} {} operation on cell {}",
+                action_word, operation_text, cell_ref
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn apply_row_action(&mut self, row_action: &RowAction, is_undo: bool) -> Result<()> {
+        let current_sheet_index = self.workbook.get_current_sheet_index();
+
+        if current_sheet_index != row_action.sheet_index {
+            if let Err(e) = self.switch_sheet_by_index(row_action.sheet_index) {
+                self.add_notification(format!(
+                    "Cannot switch to sheet {}: {}",
+                    row_action.sheet_name, e
+                ));
+                return Ok(());
+            }
+        }
+
+        let sheet = self.workbook.get_current_sheet_mut();
+
+        if is_undo {
+            sheet
+                .data
+                .insert(row_action.row, row_action.row_data.clone());
+
+            sheet.max_rows = sheet.max_rows.saturating_add(1);
+
+            self.add_notification(format!("Undid row {} deletion", row_action.row));
+        } else if row_action.row < sheet.data.len() {
+            sheet.data.remove(row_action.row);
+            sheet.max_rows = sheet.max_rows.saturating_sub(1);
+
+            if self.selected_cell.0 > sheet.max_rows {
+                self.selected_cell.0 = sheet.max_rows.max(1);
+            }
+
+            self.add_notification(format!("Redid row {} deletion", row_action.row));
+        }
+
+        self.handle_scrolling();
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+
+        Ok(())
+    }
+
+    fn apply_column_action(&mut self, column_action: &ColumnAction, is_undo: bool) -> Result<()> {
+        let current_sheet_index = self.workbook.get_current_sheet_index();
+
+        if current_sheet_index != column_action.sheet_index {
+            if let Err(e) = self.switch_sheet_by_index(column_action.sheet_index) {
+                self.add_notification(format!(
+                    "Cannot switch to sheet {}: {}",
+                    column_action.sheet_name, e
+                ));
+                return Ok(());
+            }
+        }
+
+        let sheet = self.workbook.get_current_sheet_mut();
+        let col = column_action.col;
+
+        if is_undo {
+            let column_data = &column_action.column_data;
+
+            for (i, row) in sheet.data.iter_mut().enumerate() {
+                if i < column_data.len() {
+                    if col <= row.len() {
+                        row.insert(col, column_data[i].clone());
+                    } else {
+                        while row.len() < col {
+                            row.push(Cell::empty());
+                        }
+                        row.push(column_data[i].clone());
+                    }
+                }
+            }
+
+            sheet.max_cols = sheet.max_cols.saturating_add(1);
+
+            if col < self.column_widths.len() {
+                self.column_widths.insert(col, column_action.column_width);
+                if !self.column_widths.is_empty() {
+                    self.column_widths.pop();
+                }
+            } else {
+                while self.column_widths.len() < col {
+                    self.column_widths.push(15); // Default width
+                }
+                self.column_widths.push(column_action.column_width);
+            }
+
+            self.ensure_column_visible(col);
+
+            self.add_notification(format!("Undid column {} deletion", index_to_col_name(col)));
+        } else {
+            for row in sheet.data.iter_mut() {
+                if col < row.len() {
+                    row.remove(col);
+                }
+            }
+
+            sheet.max_cols = sheet.max_cols.saturating_sub(1);
+
+            if self.column_widths.len() > col {
+                self.column_widths.remove(col);
+                self.column_widths.push(15);
+            }
+
+            if self.selected_cell.1 > sheet.max_cols {
+                self.selected_cell.1 = sheet.max_cols.max(1);
+            }
+
+            self.add_notification(format!("Redid column {} deletion", index_to_col_name(col)));
+        }
+
+        self.handle_scrolling();
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+
+        Ok(())
+    }
+
+    fn apply_sheet_action(&mut self, sheet_action: &SheetAction, is_undo: bool) -> Result<()> {
+        if is_undo {
+            let sheet_index = sheet_action.sheet_index;
+
+            if let Err(e) = self
+                .workbook
+                .insert_sheet_at_index(sheet_action.sheet_data.clone(), sheet_index)
+            {
+                self.add_notification(format!(
+                    "Failed to restore sheet {}: {}",
+                    sheet_action.sheet_name, e
+                ));
+                return Ok(());
+            }
+
+            self.sheet_column_widths.insert(
+                sheet_action.sheet_name.clone(),
+                sheet_action.column_widths.clone(),
+            );
+
+            if let Err(e) = self.switch_sheet_by_index(sheet_index) {
+                self.add_notification(format!(
+                    "Restored sheet {} but couldn't switch to it: {}",
+                    sheet_action.sheet_name, e
+                ));
+            } else {
+                self.add_notification(format!("Undid sheet {} deletion", sheet_action.sheet_name));
+            }
+        } else {
+            if let Err(e) = self.switch_sheet_by_index(sheet_action.sheet_index) {
+                self.add_notification(format!(
+                    "Cannot switch to sheet {} to delete it: {}",
+                    sheet_action.sheet_name, e
+                ));
+                return Ok(());
+            }
+
+            if let Err(e) = self.workbook.delete_current_sheet() {
+                self.add_notification(format!("Failed to delete sheet: {}", e));
+                return Ok(());
+            }
+
+            self.cleanup_after_sheet_deletion(&sheet_action.sheet_name);
+
+            self.add_notification(format!(
+                "Redid deletion of sheet {}",
+                sheet_action.sheet_name
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn cleanup_after_sheet_deletion(&mut self, sheet_name: &str) {
+        self.sheet_column_widths.remove(sheet_name);
+
+        self.selected_cell = (1, 1);
+        self.start_row = 1;
+        self.start_col = 1;
+
+        let new_sheet_name = self.workbook.get_current_sheet_name();
+
+        if let Some(saved_widths) = self.sheet_column_widths.get(&new_sheet_name) {
+            self.column_widths = saved_widths.clone();
+        } else {
+            let max_cols = self.workbook.get_current_sheet().max_cols;
+            let default_width = 15;
+            self.column_widths = vec![default_width; max_cols + 1];
+
+            self.sheet_column_widths
+                .insert(new_sheet_name.clone(), self.column_widths.clone());
+        }
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+    }
+
+    fn apply_multi_row_action(
+        &mut self,
+        multi_row_action: &MultiRowAction,
+        is_undo: bool,
+    ) -> Result<()> {
+        let current_sheet_index = self.workbook.get_current_sheet_index();
+
+        if current_sheet_index != multi_row_action.sheet_index {
+            if let Err(e) = self.switch_sheet_by_index(multi_row_action.sheet_index) {
+                self.add_notification(format!(
+                    "Cannot switch to sheet {}: {}",
+                    multi_row_action.sheet_name, e
+                ));
+                return Ok(());
+            }
+        }
+
+        let start_row = multi_row_action.start_row;
+        let end_row = multi_row_action.end_row;
+        let rows_to_restore = end_row - start_row + 1;
+
+        if is_undo {
+            let rows_data = &multi_row_action.rows_data;
+
+            let sheet = self.workbook.get_current_sheet_mut();
+
+            Self::restore_rows(sheet, start_row, rows_data);
+
+            sheet.max_rows = sheet.max_rows.saturating_add(rows_to_restore);
+
+            self.add_notification(format!("Undid rows {} to {} deletion", start_row, end_row));
+        } else {
+            self.workbook.delete_rows(start_row, end_row)?;
+
+            let sheet = self.workbook.get_current_sheet();
+
+            if self.selected_cell.0 > sheet.max_rows {
+                self.selected_cell.0 = sheet.max_rows.max(1);
+            }
+
+            self.add_notification(format!("Redid rows {} to {} deletion", start_row, end_row));
+        }
+
+        self.handle_scrolling();
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+
+        Ok(())
+    }
+
+    fn apply_multi_column_action(
+        &mut self,
+        multi_column_action: &MultiColumnAction,
+        is_undo: bool,
+    ) -> Result<()> {
+        let current_sheet_index = self.workbook.get_current_sheet_index();
+
+        if current_sheet_index != multi_column_action.sheet_index {
+            if let Err(e) = self.switch_sheet_by_index(multi_column_action.sheet_index) {
+                self.add_notification(format!(
+                    "Cannot switch to sheet {}: {}",
+                    multi_column_action.sheet_name, e
+                ));
+                return Ok(());
+            }
+        }
+
+        let start_col = multi_column_action.start_col;
+        let end_col = multi_column_action.end_col;
+        let cols_to_restore = end_col - start_col + 1;
+
+        if is_undo {
+            let columns_data = &multi_column_action.columns_data;
+            let column_widths = &multi_column_action.column_widths;
+
+            let sheet = self.workbook.get_current_sheet_mut();
+
+            for col_idx in (0..cols_to_restore).rev() {
+                if col_idx < columns_data.len() {
+                    let column_data = &columns_data[col_idx];
+                    Self::restore_column_at_position(sheet, start_col, column_data);
+
+                    Self::restore_column_width(
+                        &mut self.column_widths,
+                        start_col,
+                        col_idx,
+                        column_widths,
+                    );
+                }
+            }
+
+            sheet.max_cols = sheet.max_cols.saturating_add(cols_to_restore);
+
+            Self::trim_column_widths(&mut self.column_widths, cols_to_restore);
+
+            self.ensure_column_visible(start_col);
+
+            self.add_notification(format!(
+                "Undid columns {} to {} deletion",
+                index_to_col_name(start_col),
+                index_to_col_name(end_col)
+            ));
+        } else {
+            self.workbook.delete_columns(start_col, end_col)?;
+
+            let sheet = self.workbook.get_current_sheet();
+
+            Self::remove_column_widths(&mut self.column_widths, start_col, end_col);
+
+            if self.selected_cell.1 > sheet.max_cols {
+                self.selected_cell.1 = sheet.max_cols.max(1);
+            }
+
+            self.add_notification(format!(
+                "Redid columns {} to {} deletion",
+                index_to_col_name(start_col),
+                index_to_col_name(end_col)
+            ));
+        }
+
+        self.handle_scrolling();
+
+        self.search_results.clear();
+        self.current_search_idx = None;
+
+        Ok(())
+    }
+
+    fn restore_rows(sheet: &mut crate::excel::Sheet, position: usize, rows_data: &[Vec<Cell>]) {
+        for row_data in rows_data.iter().rev() {
+            sheet.data.insert(position, row_data.clone());
+        }
+    }
+
+    fn restore_column_at_position(
+        sheet: &mut crate::excel::Sheet,
+        position: usize,
+        column_data: &[Cell],
+    ) {
+        for (i, row) in sheet.data.iter_mut().enumerate() {
+            if i < column_data.len() {
+                if position <= row.len() {
+                    row.insert(position, column_data[i].clone());
+                } else {
+                    while row.len() < position {
+                        row.push(Cell::empty());
+                    }
+                    row.push(column_data[i].clone());
+                }
+            }
+        }
+    }
+
+    fn restore_column_width(
+        column_widths: &mut Vec<usize>,
+        position: usize,
+        col_idx: usize,
+        width_values: &[usize],
+    ) {
+        if position < column_widths.len() {
+            let width = if col_idx < width_values.len() {
+                width_values[col_idx]
+            } else {
+                15 // Default width
+            };
+            column_widths.insert(position, width);
+        }
+    }
+
+    // Helper method to trim excess column widths
+    fn trim_column_widths(column_widths: &mut Vec<usize>, count: usize) {
+        for _ in 0..count {
+            if !column_widths.is_empty() {
+                column_widths.pop();
+            }
+        }
+    }
+
+    fn remove_column_widths(column_widths: &mut Vec<usize>, start_col: usize, end_col: usize) {
+        let cols_to_remove = end_col - start_col + 1;
+
+        for col in (start_col..=end_col).rev() {
+            if column_widths.len() > col {
+                column_widths.remove(col);
+            }
+        }
+
+        for _ in 0..cols_to_remove {
+            column_widths.push(15);
+        }
+    }
+
+    pub fn undo(&mut self) -> Result<()> {
+        if let Some(action) = self.undo_history.undo() {
+            self.apply_action(&action, true)?;
+
+            if self.undo_history.all_undone() {
+                self.workbook.set_modified(false);
+            } else {
+                self.workbook.set_modified(true);
+            }
+        } else {
+            self.add_notification("No operations to undo".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn redo(&mut self) -> Result<()> {
+        if let Some(action) = self.undo_history.redo() {
+            self.apply_action(&action, false)?;
+            self.workbook.set_modified(true);
+        } else {
+            self.add_notification("No operations to redo".to_string());
+        }
+        Ok(())
     }
 }
 
