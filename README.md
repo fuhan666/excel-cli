@@ -1,17 +1,18 @@
 # Excel-CLI
 
-English | [中文](README_zh.md)
+A lightweight terminal-based Excel viewer with Vim-like navigation for viewing, editing, and exporting Excel data to JSON format.
 
-A lightweight terminal-based Excel with Vim-like navigation, it allows Excel file viewing, simple editing, and provides a simple way to export Excel data to JSON format.
+English | [中文](README_zh.md)
 
 ## Features
 
-- Browse Excel worksheets
-- Switch between sheets in multi-sheet workbooks, delete worksheets
-- Navigate through cells using Vim-like commands
-- Edit cell contents
-- Save changes to Excel files
+- Browse and navigate Excel worksheets with Vim-like hotkeys
+- Switch between sheets in multi-sheet workbooks
+- Edit cell contents directly in the terminal
 - Export data to JSON format
+- Delete rows, columns, and sheets
+- Search functionality with highlighting
+- Command mode for advanced operations
 
 ## Installation & Uninstallation
 
@@ -196,10 +197,11 @@ The JSON files are saved in the same directory as the original Excel file.
 
 Excel-CLI uses a non-destructive approach to file saving:
 
-- When you save a file (using `:w`, `:wq`, or `:x`), the application checks if any changes have been made.
-- If no changes have been made, no new file is created, and a "No changes to save" message is displayed.
-- If changes have been made, a new file is created with a timestamp in the filename, following the format `original_filename_YYYYMMDD_HHMMSS.xlsx`.
-- The original file is never modified.
+- When you save a file (using `:w`, `:wq`, or `:x`), the application checks if any changes have been made
+- If no changes have been made, no new file is created, and a "No changes to save" message is displayed
+- If changes have been made, a new file is created with a timestamp in the filename, following the format `original_filename_YYYYMMDD_HHMMSS.xlsx`
+- The new file is created without any styling
+- The original file is never modified
 
 ## Technical Stack
 
