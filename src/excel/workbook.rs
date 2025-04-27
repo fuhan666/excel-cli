@@ -239,14 +239,23 @@ impl Workbook {
     pub fn delete_row(&mut self, row: usize) -> Result<()> {
         let sheet = &mut self.sheets[self.current_sheet_index];
 
-        if row < 1 || row > sheet.max_rows {
-            anyhow::bail!("Row index out of range");
+        // If row is less than 1, return early with success
+        if row < 1 {
+            return Ok(());
         }
 
-        sheet.data.remove(row);
+        // If row is outside the max range, return early with success
+        if row > sheet.max_rows {
+            return Ok(());
+        }
 
-        self.recalculate_max_cols();
-        self.is_modified = true;
+        // Only remove the row if it exists in the data
+        if row < sheet.data.len() {
+            sheet.data.remove(row);
+            self.recalculate_max_cols();
+            self.is_modified = true;
+        }
+
         Ok(())
     }
 
@@ -254,25 +263,53 @@ impl Workbook {
     pub fn delete_rows(&mut self, start_row: usize, end_row: usize) -> Result<()> {
         let sheet = &mut self.sheets[self.current_sheet_index];
 
-        if start_row < 1 || end_row > sheet.max_rows || start_row > end_row {
-            anyhow::bail!("Row range out of bounds");
+        // If start_row is less than 1 or start_row > end_row, return early with success
+        if start_row < 1 || start_row > end_row {
+            return Ok(());
         }
 
-        // Remove rows in reverse order to avoid index shifting issues
-        for row in (start_row..=end_row).rev() {
-            sheet.data.remove(row);
+        // If the entire range is outside max_rows, return early with success
+        if start_row > sheet.max_rows {
+            return Ok(());
         }
 
-        self.recalculate_max_cols();
-        self.is_modified = true;
+        // Adjust end_row to not exceed the data length
+        let adjusted_end_row = end_row.min(sheet.data.len() - 1);
+
+        // If start_row is valid but end_row exceeds max_rows, adjust end_row to max_rows
+        let effective_end_row = if end_row > sheet.max_rows {
+            sheet.max_rows
+        } else {
+            adjusted_end_row
+        };
+
+        // Only proceed if there are rows to delete
+        if start_row <= effective_end_row && start_row < sheet.data.len() {
+            // Remove rows in reverse order to avoid index shifting issues
+            for row in (start_row..=effective_end_row).rev() {
+                if row < sheet.data.len() {
+                    sheet.data.remove(row);
+                }
+            }
+
+            self.recalculate_max_cols();
+            self.is_modified = true;
+        }
+
         Ok(())
     }
 
     pub fn delete_column(&mut self, col: usize) -> Result<()> {
         let sheet = &mut self.sheets[self.current_sheet_index];
 
-        if col < 1 || col > sheet.max_cols {
-            anyhow::bail!("Column index out of range");
+        // If column is less than 1, return early with success
+        if col < 1 {
+            return Ok(());
+        }
+
+        // If column is outside the max range, return early with success
+        if col > sheet.max_cols {
+            return Ok(());
         }
 
         let mut has_data = false;
@@ -303,17 +340,22 @@ impl Workbook {
     pub fn delete_columns(&mut self, start_col: usize, end_col: usize) -> Result<()> {
         let sheet = &mut self.sheets[self.current_sheet_index];
 
-        if start_col < 1
-            || start_col > sheet.max_cols
-            || end_col < start_col
-            || end_col > sheet.max_cols
-        {
-            anyhow::bail!("Column range out of bounds");
+        // If start_col is less than 1 or start_col > end_col, return early with success
+        if start_col < 1 || start_col > end_col {
+            return Ok(());
         }
+
+        // If the entire range is outside max_cols, return early with success
+        if start_col > sheet.max_cols {
+            return Ok(());
+        }
+
+        // If start_col is valid but end_col exceeds max_cols, adjust end_col to max_cols
+        let effective_end_col = end_col.min(sheet.max_cols);
 
         let mut has_data = false;
         for row in &sheet.data {
-            for col in start_col..=end_col {
+            for col in start_col..=effective_end_col {
                 if col < row.len() && !row[col].value.is_empty() {
                     has_data = true;
                     break;
@@ -325,7 +367,7 @@ impl Workbook {
         }
 
         for row in sheet.data.iter_mut() {
-            for col in (start_col..=end_col).rev() {
+            for col in (start_col..=effective_end_col).rev() {
                 if col < row.len() {
                     row.remove(col);
                 }

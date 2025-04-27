@@ -168,11 +168,16 @@ impl AppState<'_> {
 
     pub fn delete_current_row(&mut self) -> Result<()> {
         let row = self.selected_cell.0;
+        let sheet = self.workbook.get_current_sheet();
+
+        // If row is outside the valid range, return success
+        if row < 1 || row > sheet.max_rows {
+            return Ok(());
+        }
 
         // Save row data for undo
         let sheet_index = self.workbook.get_current_sheet_index();
         let sheet_name = self.workbook.get_current_sheet_name();
-        let sheet = self.workbook.get_current_sheet();
 
         // Create a copy of the row data before deletion
         let row_data = if row < sheet.data.len() {
@@ -209,10 +214,16 @@ impl AppState<'_> {
     }
 
     pub fn delete_row(&mut self, row: usize) -> Result<()> {
+        let sheet = self.workbook.get_current_sheet();
+
+        // If row is outside the valid range, return success
+        if row < 1 || row > sheet.max_rows {
+            return Ok(());
+        }
+
         // Save row data for undo
         let sheet_index = self.workbook.get_current_sheet_index();
         let sheet_name = self.workbook.get_current_sheet_name();
-        let sheet = self.workbook.get_current_sheet();
 
         // Create a copy of the row data before deletion
         let row_data = if row < sheet.data.len() {
@@ -253,16 +264,25 @@ impl AppState<'_> {
             return self.delete_row(start_row);
         }
 
+        let sheet = self.workbook.get_current_sheet();
+
+        // If the entire range is outside the valid range, return success
+        if start_row < 1 || start_row > sheet.max_rows || start_row > end_row {
+            return Ok(());
+        }
+
+        // If start_row is valid but end_row exceeds max_rows, adjust end_row to max_rows
+        let effective_end_row = end_row.min(sheet.max_rows);
+
         // Save all row data for batch undo
         let sheet_index = self.workbook.get_current_sheet_index();
         let sheet_name = self.workbook.get_current_sheet_name();
-        let sheet = self.workbook.get_current_sheet();
 
         // Save row data in the original order from top to bottom
-        let rows_to_save = end_row - start_row + 1;
+        let rows_to_save = effective_end_row - start_row + 1;
         let mut rows_data = Vec::with_capacity(rows_to_save);
 
-        for row in start_row..=end_row {
+        for row in start_row..=effective_end_row {
             if row < sheet.data.len() {
                 rows_data.push(sheet.data[row].clone());
             } else {
@@ -275,13 +295,13 @@ impl AppState<'_> {
             sheet_index,
             sheet_name,
             start_row,
-            end_row,
+            end_row: effective_end_row,
             rows_data,
         };
 
         self.undo_history
             .push(ActionCommand::MultiRow(multi_row_action));
-        self.workbook.delete_rows(start_row, end_row)?;
+        self.workbook.delete_rows(start_row, effective_end_row)?;
 
         self.workbook.recalculate_max_rows();
         self.workbook.recalculate_max_cols();
@@ -295,17 +315,25 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!("Deleted rows {} to {}", start_row, end_row));
+        self.add_notification(format!(
+            "Deleted rows {} to {}",
+            start_row, effective_end_row
+        ));
         Ok(())
     }
 
     pub fn delete_current_column(&mut self) -> Result<()> {
         let col = self.selected_cell.1;
+        let sheet = self.workbook.get_current_sheet();
+
+        // If column is outside the valid range, return success
+        if col < 1 || col > sheet.max_cols {
+            return Ok(());
+        }
 
         // Save column data for undo
         let sheet_index = self.workbook.get_current_sheet_index();
         let sheet_name = self.workbook.get_current_sheet_name();
-        let sheet = self.workbook.get_current_sheet();
 
         // Extract the column data from each row
         let mut column_data = Vec::with_capacity(sheet.data.len());
@@ -362,10 +390,16 @@ impl AppState<'_> {
     }
 
     pub fn delete_column(&mut self, col: usize) -> Result<()> {
+        let sheet = self.workbook.get_current_sheet();
+
+        // If column is outside the valid range, return success
+        if col < 1 || col > sheet.max_cols {
+            return Ok(());
+        }
+
         // Save column data for undo
         let sheet_index = self.workbook.get_current_sheet_index();
         let sheet_name = self.workbook.get_current_sheet_name();
-        let sheet = self.workbook.get_current_sheet();
 
         // Extract the column data from each row
         let mut column_data = Vec::with_capacity(sheet.data.len());
@@ -426,17 +460,26 @@ impl AppState<'_> {
             return self.delete_column(start_col);
         }
 
+        let sheet = self.workbook.get_current_sheet();
+
+        // If the entire range is outside the valid range, return success
+        if start_col < 1 || start_col > sheet.max_cols || start_col > end_col {
+            return Ok(());
+        }
+
+        // If start_col is valid but end_col exceeds max_cols, adjust end_col to max_cols
+        let effective_end_col = end_col.min(sheet.max_cols);
+
         // For multiple columns, save all column data for batch undo
         let sheet_index = self.workbook.get_current_sheet_index();
         let sheet_name = self.workbook.get_current_sheet_name();
-        let sheet = self.workbook.get_current_sheet();
 
         // Save column data and widths for batch undo
-        let cols_to_save = end_col - start_col + 1;
+        let cols_to_save = effective_end_col - start_col + 1;
         let mut columns_data = Vec::with_capacity(cols_to_save);
         let mut column_widths = Vec::with_capacity(cols_to_save);
 
-        for col in start_col..=end_col {
+        for col in start_col..=effective_end_col {
             // Extract the column data from each row
             let mut column_data = Vec::with_capacity(sheet.data.len());
             for row in &sheet.data {
@@ -462,14 +505,14 @@ impl AppState<'_> {
             sheet_index,
             sheet_name,
             start_col,
-            end_col,
+            end_col: effective_end_col,
             columns_data,
             column_widths,
         };
 
         self.undo_history
             .push(ActionCommand::MultiColumn(multi_column_action));
-        self.workbook.delete_columns(start_col, end_col)?;
+        self.workbook.delete_columns(start_col, effective_end_col)?;
 
         self.workbook.recalculate_max_rows();
         self.workbook.recalculate_max_cols();
@@ -483,7 +526,7 @@ impl AppState<'_> {
             self.selected_cell.0 = sheet.max_rows.max(1);
         }
 
-        for col in (start_col..=end_col).rev() {
+        for col in (start_col..=effective_end_col).rev() {
             if self.column_widths.len() > col {
                 self.column_widths.remove(col);
             }
@@ -498,7 +541,7 @@ impl AppState<'_> {
         self.add_notification(format!(
             "Deleted columns {} to {}",
             index_to_col_name(start_col),
-            index_to_col_name(end_col)
+            index_to_col_name(effective_end_col)
         ));
         Ok(())
     }

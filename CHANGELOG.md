@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed the issue where cells outside the maximum range of sheet data cannot be edited
+- No longer reports an error when deleting rows or columns outside the sheet's data range
 
 ### Changed
 
