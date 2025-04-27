@@ -6,7 +6,9 @@ use crate::app::{AppState, InputMode};
 pub fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
     match app_state.input_mode {
         InputMode::Normal => {
-            if key.modifiers.contains(KeyModifiers::CONTROL) {
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                || key.modifiers.contains(KeyModifiers::SUPER)
+            {
                 handle_ctrl_key(app_state, key.code);
             } else {
                 handle_normal_mode(app_state, key.code);
@@ -20,6 +22,7 @@ pub fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
     }
 }
 
+// Handles both Ctrl+key and Command+key (on Mac) combinations
 fn handle_ctrl_key(app_state: &mut AppState, key_code: KeyCode) {
     match key_code {
         KeyCode::Left => {

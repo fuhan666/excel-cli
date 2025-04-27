@@ -96,10 +96,10 @@ The application has a simple and intuitive interface:
 - `$`: Jump to last column in current row
 - `gg`: Jump to first row in current column
 - `G`: Jump to last row in current column
-- `Ctrl+←`: If current cell is empty, jump to the first non-empty cell to the left; if current cell is not empty, jump to the last non-empty cell to the left
-- `Ctrl+→`: If current cell is empty, jump to the first non-empty cell to the right; if current cell is not empty, jump to the last non-empty cell to the right
-- `Ctrl+↑`: If current cell is empty, jump to the first non-empty cell above; if current cell is not empty, jump to the last non-empty cell above
-- `Ctrl+↓`: If current cell is empty, jump to the first non-empty cell below; if current cell is not empty, jump to the last non-empty cell below
+- `Ctrl+←` (or `Command+←` on Mac): If current cell is empty, jump to the first non-empty cell to the left; if current cell is not empty, jump to the last non-empty cell to the left
+- `Ctrl+→` (or `Command+→` on Mac): If current cell is empty, jump to the first non-empty cell to the right; if current cell is not empty, jump to the last non-empty cell to the right
+- `Ctrl+↑` (or `Command+↑` on Mac): If current cell is empty, jump to the first non-empty cell above; if current cell is not empty, jump to the last non-empty cell above
+- `Ctrl+↓` (or `Command+↓` on Mac): If current cell is empty, jump to the first non-empty cell below; if current cell is not empty, jump to the last non-empty cell below
 - `i`: Edit current cell
 - `y`: Copy current cell content
 - `d`: Cut current cell content

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added restriction to require `-j` or `--json-export` flag when using pipe redirection
 - Added undo and redo functionality, supporting operation history for cell editing, row/column deletion, and sheet deletion
+- Added support for Command + arrow key navigation on Mac, similar to Ctrl + arrow key functionality
 
 ### Fixed
 
