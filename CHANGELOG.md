@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-04-27
+
 ### Added
 
 - Added restriction to require `-j` or `--json-export` flag when using pipe redirection
@@ -23,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the cell content panel and notification panel to vertical layout
 - Export JSON files to the same directory as the original Excel file
 - Some minor UI adjustments
+- Downgraded Rust edition version to 2021
 
 ## [0.1.1] - 2025-04-24
 
@@ -52,6 +55,7 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.2.0
 [0.1.1]: https://github.com/fuhan666/excel-cli/releases/tag/v0.1.1
 [0.1.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.1.0
