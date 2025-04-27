@@ -597,8 +597,12 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("Untitled");
-    let title = format!(" {} | ", file_name);
-    let title_width = title.len() as u16;
+
+    let title_content = format!(" {} ", file_name);
+
+    let title_width = title_content
+        .chars()
+        .fold(0, |acc, c| acc + if c.is_ascii() { 1 } else { 2 }) as u16;
 
     let available_width = area.width.saturating_sub(title_width) as usize;
 
@@ -606,7 +610,7 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
     let mut total_width = 0;
     let mut visible_tabs = Vec::new();
     for (i, name) in sheet_names.iter().enumerate() {
-        let tab_width = name.len() + 4;
+        let tab_width = name.len() + 2;
 
         if total_width + tab_width <= available_width {
             tab_widths.push(tab_width as u16);
@@ -629,42 +633,47 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
         }
     }
 
-    let mut constraints = vec![Constraint::Length(title_width)];
-    constraints.extend(tab_widths.iter().map(|&width| Constraint::Length(width)));
+    let max_title_width = (area.width * 2 / 3).min(title_width);
 
-    if !constraints.is_empty() {
-        let combined_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(constraints)
-            .split(area);
+    // Create a two-column layout: title column and tab column
+    let horizontal_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(max_title_width), Constraint::Min(0)])
+        .split(area);
 
-        let title_widget =
-            Paragraph::new(title).style(Style::default().bg(Color::Blue).fg(Color::White));
-        f.render_widget(title_widget, combined_layout[0]);
+    let title_widget = Paragraph::new(title_content.clone())
+        .style(Style::default().bg(Color::Blue).fg(Color::White));
+    f.render_widget(title_widget, horizontal_layout[0]);
 
-        for (layout_idx, &sheet_idx) in visible_tabs.iter().enumerate() {
-            let name = &sheet_names[sheet_idx];
-            let is_current = sheet_idx == current_index;
+    let mut tab_constraints = Vec::new();
+    for &width in &tab_widths {
+        tab_constraints.push(Constraint::Length(width));
+    }
 
-            let tab_text = if is_current {
-                format!("[{}]", name)
-            } else {
-                format!(" {} ", name)
-            };
+    tab_constraints.push(Constraint::Min(0));
 
-            let style = if is_current {
-                Style::default().bg(Color::LightBlue).fg(Color::Black)
-            } else {
-                Style::default().bg(Color::DarkGray).fg(Color::White)
-            };
+    let tab_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(tab_constraints)
+        .split(horizontal_layout[1]);
 
-            let tab_widget = Paragraph::new(tab_text).style(style);
-            f.render_widget(tab_widget, combined_layout[layout_idx + 1]);
+    for (layout_idx, &sheet_idx) in visible_tabs.iter().enumerate() {
+        if layout_idx >= tab_layout.len() - 1 {
+            break;
         }
-    } else {
-        let title_widget =
-            Paragraph::new(title).style(Style::default().bg(Color::Blue).fg(Color::White));
-        f.render_widget(title_widget, area);
+
+        let name = &sheet_names[sheet_idx];
+        let is_current = sheet_idx == current_index;
+        let style = if is_current {
+            Style::default().bg(Color::LightBlue).fg(Color::White)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let tab_widget = Paragraph::new(name.to_string())
+            .style(style)
+            .alignment(ratatui::layout::Alignment::Center);
+        f.render_widget(tab_widget, tab_layout[layout_idx]);
     }
 
     if visible_tabs.len() < sheet_names.len() {
