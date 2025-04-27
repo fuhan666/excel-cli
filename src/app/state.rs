@@ -137,6 +137,24 @@ impl AppState<'_> {
         }
     }
 
+    pub fn get_cell_content_mut(&mut self, row: usize, col: usize) -> String {
+        self.workbook.ensure_cell_exists(row, col);
+
+        self.ensure_column_widths();
+
+        let sheet = self.workbook.get_current_sheet();
+        let cell = &sheet.data[row][col];
+
+        if cell.is_formula {
+            let mut result = String::with_capacity(9 + cell.value.len());
+            result.push_str("Formula: ");
+            result.push_str(&cell.value);
+            result
+        } else {
+            cell.value.clone()
+        }
+    }
+
     pub fn cancel_input(&mut self) {
         // If in help mode, just close the help window
         if let InputMode::Help = self.input_mode {

@@ -144,18 +144,52 @@ impl Workbook {
         self.sheets.get(index)
     }
 
-    pub fn set_cell_value(&mut self, row: usize, col: usize, value: String) -> Result<()> {
-        if row >= self.sheets[self.current_sheet_index].data.len()
-            || col >= self.sheets[self.current_sheet_index].data[0].len()
-        {
-            anyhow::bail!("Cell coordinates out of range");
+    pub fn ensure_cell_exists(&mut self, row: usize, col: usize) {
+        let sheet = &mut self.sheets[self.current_sheet_index];
+
+        // Expand rows if needed
+        if row >= sheet.data.len() {
+            let default_row_len = if sheet.data.is_empty() {
+                col + 1
+            } else {
+                sheet.data[0].len()
+            };
+            let rows_to_add = row + 1 - sheet.data.len();
+
+            sheet
+                .data
+                .extend(vec![vec![Cell::empty(); default_row_len]; rows_to_add]);
+            sheet.max_rows = sheet.max_rows.max(row);
         }
 
-        let is_formula = value.starts_with('=');
+        // Expand columns if needed
+        if col >= sheet.data[0].len() {
+            for row_data in &mut sheet.data {
+                row_data.resize_with(col + 1, Cell::empty);
+            }
 
-        // Use Cell::new which handles type detection
-        self.sheets[self.current_sheet_index].data[row][col] = Cell::new(value, is_formula);
-        self.is_modified = true;
+            sheet.max_cols = sheet.max_cols.max(col);
+        }
+    }
+
+    pub fn set_cell_value(&mut self, row: usize, col: usize, value: String) -> Result<()> {
+        self.ensure_cell_exists(row, col);
+
+        let sheet = &mut self.sheets[self.current_sheet_index];
+        let current_value = &sheet.data[row][col].value;
+
+        // Only set modified flag if value actually changes
+        if current_value != &value {
+            let is_formula = value.starts_with('=');
+            sheet.data[row][col] = Cell::new(value, is_formula);
+
+            // Update max_cols if needed
+            if col > sheet.max_cols && !sheet.data[row][col].value.is_empty() {
+                sheet.max_cols = col;
+            }
+
+            self.is_modified = true;
+        }
 
         Ok(())
     }
@@ -211,8 +245,7 @@ impl Workbook {
 
         sheet.data.remove(row);
 
-        sheet.max_rows = sheet.max_rows.saturating_sub(1);
-
+        self.recalculate_max_cols();
         self.is_modified = true;
         Ok(())
     }
@@ -221,22 +254,16 @@ impl Workbook {
     pub fn delete_rows(&mut self, start_row: usize, end_row: usize) -> Result<()> {
         let sheet = &mut self.sheets[self.current_sheet_index];
 
-        if start_row < 1
-            || start_row > sheet.max_rows
-            || end_row < start_row
-            || end_row > sheet.max_rows
-        {
+        if start_row < 1 || end_row > sheet.max_rows || start_row > end_row {
             anyhow::bail!("Row range out of bounds");
         }
 
-        let rows_to_remove = end_row - start_row + 1;
-
+        // Remove rows in reverse order to avoid index shifting issues
         for row in (start_row..=end_row).rev() {
             sheet.data.remove(row);
         }
 
-        sheet.max_rows = sheet.max_rows.saturating_sub(rows_to_remove);
-
+        self.recalculate_max_cols();
         self.is_modified = true;
         Ok(())
     }
@@ -248,15 +275,27 @@ impl Workbook {
             anyhow::bail!("Column index out of range");
         }
 
+        let mut has_data = false;
+        for row in &sheet.data {
+            if col < row.len() && !row[col].value.is_empty() {
+                has_data = true;
+                break;
+            }
+        }
+
         for row in sheet.data.iter_mut() {
             if col < row.len() {
                 row.remove(col);
             }
         }
 
-        sheet.max_cols = sheet.max_cols.saturating_sub(1);
+        self.recalculate_max_cols();
+        self.recalculate_max_rows();
 
-        self.is_modified = true;
+        if has_data {
+            self.is_modified = true;
+        }
+
         Ok(())
     }
 
@@ -272,7 +311,18 @@ impl Workbook {
             anyhow::bail!("Column range out of bounds");
         }
 
-        let cols_to_remove = end_col - start_col + 1;
+        let mut has_data = false;
+        for row in &sheet.data {
+            for col in start_col..=end_col {
+                if col < row.len() && !row[col].value.is_empty() {
+                    has_data = true;
+                    break;
+                }
+            }
+            if has_data {
+                break;
+            }
+        }
 
         for row in sheet.data.iter_mut() {
             for col in (start_col..=end_col).rev() {
@@ -282,9 +332,13 @@ impl Workbook {
             }
         }
 
-        sheet.max_cols = sheet.max_cols.saturating_sub(cols_to_remove);
+        self.recalculate_max_cols();
+        self.recalculate_max_rows();
 
-        self.is_modified = true;
+        if has_data {
+            self.is_modified = true;
+        }
+
         Ok(())
     }
 
@@ -408,5 +462,43 @@ impl Workbook {
         self.sheets.insert(index, sheet);
         self.is_modified = true;
         Ok(())
+    }
+
+    pub fn recalculate_max_cols(&mut self) {
+        let sheet = &mut self.sheets[self.current_sheet_index];
+
+        // Find maximum non-empty column across all rows
+        let actual_max_col = sheet
+            .data
+            .iter()
+            .map(|row| {
+                // Find last non-empty cell in this row
+                row.iter()
+                    .enumerate()
+                    .rev()
+                    .find(|(_, cell)| !cell.value.is_empty())
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap_or(0);
+
+        sheet.max_cols = actual_max_col.max(1);
+    }
+
+    pub fn recalculate_max_rows(&mut self) {
+        let sheet = &mut self.sheets[self.current_sheet_index];
+
+        // Find last row with any non-empty cells
+        let actual_max_row = sheet
+            .data
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, row)| row.iter().any(|cell| !cell.value.is_empty()))
+            .map(|(idx, _)| idx)
+            .unwrap_or(0);
+
+        sheet.max_rows = actual_max_row.max(1);
     }
 }

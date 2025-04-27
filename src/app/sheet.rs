@@ -192,9 +192,11 @@ impl AppState<'_> {
         self.undo_history.push(ActionCommand::Row(row_action));
         self.workbook.delete_row(row)?;
 
-        // Adjust selected cell if needed
+        self.workbook.recalculate_max_rows();
+        self.workbook.recalculate_max_cols();
         let sheet = self.workbook.get_current_sheet();
-        if row > sheet.max_rows {
+
+        if self.selected_cell.0 > sheet.max_rows {
             self.selected_cell.0 = sheet.max_rows.max(1);
         }
 
@@ -230,8 +232,10 @@ impl AppState<'_> {
         self.undo_history.push(ActionCommand::Row(row_action));
         self.workbook.delete_row(row)?;
 
-        // Adjust selected cell if needed
+        self.workbook.recalculate_max_rows();
+        self.workbook.recalculate_max_cols();
         let sheet = self.workbook.get_current_sheet();
+
         if self.selected_cell.0 > sheet.max_rows {
             self.selected_cell.0 = sheet.max_rows.max(1);
         }
@@ -279,7 +283,10 @@ impl AppState<'_> {
             .push(ActionCommand::MultiRow(multi_row_action));
         self.workbook.delete_rows(start_row, end_row)?;
 
+        self.workbook.recalculate_max_rows();
+        self.workbook.recalculate_max_cols();
         let sheet = self.workbook.get_current_sheet();
+
         if self.selected_cell.0 > sheet.max_rows {
             self.selected_cell.0 = sheet.max_rows.max(1);
         }
@@ -328,16 +335,23 @@ impl AppState<'_> {
         self.undo_history.push(ActionCommand::Column(column_action));
         self.workbook.delete_column(col)?;
 
+        self.workbook.recalculate_max_rows();
+        self.workbook.recalculate_max_cols();
         let sheet = self.workbook.get_current_sheet();
+
         if col > sheet.max_cols {
             self.selected_cell.1 = sheet.max_cols.max(1);
         }
 
+        if self.selected_cell.0 > sheet.max_rows {
+            self.selected_cell.0 = sheet.max_rows.max(1);
+        }
+
         if self.column_widths.len() > col {
             self.column_widths.remove(col);
-            // Add a default width for the last column to maintain the vector size
-            self.column_widths.push(15);
         }
+
+        self.adjust_column_widths(sheet.max_cols);
 
         self.handle_scrolling();
         self.search_results.clear();
@@ -381,16 +395,23 @@ impl AppState<'_> {
         self.undo_history.push(ActionCommand::Column(column_action));
         self.workbook.delete_column(col)?;
 
+        self.workbook.recalculate_max_rows();
+        self.workbook.recalculate_max_cols();
         let sheet = self.workbook.get_current_sheet();
+
         if self.selected_cell.1 > sheet.max_cols {
             self.selected_cell.1 = sheet.max_cols.max(1);
         }
 
+        if self.selected_cell.0 > sheet.max_rows {
+            self.selected_cell.0 = sheet.max_rows.max(1);
+        }
+
         if self.column_widths.len() > col {
             self.column_widths.remove(col);
-            // Add a default width for the last column to maintain the vector size
-            self.column_widths.push(15);
         }
+
+        self.adjust_column_widths(sheet.max_cols);
 
         self.handle_scrolling();
         self.search_results.clear();
@@ -450,20 +471,25 @@ impl AppState<'_> {
             .push(ActionCommand::MultiColumn(multi_column_action));
         self.workbook.delete_columns(start_col, end_col)?;
 
+        self.workbook.recalculate_max_rows();
+        self.workbook.recalculate_max_cols();
         let sheet = self.workbook.get_current_sheet();
+
         if self.selected_cell.1 > sheet.max_cols {
             self.selected_cell.1 = sheet.max_cols.max(1);
         }
 
-        let cols_to_remove = end_col - start_col + 1;
+        if self.selected_cell.0 > sheet.max_rows {
+            self.selected_cell.0 = sheet.max_rows.max(1);
+        }
+
         for col in (start_col..=end_col).rev() {
             if self.column_widths.len() > col {
                 self.column_widths.remove(col);
             }
         }
-        // Add default widths for the removed columns to maintain the vector size
-        let mut defaults = vec![15; cols_to_remove];
-        self.column_widths.append(&mut defaults);
+
+        self.adjust_column_widths(sheet.max_cols);
 
         self.handle_scrolling();
         self.search_results.clear();
@@ -564,6 +590,26 @@ impl AppState<'_> {
             self.column_widths[col]
         } else {
             15 // Default width
+        }
+    }
+
+    pub fn ensure_column_widths(&mut self) {
+        let sheet = self.workbook.get_current_sheet();
+        self.adjust_column_widths(sheet.max_cols);
+    }
+
+    fn adjust_column_widths(&mut self, max_cols: usize) {
+        match self.column_widths.len().cmp(&(max_cols + 1)) {
+            std::cmp::Ordering::Greater => {
+                self.column_widths.truncate(max_cols + 1);
+            }
+            std::cmp::Ordering::Less => {
+                let additional = max_cols + 1 - self.column_widths.len();
+                self.column_widths.extend(vec![15; additional]);
+            }
+            std::cmp::Ordering::Equal => {
+                // Column widths are already correct, do nothing
+            }
         }
     }
 }

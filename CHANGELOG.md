@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added restriction to require `-j` or `--json-export` flag when using pipe redirection
 - Added undo and redo functionality, supporting operation history for cell editing, row/column deletion, and sheet deletion
 
+### Fixed
+
+- Fixed the issue where cells outside the maximum range of sheet data cannot be edited
+
 ### Changed
 
 - Changed the cell content panel and notification panel to vertical layout

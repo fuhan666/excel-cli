@@ -20,6 +20,10 @@ impl AppState<'_> {
             let content = self.text_area.lines().join("\n");
             let (row, col) = self.selected_cell;
 
+            self.workbook.ensure_cell_exists(row, col);
+
+            self.ensure_column_widths();
+
             let sheet_index = self.workbook.get_current_sheet_index();
             let sheet_name = self.workbook.get_current_sheet_name();
 
@@ -49,13 +53,18 @@ impl AppState<'_> {
     }
 
     pub fn copy_cell(&mut self) {
-        let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
+        let content = self.get_cell_content_mut(self.selected_cell.0, self.selected_cell.1);
         self.clipboard = Some(content);
         self.add_notification("Cell content copied".to_string());
     }
 
     pub fn cut_cell(&mut self) -> Result<()> {
         let (row, col) = self.selected_cell;
+
+        self.workbook.ensure_cell_exists(row, col);
+
+        self.ensure_column_widths();
+
         let content = self.get_cell_content(row, col);
         self.clipboard = Some(content);
 
@@ -85,8 +94,11 @@ impl AppState<'_> {
     }
 
     pub fn paste_cell(&mut self) -> Result<()> {
-        if let Some(content) = &self.clipboard {
+        if let Some(content) = self.clipboard.clone() {
             let (row, col) = self.selected_cell;
+
+            self.workbook.ensure_cell_exists(row, col);
+            self.ensure_column_widths();
 
             let sheet_index = self.workbook.get_current_sheet_index();
             let sheet_name = self.workbook.get_current_sheet_name();
@@ -107,7 +119,7 @@ impl AppState<'_> {
             );
 
             self.undo_history.push(ActionCommand::Cell(cell_action));
-            self.workbook.set_cell_value(row, col, content.clone())?;
+            self.workbook.set_cell_value(row, col, content)?;
             self.add_notification("Content pasted".to_string());
         } else {
             self.add_notification("Clipboard is empty".to_string());

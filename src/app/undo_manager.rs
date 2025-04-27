@@ -12,6 +12,19 @@ impl AppState<'_> {
         if let Some(action) = self.undo_history.undo() {
             self.apply_action(&action, true)?;
 
+            self.workbook.recalculate_max_rows();
+            self.workbook.recalculate_max_cols();
+            self.ensure_column_widths();
+
+            // Update cursor position if it's outside the valid range
+            let sheet = self.workbook.get_current_sheet();
+            if self.selected_cell.0 > sheet.max_rows {
+                self.selected_cell.0 = sheet.max_rows.max(1);
+            }
+            if self.selected_cell.1 > sheet.max_cols {
+                self.selected_cell.1 = sheet.max_cols.max(1);
+            }
+
             if self.undo_history.all_undone() {
                 self.workbook.set_modified(false);
             } else {
@@ -26,6 +39,20 @@ impl AppState<'_> {
     pub fn redo(&mut self) -> Result<()> {
         if let Some(action) = self.undo_history.redo() {
             self.apply_action(&action, false)?;
+
+            self.workbook.recalculate_max_rows();
+            self.workbook.recalculate_max_cols();
+            self.ensure_column_widths();
+
+            // Update cursor position if it's outside the valid range
+            let sheet = self.workbook.get_current_sheet();
+            if self.selected_cell.0 > sheet.max_rows {
+                self.selected_cell.0 = sheet.max_rows.max(1);
+            }
+            if self.selected_cell.1 > sheet.max_cols {
+                self.selected_cell.1 = sheet.max_cols.max(1);
+            }
+
             self.workbook.set_modified(true);
         } else {
             self.add_notification("No operations to redo".to_string());
@@ -138,6 +165,11 @@ impl AppState<'_> {
                 .insert(row_action.row, row_action.row_data.clone());
 
             sheet.max_rows = sheet.max_rows.saturating_add(1);
+
+            // Recalculate max_cols since restoring a row might affect the maximum column count
+            // This is especially important if the row contained data beyond the current max_cols
+            self.workbook.recalculate_max_cols();
+
             self.add_notification(format!("Undid row {} deletion", row_action.row));
         } else if row_action.row < sheet.data.len() {
             sheet.data.remove(row_action.row);
@@ -189,7 +221,12 @@ impl AppState<'_> {
                 }
             }
 
+            // Update both max_cols and max_rows when restoring a column
             sheet.max_cols = sheet.max_cols.saturating_add(1);
+
+            // Recalculate max_rows since restoring a column might affect the maximum row count
+            // This is especially important if the column contained data beyond the current max_rows
+            self.workbook.recalculate_max_rows();
 
             if col < self.column_widths.len() {
                 self.column_widths.insert(col, column_action.column_width);
@@ -336,7 +373,11 @@ impl AppState<'_> {
 
             // Optimized restore function
             Self::restore_rows(sheet, start_row, rows_data);
+
             sheet.max_rows = sheet.max_rows.saturating_add(rows_to_restore);
+
+            // Recalculate max_cols since restoring rows might affect the maximum column count
+            self.workbook.recalculate_max_cols();
 
             self.add_notification(format!("Undid rows {} to {} deletion", start_row, end_row));
         } else {
@@ -400,6 +441,10 @@ impl AppState<'_> {
             }
 
             sheet.max_cols = sheet.max_cols.saturating_add(cols_to_restore);
+
+            // Recalculate max_rows since restoring columns might affect the maximum row count
+            self.workbook.recalculate_max_rows();
+
             Self::trim_column_widths(&mut self.column_widths, cols_to_restore);
             self.ensure_column_visible(start_col);
 
