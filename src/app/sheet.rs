@@ -599,33 +599,19 @@ impl AppState<'_> {
                 continue;
             }
 
-            let mut is_ascii_only = true;
             let mut display_width = 0;
 
             for c in content.chars() {
                 if c.is_ascii() {
                     display_width += 1;
                 } else {
-                    is_ascii_only = false;
                     display_width += 2;
                 }
             }
 
-            let cell_width = if is_ascii_only {
-                display_width + (display_width / 3)
-            } else {
-                display_width
-            };
-
-            max_width = max_width.max(cell_width);
+            max_width = max_width.max(display_width);
         }
-
-        // Add appropriate padding based on content width
-        if max_width > 20 {
-            max_width + 3 // Less padding for wide content
-        } else {
-            max_width + 4 // More padding for narrow content
-        }
+        max_width
     }
 
     pub fn get_column_width(&self, col: usize) -> usize {
