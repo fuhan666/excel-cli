@@ -136,14 +136,33 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
         col_constraints.push(Constraint::Length(app_state.get_column_width(col) as u16));
     }
 
+    // Set table style based on current mode
+    let (table_block, header_style, cell_style) =
+        if matches!(app_state.input_mode, InputMode::Normal) {
+            // In Normal mode, add color to the border of the data display area to indicate current focus
+            (
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::LightCyan)),
+                Style::default().bg(Color::DarkGray).fg(Color::Gray),
+                Style::default(),
+            )
+        } else {
+            // In editing mode, dim the data display area
+            (
+                Block::default().borders(Borders::ALL),
+                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::DarkGray), // Dimmed cell content
+            )
+        };
+
     let mut header_cells = Vec::with_capacity(app_state.visible_cols + 1);
-    header_cells.push(Cell::from(""));
+    header_cells.push(Cell::from("").style(header_style));
 
     // Add column headers
     for col in start_col..=end_col {
         let col_name = index_to_col_name(col);
-        header_cells
-            .push(Cell::from(col_name).style(Style::default().bg(Color::Blue).fg(Color::White)));
+        header_cells.push(Cell::from(col_name).style(header_style));
     }
 
     let header_row = Row::new(header_cells).height(1);
@@ -152,8 +171,7 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
 
     // Create data rows
     for row in start_row..=end_row {
-        let row_header =
-            Cell::from(row.to_string()).style(Style::default().bg(Color::Blue).fg(Color::White));
+        let row_header = Cell::from(row.to_string()).style(header_style);
 
         let mut cells = Vec::with_capacity(app_state.visible_cols + 1);
         cells.push(row_header);
@@ -230,7 +248,7 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
 
             // Determine cell style
             let style = if app_state.selected_cell == (row, col) {
-                Style::default().bg(Color::DarkGray).fg(Color::White)
+                Style::default().bg(Color::White).fg(Color::Black)
             } else if app_state.highlight_enabled && app_state.search_results.contains(&(row, col))
             {
                 Style::default().bg(Color::Yellow).fg(Color::Black)
@@ -244,17 +262,9 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
         rows.push(Row::new(cells));
     }
 
-    // In Normal mode, add color to the border of the data display area to indicate current focus
-    let table_block = if matches!(app_state.input_mode, InputMode::Normal) {
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::LightGreen))
-    } else {
-        Block::default().borders(Borders::ALL)
-    };
-
     let table = Table::new(std::iter::once(header_row).chain(rows), &col_constraints)
         .block(table_block)
+        .style(cell_style)
         .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol(">> ");
 
@@ -383,7 +393,7 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
 
             let edit_block = Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::LightGreen))
+                .border_style(Style::default().fg(Color::LightCyan))
                 .title(title);
 
             f.render_widget(edit_block.clone(), chunks[0]);
@@ -426,9 +436,19 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
     }
 
     // Create notification block
-    let notification_block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Notifications ");
+    let notification_block = if matches!(app_state.input_mode, InputMode::Editing) {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray))
+            .title(Span::styled(
+                " Notifications ",
+                Style::default().fg(Color::DarkGray),
+            ))
+    } else {
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Notifications ")
+    };
 
     f.render_widget(notification_block.clone(), chunks[1]);
 
@@ -472,9 +492,16 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
         result
     };
 
-    let notification_paragraph = Paragraph::new(notifications_text)
-        .wrap(ratatui::widgets::Wrap { trim: false })
-        .scroll((0, 0));
+    let notification_paragraph = if matches!(app_state.input_mode, InputMode::Editing) {
+        Paragraph::new(notifications_text)
+            .style(Style::default().fg(Color::DarkGray))
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .scroll((0, 0))
+    } else {
+        Paragraph::new(notifications_text)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .scroll((0, 0))
+    };
 
     f.render_widget(notification_paragraph, padded_area);
 }
@@ -485,13 +512,13 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
             let status =
                 "Input :help for operating instructions | hjkl=move [ ]=prev/next-sheet Enter=edit y=copy d=cut p=paste /=search N/n=prev/next-search-result :=command ".to_string();
 
-            let status_style = Style::default().bg(Color::Black).fg(Color::White);
+            let status_style = Style::default();
             let status_widget = Paragraph::new(status).style(status_style);
             f.render_widget(status_widget, area);
         }
 
         InputMode::Editing => {
-            let status_style = Style::default().bg(Color::Black);
+            let status_style = Style::default().fg(Color::DarkGray);
             let status_widget =
                 Paragraph::new("Press Esc to exit editing mode".to_string()).style(status_style);
             f.render_widget(status_widget, area);
@@ -499,12 +526,12 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
 
         InputMode::Command => {
             // Create a styled text with different colors for command and parameters
-            let mut spans = vec![Span::styled(":", Style::default().fg(Color::White))];
+            let mut spans = vec![Span::styled(":", Style::default())];
             let command_spans = parse_command(&app_state.input_buffer);
             spans.extend(command_spans);
 
             let text = Line::from(spans);
-            let status_style = Style::default().bg(Color::Black);
+            let status_style = Style::default();
             let status_widget = Paragraph::new(text).style(status_style);
             f.render_widget(status_widget, area);
         }
@@ -517,8 +544,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 .constraints([Constraint::Length(1), Constraint::Min(1)])
                 .split(area);
 
-            let prefix_widget =
-                Paragraph::new("/").style(Style::default().bg(Color::Black).fg(Color::White));
+            let prefix_widget = Paragraph::new("/").style(Style::default());
             f.render_widget(prefix_widget, chunks[0]);
 
             f.render_widget(&text_area, chunks[1]);
@@ -532,8 +558,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 .constraints([Constraint::Length(1), Constraint::Min(1)])
                 .split(area);
 
-            let prefix_widget =
-                Paragraph::new("?").style(Style::default().bg(Color::Black).fg(Color::White));
+            let prefix_widget = Paragraph::new("?").style(Style::default());
             f.render_widget(prefix_widget, chunks[0]);
 
             f.render_widget(&text_area, chunks[1]);
@@ -545,7 +570,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
 
 fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
     let overlay = Block::default()
-        .style(Style::default().bg(Color::Black))
+        .style(Style::default())
         .borders(Borders::NONE);
     f.render_widget(Clear, area);
     f.render_widget(overlay, area);
@@ -623,6 +648,7 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
 }
 
 fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
+    let is_editing = matches!(app_state.input_mode, InputMode::Editing);
     let sheet_names = app_state.workbook.get_sheet_names();
     let current_index = app_state.workbook.get_current_sheet_index();
 
@@ -675,8 +701,13 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
         .constraints([Constraint::Length(max_title_width), Constraint::Min(0)])
         .split(area);
 
-    let title_widget = Paragraph::new(title_content.clone())
-        .style(Style::default().bg(Color::Blue).fg(Color::White));
+    let title_widget = if is_editing {
+        Paragraph::new(title_content.clone())
+            .style(Style::default().bg(Color::DarkGray).fg(Color::Gray))
+    } else {
+        Paragraph::new(title_content.clone())
+            .style(Style::default().bg(Color::DarkGray).fg(Color::White))
+    };
     f.render_widget(title_widget, horizontal_layout[0]);
 
     let mut tab_constraints = Vec::new();
@@ -698,10 +729,17 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
 
         let name = &sheet_names[sheet_idx];
         let is_current = sheet_idx == current_index;
-        let style = if is_current {
-            Style::default().bg(Color::LightBlue).fg(Color::White)
+
+        let style = if is_editing {
+            if is_current {
+                Style::default().bg(Color::DarkGray).fg(Color::Gray)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            }
+        } else if is_current {
+            Style::default().bg(Color::DarkGray).fg(Color::White)
         } else {
-            Style::default().fg(Color::White)
+            Style::default()
         };
 
         let tab_widget = Paragraph::new(name.to_string())
