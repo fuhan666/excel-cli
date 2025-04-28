@@ -1,16 +1,16 @@
 use anyhow::Result;
 use crossterm::{
-    ExecutableCommand,
     event::{self, Event, KeyEventKind},
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    ExecutableCommand,
 };
 use ratatui::{
-    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table},
+    Frame, Terminal,
 };
 use std::{io, time::Duration};
 
@@ -244,8 +244,17 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
         rows.push(Row::new(cells));
     }
 
+    // In Normal mode, add color to the border of the data display area to indicate current focus
+    let table_block = if matches!(app_state.input_mode, InputMode::Normal) {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::LightGreen))
+    } else {
+        Block::default().borders(Borders::ALL)
+    };
+
     let table = Table::new(std::iter::once(header_row).chain(rows), &col_constraints)
-        .block(Block::default().borders(Borders::ALL))
+        .block(table_block)
         .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol(">> ");
 
@@ -326,7 +335,7 @@ fn parse_command(input: &str) -> Vec<Span> {
     vec![Span::raw(input)]
 }
 
-fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
+fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -342,10 +351,40 @@ fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
     // Handle the top panel based on the input mode
     match app_state.input_mode {
         InputMode::Editing => {
-            // In editing mode, show the text area for editing
-            // Create a block for the editing area with title
-            let title = format!(" Editing Cell {} ", cell_ref);
-            let edit_block = Block::default().borders(Borders::ALL).title(title);
+            let (vim_mode_str, mode_color) = if let Some(vim_state) = &app_state.vim_state {
+                match vim_state.mode {
+                    crate::app::VimMode::Normal => ("NORMAL", Color::Green),
+                    crate::app::VimMode::Insert => ("INSERT", Color::LightBlue),
+                    crate::app::VimMode::Visual => ("VISUAL", Color::Yellow),
+                    crate::app::VimMode::Operator(op) => {
+                        let op_str = match op {
+                            'y' => "YANK",
+                            'd' => "DELETE",
+                            'c' => "CHANGE",
+                            _ => "OPERATOR",
+                        };
+                        (op_str, Color::LightRed)
+                    }
+                }
+            } else {
+                ("VIM", Color::White)
+            };
+
+            let title = Line::from(vec![
+                Span::raw(" Editing Cell "),
+                Span::raw(cell_ref.clone()),
+                Span::raw(" - "),
+                Span::styled(
+                    vim_mode_str,
+                    Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+            ]);
+
+            let edit_block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::LightGreen))
+                .title(title);
 
             f.render_widget(edit_block.clone(), chunks[0]);
 
@@ -364,7 +403,6 @@ fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
             // Get cell content
             let content = app_state.get_cell_content(row, col);
 
-            // Create block with title
             let title = format!(" Cell {} Content ", cell_ref);
             let cell_block = Block::default().borders(Borders::ALL).title(title);
 
@@ -445,7 +483,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
     match app_state.input_mode {
         InputMode::Normal => {
             let status =
-                "Input :help for operating instructions | hjkl=move [ ]=prev/next-sheet i=edit y=copy d=cut p=paste /=search N/n=prev/next-search-result :=command ".to_string();
+                "Input :help for operating instructions | hjkl=move [ ]=prev/next-sheet Enter=edit y=copy d=cut p=paste /=search N/n=prev/next-search-result :=command ".to_string();
 
             let status_style = Style::default().bg(Color::Black).fg(Color::White);
             let status_widget = Paragraph::new(status).style(status_style);
@@ -453,12 +491,9 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
         }
 
         InputMode::Editing => {
-            let status = format!(
-                "Editing cell {} (Enter=confirm, Esc=cancel)",
-                cell_reference(app_state.selected_cell)
-            );
-            let status_style = Style::default().bg(Color::Black).fg(Color::White);
-            let status_widget = Paragraph::new(status).style(status_style);
+            let status_style = Style::default().bg(Color::Black);
+            let status_widget =
+                Paragraph::new("Press Esc to exit editing mode".to_string()).style(status_style);
             f.render_widget(status_widget, area);
         }
 

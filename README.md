@@ -100,7 +100,7 @@ The application has a simple and intuitive interface:
 - `Ctrl+→` (or `Command+→` on Mac): If current cell is empty, jump to the first non-empty cell to the right; if current cell is not empty, jump to the last non-empty cell to the right
 - `Ctrl+↑` (or `Command+↑` on Mac): If current cell is empty, jump to the first non-empty cell above; if current cell is not empty, jump to the last non-empty cell above
 - `Ctrl+↓` (or `Command+↓` on Mac): If current cell is empty, jump to the first non-empty cell below; if current cell is not empty, jump to the last non-empty cell below
-- `i`: Edit current cell
+- `Enter`: Edit current cell
 - `y`: Copy current cell content
 - `d`: Cut current cell content
 - `p`: Paste clipboard content to current cell
@@ -112,12 +112,53 @@ The application has a simple and intuitive interface:
 - `N`: Jump to previous search result
 - `:`: Enter command mode (for Vim-like commands)
 
-## Edit Mode
+## Vim Edit Mode
 
-In edit mode:
+When editing cell content (press `Enter` to enter edit mode):
 
-- `Enter`: Confirm edit
-- `Esc`: Cancel edit
+- **Mode Switching**:
+
+  - `Esc`: Exit Vim mode and save changes
+  - `i`: Enter Insert mode
+  - `v`: Enter Visual mode
+
+- **Navigation (in Normal mode)**:
+
+  - `h`, `j`, `k`, `l`: Move cursor left, down, up, right
+  - `w`: Move to next word
+  - `b`: Move to beginning of word
+  - `e`: Move to end of word
+  - `$`: Move to end of line
+  - `^`: Move to first non-blank character of line
+  - `gg`: Move to first line
+  - `G`: Move to last line
+
+- **Editing Operations**:
+
+  - `x`: Delete character under cursor
+  - `D`: Delete to end of line
+  - `C`: Change to end of line
+  - `o`: Open new line below and enter Insert mode
+  - `O`: Open new line above and enter Insert mode
+  - `A`: Append at end of line
+  - `I`: Insert at beginning of line
+
+- **Visual Mode Operations**:
+
+  - `y`: Yank (copy) selected text
+  - `d`: Delete selected text
+  - `c`: Change selected text (delete and enter Insert mode)
+
+- **Operator Commands**:
+
+  - `y{motion}`: Yank text specified by motion
+  - `d{motion}`: Delete text specified by motion
+  - `c{motion}`: Change text specified by motion
+
+- **Clipboard Operations**:
+  - `p`: Paste yanked or deleted text
+  - `u`: Undo last change
+  - `Ctrl+r`: Redo last undone change
 
 ## Search Mode
 

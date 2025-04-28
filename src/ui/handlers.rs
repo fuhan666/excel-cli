@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tui_textarea::{TextArea, Input, Key};
+use tui_textarea::{Input, Key, TextArea};
 
 use crate::app::{AppState, InputMode};
 
@@ -14,7 +14,7 @@ pub fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
                 handle_normal_mode(app_state, key.code);
             }
         }
-        InputMode::Editing => handle_editing_mode(app_state, key.code),
+        InputMode::Editing => handle_editing_mode(app_state, key),
         InputMode::Command => handle_command_mode(app_state, key.code),
         InputMode::SearchForward => handle_search_mode(app_state, key.code),
         InputMode::SearchBackward => handle_search_mode(app_state, key.code),
@@ -58,6 +58,10 @@ fn handle_command_mode(app_state: &mut AppState, key_code: KeyCode) {
 
 fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
     match key_code {
+        KeyCode::Enter => {
+            app_state.g_pressed = false;
+            app_state.start_editing();
+        }
         KeyCode::Char('h') => {
             app_state.g_pressed = false;
             app_state.move_cursor(0, -1);
@@ -99,10 +103,6 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
             if let Err(e) = app_state.next_sheet() {
                 app_state.add_notification(format!("Failed to switch to next sheet: {}", e));
             }
-        }
-        KeyCode::Char('i') => {
-            app_state.g_pressed = false;
-            app_state.start_editing();
         }
         KeyCode::Char('g') => {
             if app_state.g_pressed {
@@ -204,26 +204,17 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
     }
 }
 
-fn handle_editing_mode(app_state: &mut AppState, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Enter => {
-            if let Err(e) = app_state.confirm_edit() {
-                app_state.add_notification(format!("Error: {}", e));
-            }
-        }
-        KeyCode::Esc => app_state.cancel_input(),
-        _ => {
-            let input = Input {
-                key: key_code_to_tui_key(key_code),
-                ctrl: false,
-                alt: false,
-                shift: false,
-            };
-            app_state.text_area.input(input);
+fn handle_editing_mode(app_state: &mut AppState, key: KeyEvent) {
+    // Convert KeyEvent to Input for tui-textarea
+    let input = Input {
+        key: key_code_to_tui_key(key.code),
+        ctrl: key.modifiers.contains(KeyModifiers::CONTROL),
+        alt: key.modifiers.contains(KeyModifiers::ALT),
+        shift: key.modifiers.contains(KeyModifiers::SHIFT),
+    };
 
-            // Update input_buffer with the current TextArea content to sync with cell display
-            app_state.input_buffer = app_state.text_area.lines().join("\n");
-        }
+    if let Err(e) = app_state.handle_vim_input(input) {
+        app_state.add_notification(format!("Vim input error: {}", e));
     }
 }
 

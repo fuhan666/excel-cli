@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use calamine::{DataType, Reader, open_workbook_auto};
+use calamine::{open_workbook_auto, DataType, Reader};
 use chrono::Local;
 use rust_xlsxwriter::{Format, Workbook as XlsxWorkbook};
 use std::path::Path;

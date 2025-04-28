@@ -23,7 +23,7 @@ impl AppState<'_> {
              ]           - Switch to next sheet\n\
              :sheet [name/number] - Switch to sheet by name or index\n\n\
              EDITING:\n\
-             i           - Edit current cell\n\
+             Enter       - Edit current cell\n\
              :y          - Copy current cell\n\
              :d          - Cut current cell\n\
              :put, :pu   - Paste to current cell\n\
@@ -57,7 +57,32 @@ impl AppState<'_> {
              :delsheet   - Delete the current sheet\n\n\
              UI ADJUSTMENTS:\n\
              +/=         - Increase info panel height\n\
-             -           - Decrease info panel height"
+             -           - Decrease info panel height\n\n\
+             EDITING MODE:\n\
+             Esc         - Exit Vim mode and save changes\n\
+             i           - Enter Insert mode\n\
+             v           - Enter Visual mode\n\
+             y           - Yank (copy) text in Visual mode or with operator\n\
+             d           - Delete text in Visual mode or with operator\n\
+             c           - Change text in Visual mode or with operator\n\
+             p           - Paste yanked or deleted text\n\
+             u           - Undo last change\n\
+             Ctrl+r      - Redo last undone change\n\
+             h,j,k,l     - Move cursor left, down, up, right\n\
+             w           - Move to next word\n\
+             b           - Move to beginning of word\n\
+             e           - Move to end of word\n\
+             $           - Move to end of line\n\
+             ^           - Move to first non-blank character of line\n\
+             gg          - Move to first line\n\
+             G           - Move to last line\n\
+             x           - Delete character under cursor\n\
+             D           - Delete to end of line\n\
+             C           - Change to end of line\n\
+             o           - Open new line below and enter Insert mode\n\
+             O           - Open new line above and enter Insert mode\n\
+             A           - Append at end of line\n\
+             I           - Insert at beginning of line"
             .to_string();
 
         self.input_mode = InputMode::Help;

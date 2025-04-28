@@ -1,9 +1,10 @@
 use anyhow::Result;
-use tui_textarea::TextArea;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tui_textarea::TextArea;
 
 use crate::actions::UndoHistory;
+use crate::app::VimState;
 use crate::excel::Workbook;
 
 pub enum InputMode {
@@ -43,6 +44,7 @@ pub struct AppState<'a> {
     pub help_scroll: usize,
     pub help_visible_lines: usize,
     pub undo_history: UndoHistory,
+    pub vim_state: Option<VimState>,
 }
 
 impl AppState<'_> {
@@ -100,6 +102,7 @@ impl AppState<'_> {
             help_scroll: 0,
             help_visible_lines: 20,
             undo_history: UndoHistory::new(),
+            vim_state: None,
         })
     }
 
