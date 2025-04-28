@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ratatui_textarea::TextArea;
+use tui_textarea::TextArea;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

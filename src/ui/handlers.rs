@@ -1,5 +1,5 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-use ratatui_textarea::TextArea;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use tui_textarea::{TextArea, Input, Key};
 
 use crate::app::{AppState, InputMode};
 
@@ -213,13 +213,13 @@ fn handle_editing_mode(app_state: &mut AppState, key_code: KeyCode) {
         }
         KeyCode::Esc => app_state.cancel_input(),
         _ => {
-            let key_event = KeyEvent {
-                code: key_code,
-                modifiers: KeyModifiers::empty(),
-                kind: KeyEventKind::Press,
-                state: KeyEventState::NONE,
+            let input = Input {
+                key: key_code_to_tui_key(key_code),
+                ctrl: false,
+                alt: false,
+                shift: false,
             };
-            app_state.text_area.input(key_event);
+            app_state.text_area.input(input);
 
             // Update input_buffer with the current TextArea content to sync with cell display
             app_state.input_buffer = app_state.text_area.lines().join("\n");
@@ -236,14 +236,39 @@ fn handle_search_mode(app_state: &mut AppState, key_code: KeyCode) {
             app_state.text_area = TextArea::default();
         }
         _ => {
-            let key_event = KeyEvent {
-                code: key_code,
-                modifiers: KeyModifiers::empty(),
-                kind: KeyEventKind::Press,
-                state: KeyEventState::NONE,
+            let input = Input {
+                key: key_code_to_tui_key(key_code),
+                ctrl: false,
+                alt: false,
+                shift: false,
             };
-            app_state.text_area.input(key_event);
+            app_state.text_area.input(input);
         }
+    }
+}
+
+// Convert crossterm::event::KeyCode to tui_textarea::Key
+fn key_code_to_tui_key(key_code: KeyCode) -> Key {
+    match key_code {
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::Enter => Key::Enter,
+        KeyCode::Left => Key::Left,
+        KeyCode::Right => Key::Right,
+        KeyCode::Up => Key::Up,
+        KeyCode::Down => Key::Down,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::PageUp => Key::PageUp,
+        KeyCode::PageDown => Key::PageDown,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::BackTab => Key::Null, // BackTab not supported in tui-textarea
+        KeyCode::Delete => Key::Delete,
+        KeyCode::Insert => Key::Null, // Insert not supported in tui-textarea
+        KeyCode::Esc => Key::Esc,
+        KeyCode::Char(c) => Key::Char(c),
+        KeyCode::F(n) => Key::F(n),
+        KeyCode::Null => Key::Null,
+        _ => Key::Null,
     }
 }
 

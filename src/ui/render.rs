@@ -106,7 +106,7 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
             Constraint::Length(app_state.info_panel_height as u16), // Info panel
             Constraint::Length(1), // Status bar
         ])
-        .split(f.size());
+        .split(f.area());
 
     draw_title_with_tabs(f, app_state, chunks[0]);
 
@@ -118,7 +118,7 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
 
     // If in help mode, draw the help popup over everything else
     if let InputMode::Help = app_state.input_mode {
-        draw_help_popup(f, app_state, f.size());
+        draw_help_popup(f, app_state, f.area());
     }
 }
 
@@ -244,11 +244,10 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
         rows.push(Row::new(cells));
     }
 
-    let table = Table::new(std::iter::once(header_row).chain(rows))
+    let table = Table::new(std::iter::once(header_row).chain(rows), &col_constraints)
         .block(Block::default().borders(Borders::ALL))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-        .highlight_symbol(">> ")
-        .widths(&col_constraints);
+        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(">> ");
 
     f.render_widget(table, area);
 }
@@ -359,7 +358,7 @@ fn draw_info_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
                 height: inner_area.height,
             };
 
-            f.render_widget(app_state.text_area.widget(), padded_area);
+            f.render_widget(&app_state.text_area, padded_area);
         }
         _ => {
             // Get cell content
@@ -487,7 +486,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 Paragraph::new("/").style(Style::default().bg(Color::Black).fg(Color::White));
             f.render_widget(prefix_widget, chunks[0]);
 
-            f.render_widget(text_area.widget(), chunks[1]);
+            f.render_widget(&text_area, chunks[1]);
         }
 
         InputMode::SearchBackward => {
@@ -502,7 +501,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
                 Paragraph::new("?").style(Style::default().bg(Color::Black).fg(Color::White));
             f.render_widget(prefix_widget, chunks[0]);
 
-            f.render_widget(text_area.widget(), chunks[1]);
+            f.render_widget(&text_area, chunks[1]);
         }
 
         InputMode::Help => {}

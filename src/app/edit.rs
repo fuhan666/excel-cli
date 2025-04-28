@@ -10,7 +10,7 @@ impl AppState<'_> {
         self.input_buffer = content.clone();
 
         // Set up TextArea for editing
-        self.text_area = ratatui_textarea::TextArea::default();
+        self.text_area = tui_textarea::TextArea::default();
         self.text_area.insert_str(&content);
     }
 
@@ -47,7 +47,7 @@ impl AppState<'_> {
             self.workbook.set_cell_value(row, col, content)?;
             self.input_mode = InputMode::Normal;
             self.input_buffer = String::new();
-            self.text_area = ratatui_textarea::TextArea::default();
+            self.text_area = tui_textarea::TextArea::default();
         }
         Ok(())
     }
