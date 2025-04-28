@@ -1,7 +1,9 @@
 use crate::actions::{ActionCommand, ActionType, CellAction};
 use crate::app::AppState;
 use crate::app::InputMode;
+use crate::app::{Transition, VimMode, VimState};
 use anyhow::Result;
+use tui_textarea::Input;
 
 impl AppState<'_> {
     pub fn start_editing(&mut self) {
@@ -9,9 +11,30 @@ impl AppState<'_> {
         let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
         self.input_buffer = content.clone();
 
-        // Set up TextArea for editing
-        self.text_area = ratatui_textarea::TextArea::default();
+        self.text_area = tui_textarea::TextArea::default();
         self.text_area.insert_str(&content);
+        self.text_area.set_tab_length(4);
+
+        self.vim_state = Some(VimState::new(VimMode::Normal));
+    }
+
+    pub fn handle_vim_input(&mut self, input: Input) -> Result<()> {
+        if let Some(vim_state) = &mut self.vim_state {
+            match vim_state.transition(input, &mut self.text_area) {
+                Transition::Mode(mode) => {
+                    self.vim_state = Some(VimState::new(mode));
+                }
+                Transition::Pending(pending) => {
+                    self.vim_state = Some(vim_state.clone().with_pending(pending));
+                }
+                Transition::Exit => {
+                    // Confirm edit and exit Vim mode
+                    self.confirm_edit()?;
+                }
+                Transition::Nop => {}
+            }
+        }
+        Ok(())
     }
 
     pub fn confirm_edit(&mut self) -> Result<()> {
@@ -21,7 +44,6 @@ impl AppState<'_> {
             let (row, col) = self.selected_cell;
 
             self.workbook.ensure_cell_exists(row, col);
-
             self.ensure_column_widths();
 
             let sheet_index = self.workbook.get_current_sheet_index();
@@ -47,7 +69,8 @@ impl AppState<'_> {
             self.workbook.set_cell_value(row, col, content)?;
             self.input_mode = InputMode::Normal;
             self.input_buffer = String::new();
-            self.text_area = ratatui_textarea::TextArea::default();
+            self.text_area = tui_textarea::TextArea::default();
+            self.vim_state = None;
         }
         Ok(())
     }

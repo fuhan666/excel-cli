@@ -1,5 +1,5 @@
 use chrono::{Duration, NaiveDate, NaiveDateTime};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::excel::{Cell, CellType, DataTypeInfo};
 

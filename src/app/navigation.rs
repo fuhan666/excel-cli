@@ -1,6 +1,6 @@
 use crate::app::AppState;
-use crate::utils::Direction;
 use crate::utils::find_non_empty_cell;
+use crate::utils::Direction;
 
 impl AppState<'_> {
     pub fn move_cursor(&mut self, delta_row: isize, delta_col: isize) {

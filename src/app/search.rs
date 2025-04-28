@@ -5,7 +5,7 @@ impl AppState<'_> {
     pub fn start_search_forward(&mut self) {
         self.input_mode = InputMode::SearchForward;
         self.input_buffer = String::new();
-        self.text_area = ratatui_textarea::TextArea::default();
+        self.text_area = tui_textarea::TextArea::default();
         self.add_notification("Search forward mode".to_string());
         self.highlight_enabled = true;
     }
@@ -13,7 +13,7 @@ impl AppState<'_> {
     pub fn start_search_backward(&mut self) {
         self.input_mode = InputMode::SearchBackward;
         self.input_buffer = String::new();
-        self.text_area = ratatui_textarea::TextArea::default();
+        self.text_area = tui_textarea::TextArea::default();
         self.add_notification("Search backward mode".to_string());
         self.highlight_enabled = true;
     }
@@ -54,7 +54,7 @@ impl AppState<'_> {
 
         self.input_mode = InputMode::Normal;
         self.input_buffer = String::new();
-        self.text_area = ratatui_textarea::TextArea::default();
+        self.text_area = tui_textarea::TextArea::default();
     }
 
     pub fn find_all_matches(&self, query: &str) -> Vec<(usize, usize)> {
