@@ -137,15 +137,18 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
         draw_help_popup(f, app_state, f.size());
     }
 
-    // If in lazy loading mode and the current sheet is not loaded, draw the lazy loading overlay
-    if let InputMode::LazyLoading = app_state.input_mode {
-        let current_index = app_state.workbook.get_current_sheet_index();
-        if !app_state.workbook.is_sheet_loaded(current_index) {
-            draw_lazy_loading_overlay(f, app_state, chunks[1]);
-        } else {
-            // If the sheet is loaded, switch back to Normal mode
-            app_state.input_mode = crate::app::InputMode::Normal;
+    // If in lazy loading mode or CommandInLazyLoading mode and the current sheet is not loaded, draw the lazy loading overlay
+    match app_state.input_mode {
+        InputMode::LazyLoading | InputMode::CommandInLazyLoading => {
+            let current_index = app_state.workbook.get_current_sheet_index();
+            if !app_state.workbook.is_sheet_loaded(current_index) {
+                draw_lazy_loading_overlay(f, app_state, chunks[1]);
+            } else if matches!(app_state.input_mode, InputMode::LazyLoading) {
+                // If the sheet is loaded, switch back to Normal mode
+                app_state.input_mode = crate::app::InputMode::Normal;
+            }
         }
+        _ => {}
     }
 }
 
@@ -514,7 +517,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
             f.render_widget(status_widget, area);
         }
 
-        InputMode::Command => {
+        InputMode::Command | InputMode::CommandInLazyLoading => {
             // Create a styled text with different colors for command and parameters
             let mut spans = vec![Span::styled(":", Style::default())];
             let command_spans = parse_command(&app_state.input_buffer);
@@ -567,10 +570,10 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
         InputMode::LazyLoading => {
             // Show a status message for lazy loading mode
             let status_widget = Paragraph::new(
-                "Loading sheet data... Press Enter to load, [ and ] to switch sheets",
+                "Sheet data not loaded... Press Enter to load, [ and ] to switch sheets, :delsheet to delete current sheet, :q to quit, :q! to quit without saving",
             )
             .style(Style::default().fg(Color::LightYellow))
-            .alignment(ratatui::layout::Alignment::Center);
+            .alignment(ratatui::layout::Alignment::Left);
 
             f.render_widget(status_widget, area);
         }

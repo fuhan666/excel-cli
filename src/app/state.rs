@@ -24,6 +24,7 @@ pub enum InputMode {
     SearchBackward,
     Help,
     LazyLoading,
+    CommandInLazyLoading,
 }
 
 pub struct AppState<'a> {
@@ -224,6 +225,14 @@ impl AppState<'_> {
             return;
         }
 
+        // If in CommandInLazyLoading mode, return to LazyLoading mode
+        if let InputMode::CommandInLazyLoading = self.input_mode {
+            self.input_mode = InputMode::LazyLoading;
+            self.input_buffer = String::new();
+            self.text_area = TextArea::default();
+            return;
+        }
+
         // Otherwise, cancel the current input
         self.input_mode = InputMode::Normal;
         self.input_buffer = String::new();
@@ -240,6 +249,11 @@ impl AppState<'_> {
 
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
+        self.input_buffer = String::new();
+    }
+
+    pub fn start_command_in_lazy_loading_mode(&mut self) {
+        self.input_mode = InputMode::CommandInLazyLoading;
         self.input_buffer = String::new();
     }
 }

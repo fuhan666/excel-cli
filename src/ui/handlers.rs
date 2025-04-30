@@ -16,6 +16,7 @@ pub fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
         }
         InputMode::Editing => handle_editing_mode(app_state, key),
         InputMode::Command => handle_command_mode(app_state, key.code),
+        InputMode::CommandInLazyLoading => handle_command_in_lazy_loading_mode(app_state, key.code),
         InputMode::SearchForward => handle_search_mode(app_state, key.code),
         InputMode::SearchBackward => handle_search_mode(app_state, key.code),
         InputMode::Help => handle_help_mode(app_state, key.code),
@@ -51,6 +52,37 @@ fn handle_command_mode(app_state: &mut AppState, key_code: KeyCode) {
     match key_code {
         KeyCode::Enter => app_state.execute_command(),
         KeyCode::Esc => app_state.cancel_input(),
+        KeyCode::Backspace => app_state.delete_char_from_input(),
+        KeyCode::Char(c) => app_state.add_char_to_input(c),
+        _ => {}
+    }
+}
+
+fn handle_command_in_lazy_loading_mode(app_state: &mut AppState, key_code: KeyCode) {
+    match key_code {
+        KeyCode::Enter => {
+            // Execute the command but stay in lazy loading mode if needed
+            let current_index = app_state.workbook.get_current_sheet_index();
+            let is_sheet_loaded = app_state.workbook.is_sheet_loaded(current_index);
+
+            // Execute the command
+            app_state.execute_command();
+
+            // If the sheet is still not loaded after command execution, switch back to LazyLoading mode
+            if !is_sheet_loaded
+                && !app_state
+                    .workbook
+                    .is_sheet_loaded(app_state.workbook.get_current_sheet_index())
+                && matches!(app_state.input_mode, InputMode::Normal)
+            {
+                app_state.input_mode = InputMode::LazyLoading;
+            }
+        }
+        KeyCode::Esc => {
+            // Return to LazyLoading mode
+            app_state.input_mode = InputMode::LazyLoading;
+            app_state.input_buffer = String::new();
+        }
         KeyCode::Backspace => app_state.delete_char_from_input(),
         KeyCode::Char(c) => app_state.add_char_to_input(c),
         _ => {}
@@ -318,6 +350,10 @@ fn handle_lazy_loading_mode(app_state: &mut AppState, key_code: KeyCode) {
                     app_state.add_notification(format!("Failed to switch to next sheet: {}", e));
                 }
             }
+        }
+        KeyCode::Char(':') => {
+            // Allow entering command mode from lazy loading mode
+            app_state.start_command_in_lazy_loading_mode();
         }
         _ => {
             app_state.add_notification(

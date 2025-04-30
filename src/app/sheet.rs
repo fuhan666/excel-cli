@@ -178,6 +178,8 @@ impl AppState<'_> {
                 self.sheet_cell_positions.remove(&current_sheet_name);
 
                 let new_sheet_name = self.workbook.get_current_sheet_name();
+                let new_sheet_index = self.workbook.get_current_sheet_index();
+                let is_new_sheet_loaded = self.workbook.is_sheet_loaded(new_sheet_index);
 
                 // Restore saved cell position for the new current sheet or use default
                 if let Some(saved_position) = self.sheet_cell_positions.get(&new_sheet_name) {
@@ -214,7 +216,17 @@ impl AppState<'_> {
                 self.search_results.clear();
                 self.current_search_idx = None;
 
-                self.add_notification(format!("Deleted sheet: {}", current_sheet_name));
+                // Check if the new current sheet is loaded when using lazy loading
+                if self.workbook.is_lazy_loading() && !is_new_sheet_loaded {
+                    // If the sheet is not loaded, switch to LazyLoading mode
+                    self.input_mode = crate::app::InputMode::LazyLoading;
+                    self.add_notification(format!(
+                        "Deleted sheet: {}. Switched to sheet: {} (press Enter to load)",
+                        current_sheet_name, new_sheet_name
+                    ));
+                } else {
+                    self.add_notification(format!("Deleted sheet: {}", current_sheet_name));
+                }
             }
             Err(e) => {
                 self.add_notification(format!("Failed to delete sheet: {}", e));
