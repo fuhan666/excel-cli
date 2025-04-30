@@ -12,10 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support dimming other areas while editing
 - Remember the selected cell when switching between sheets
 
+### Fixed
+
+- Fixed the issue where row numbers are not fully displayed when exceeding 100,000
+
 ### Changed
 
 - Edit cell content using vim shortcuts
 - Multiple UI improvements
+- Replace ratatui_textarea with tui_textarea
 
 ## [0.2.0] - 2025-04-27
 
