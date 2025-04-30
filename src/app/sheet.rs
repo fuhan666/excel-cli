@@ -94,7 +94,21 @@ impl AppState<'_> {
 
         self.update_row_number_width();
 
-        self.add_notification(format!("Switched to sheet: {}", new_sheet_name));
+        // Check if the new sheet is loaded when using lazy loading
+        let is_lazy_loading = self.workbook.is_lazy_loading();
+        let is_sheet_loaded = self.workbook.is_sheet_loaded(index);
+
+        if is_lazy_loading && !is_sheet_loaded {
+            // If the sheet is not loaded, switch to LazyLoading mode
+            self.input_mode = crate::app::InputMode::LazyLoading;
+            self.add_notification(format!(
+                "Switched to sheet: {} (press Enter to load)",
+                new_sheet_name
+            ));
+        } else {
+            self.add_notification(format!("Switched to sheet: {}", new_sheet_name));
+        }
+
         Ok(())
     }
 
@@ -589,12 +603,25 @@ impl AppState<'_> {
     }
 
     pub fn auto_adjust_column_width(&mut self, col: Option<usize>) {
-        let sheet = self.workbook.get_current_sheet();
+        // Get sheet information before any mutable operations
+        let is_loaded = self.workbook.get_current_sheet().is_loaded;
+        let max_cols = self.workbook.get_current_sheet().max_cols;
         let default_min_width = 5;
+
+        if !is_loaded && max_cols == 0 {
+            self.add_notification(
+                "Cannot adjust column widths in lazy loading mode until sheet is loaded"
+                    .to_string(),
+            );
+            return;
+        }
 
         match col {
             // Adjust specific column
             Some(column) => {
+                // Ensure column_widths is large enough
+                self.ensure_column_widths();
+
                 if column < self.column_widths.len() {
                     // Calculate and set new column width
                     let width = self.calculate_column_width(column);
@@ -610,15 +637,21 @@ impl AppState<'_> {
             }
             // Adjust all columns
             None => {
-                for col_idx in 1..=sheet.max_cols {
-                    let width = self.calculate_column_width(col_idx);
-                    self.column_widths[col_idx] = width.max(default_min_width);
+                // Ensure column_widths is large enough
+                self.ensure_column_widths();
+
+                // Only process columns if there are any
+                if max_cols > 0 {
+                    for col_idx in 1..=max_cols {
+                        let width = self.calculate_column_width(col_idx);
+                        self.column_widths[col_idx] = width.max(default_min_width);
+                    }
+
+                    let column = self.selected_cell.1;
+                    self.ensure_column_visible(column);
+
+                    self.add_notification("All column widths adjusted".to_string());
                 }
-
-                let column = self.selected_cell.1;
-                self.ensure_column_visible(column);
-
-                self.add_notification("All column widths adjusted".to_string());
             }
         }
     }

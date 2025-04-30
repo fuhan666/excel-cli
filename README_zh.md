@@ -75,6 +75,7 @@ excel-cli path/to/your/file.xlsx -j > data.json # （示例）将JSON输出保�
 - `--json-export`, `-j`：将所有工作表导出为 JSON 并输出到 stdout（用于管道传输）
 - `--direction`, `-d`：Excel 中的表头方向：'h'表示水平（顶部行），'v'表示垂直（左侧列）。默认：'h'
 - `--header-count`, `-r`：Excel 中的表头行数（水平方向）或列数（垂直方向）。默认：1
+- `--lazy-loading`, `-l`：启用大型 Excel 文件的懒加载功能（仅在需要时加载数据）
 
 ## 用户界面
 

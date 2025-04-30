@@ -136,6 +136,17 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
     if let InputMode::Help = app_state.input_mode {
         draw_help_popup(f, app_state, f.size());
     }
+
+    // If in lazy loading mode and the current sheet is not loaded, draw the lazy loading overlay
+    if let InputMode::LazyLoading = app_state.input_mode {
+        let current_index = app_state.workbook.get_current_sheet_index();
+        if !app_state.workbook.is_sheet_loaded(current_index) {
+            draw_lazy_loading_overlay(f, app_state, chunks[1]);
+        } else {
+            // If the sheet is loaded, switch back to Normal mode
+            app_state.input_mode = crate::app::InputMode::Normal;
+        }
+    }
 }
 
 fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
@@ -552,6 +563,51 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
         InputMode::Help => {
             // No status bar in help mode
         }
+
+        InputMode::LazyLoading => {
+            // Show a status message for lazy loading mode
+            let status_widget = Paragraph::new(
+                "Loading sheet data... Press Enter to load, [ and ] to switch sheets",
+            )
+            .style(Style::default().fg(Color::LightYellow))
+            .alignment(ratatui::layout::Alignment::Center);
+
+            f.render_widget(status_widget, area);
+        }
+    }
+}
+
+fn draw_lazy_loading_overlay(f: &mut Frame, _app_state: &AppState, area: Rect) {
+    // Create a semi-transparent overlay
+    let overlay = Block::default()
+        .style(Style::default().bg(Color::Black).fg(Color::White))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::LightCyan));
+
+    f.render_widget(Clear, area);
+    f.render_widget(overlay, area);
+
+    // Calculate center position for the message
+    let message = "Press Enter to load the sheet, [ and ] to switch sheets";
+    let width = message.len() as u16;
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + area.height / 2;
+
+    if x < area.width && y < area.height {
+        let message_area = Rect {
+            x,
+            y,
+            width: width.min(area.width),
+            height: 1,
+        };
+
+        let message_widget = Paragraph::new(message).style(
+            Style::default()
+                .fg(Color::LightYellow)
+                .add_modifier(Modifier::BOLD),
+        );
+
+        f.render_widget(message_widget, message_area);
     }
 }
 

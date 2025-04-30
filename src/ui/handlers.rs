@@ -19,6 +19,7 @@ pub fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
         InputMode::SearchForward => handle_search_mode(app_state, key.code),
         InputMode::SearchBackward => handle_search_mode(app_state, key.code),
         InputMode::Help => handle_help_mode(app_state, key.code),
+        InputMode::LazyLoading => handle_lazy_loading_mode(app_state, key.code),
     }
 }
 
@@ -60,7 +61,21 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
     match key_code {
         KeyCode::Enter => {
             app_state.g_pressed = false;
-            app_state.start_editing();
+
+            // Check if the current sheet is loaded
+            let index = app_state.workbook.get_current_sheet_index();
+            let sheet_name = app_state.workbook.get_current_sheet_name();
+
+            if app_state.workbook.is_lazy_loading() && !app_state.workbook.is_sheet_loaded(index) {
+                // If the sheet is not loaded, load it first
+                if let Err(e) = app_state.workbook.ensure_sheet_loaded(index, &sheet_name) {
+                    app_state.add_notification(format!("Failed to load sheet: {}", e));
+                } else {
+                    app_state.start_editing();
+                }
+            } else {
+                app_state.start_editing();
+            }
         }
         KeyCode::Char('h') => {
             app_state.g_pressed = false;
@@ -260,6 +275,55 @@ fn key_code_to_tui_key(key_code: KeyCode) -> Key {
         KeyCode::F(n) => Key::F(n),
         KeyCode::Null => Key::Null,
         _ => Key::Null,
+    }
+}
+
+fn handle_lazy_loading_mode(app_state: &mut AppState, key_code: KeyCode) {
+    match key_code {
+        KeyCode::Enter => {
+            let index = app_state.workbook.get_current_sheet_index();
+            let sheet_name = app_state.workbook.get_current_sheet_name();
+
+            // Load the sheet
+            if let Err(e) = app_state.workbook.ensure_sheet_loaded(index, &sheet_name) {
+                app_state.add_notification(format!("Failed to load sheet: {}", e));
+            }
+
+            app_state.input_mode = InputMode::Normal;
+        }
+        KeyCode::Char('[') => {
+            // Switch to previous sheet
+            let current_index = app_state.workbook.get_current_sheet_index();
+
+            if current_index == 0 {
+                app_state.add_notification("Already at the first sheet".to_string());
+            } else {
+                // The method will automatically set the input mode to LazyLoading if the sheet is not loaded
+                if let Err(e) = app_state.switch_sheet_by_index(current_index - 1) {
+                    app_state
+                        .add_notification(format!("Failed to switch to previous sheet: {}", e));
+                }
+            }
+        }
+        KeyCode::Char(']') => {
+            // Switch to next sheet
+            let current_index = app_state.workbook.get_current_sheet_index();
+            let sheet_count = app_state.workbook.get_sheet_names().len();
+
+            if current_index >= sheet_count - 1 {
+                app_state.add_notification("Already at the last sheet".to_string());
+            } else {
+                // The method will automatically set the input mode to LazyLoading if the sheet is not loaded
+                if let Err(e) = app_state.switch_sheet_by_index(current_index + 1) {
+                    app_state.add_notification(format!("Failed to switch to next sheet: {}", e));
+                }
+            }
+        }
+        _ => {
+            app_state.add_notification(
+                "Press Enter to load the sheet data, or use [ and ] to switch sheets".to_string(),
+            );
+        }
     }
 }
 

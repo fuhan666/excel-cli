@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Support dimming other areas while editing
 - Remember the selected cell when switching between sheets
+- Added optional lazy loading for xlsx and xlsb files to improve performance with large files (enabled with -l flag)
 
 ### Fixed
 
