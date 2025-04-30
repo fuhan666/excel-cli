@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use calamine::{open_workbook_auto, DataType, Reader};
+use calamine::{open_workbook_auto, Data, Reader};
 use chrono::Local;
 use rust_xlsxwriter::{Format, Workbook as XlsxWorkbook};
 use std::path::Path;
@@ -18,16 +18,21 @@ pub fn open_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
     let path_str = path.as_ref().to_string_lossy().to_string();
 
     // Open workbook directly from path
-    let mut workbook = open_workbook_auto(&path).context("Unable to parse Excel file")?;
+    let mut workbook = open_workbook_auto(&path)
+        .with_context(|| format!("Unable to parse Excel file: {}", path_str))?;
 
     let sheet_names = workbook.sheet_names().to_vec();
-    let mut sheets = Vec::new();
 
+    // Pre-allocate with the right capacity
+    let mut sheets = Vec::with_capacity(sheet_names.len());
+
+    // Process each sheet
     for name in &sheet_names {
         let range = workbook
             .worksheet_range(name)
-            .context(format!("Unable to read worksheet: {}", name))?;
-        let sheet = create_sheet_from_range(name, range?);
+            .with_context(|| format!("Unable to read worksheet: {}", name))?;
+
+        let sheet = create_sheet_from_range(name, range);
         sheets.push(sheet);
     }
 
@@ -43,84 +48,81 @@ pub fn open_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
     })
 }
 
-fn create_sheet_from_range(name: &str, range: calamine::Range<DataType>) -> Sheet {
-    let height = range.height();
-    let width = range.width();
+fn create_sheet_from_range(name: &str, range: calamine::Range<Data>) -> Sheet {
+    let (height, width) = range.get_size();
 
+    // Create a data grid with empty cells, adding 1 to dimensions for 1-based indexing
     let mut data = vec![vec![Cell::empty(); width + 1]; height + 1];
 
-    for (row_idx, row) in range.rows().enumerate() {
-        for (col_idx, cell) in row.iter().enumerate() {
-            if let DataType::Empty = cell {
-                continue;
+    // Process only non-empty cells
+    for (row_idx, col_idx, cell) in range.used_cells() {
+        // Extract value, cell_type, and original_type from the Data
+        let (value, cell_type, original_type) = match cell {
+            Data::Empty => (String::new(), CellType::Empty, Some(DataTypeInfo::Empty)),
+
+            Data::String(s) => {
+                let value = s.clone();
+                (value, CellType::Text, Some(DataTypeInfo::String))
             }
 
-            // Extract value, cell_type, and original_type from the DataType
-            let (value, cell_type, original_type) = match cell {
-                DataType::Empty => (String::new(), CellType::Empty, Some(DataTypeInfo::Empty)),
-                DataType::String(s) => {
-                    let mut value = String::with_capacity(s.len());
-                    value.push_str(s);
-                    (value, CellType::Text, Some(DataTypeInfo::String))
-                }
-                DataType::Float(f) => {
-                    let value = if *f == (*f as i64) as f64 && f.abs() < 1e10 {
-                        (*f as i64).to_string()
-                    } else {
-                        f.to_string()
-                    };
-                    (value, CellType::Number, Some(DataTypeInfo::Float(*f)))
-                }
-                DataType::Int(i) => (i.to_string(), CellType::Number, Some(DataTypeInfo::Int(*i))),
-                DataType::Bool(b) => (
-                    if *b {
-                        "TRUE".to_string()
-                    } else {
-                        "FALSE".to_string()
-                    },
-                    CellType::Boolean,
-                    Some(DataTypeInfo::Bool(*b)),
-                ),
-                DataType::Error(e) => {
-                    // Pre-allocate with capacity for error message
-                    let mut value = String::with_capacity(15);
-                    value.push_str("Error: ");
-                    value.push_str(&format!("{:?}", e));
-                    (value, CellType::Text, Some(DataTypeInfo::Error))
-                }
-                DataType::DateTime(dt) => (
-                    dt.to_string(),
+            Data::Float(f) => {
+                let value = if *f == (*f as i64) as f64 && f.abs() < 1e10 {
+                    (*f as i64).to_string()
+                } else {
+                    f.to_string()
+                };
+                (value, CellType::Number, Some(DataTypeInfo::Float(*f)))
+            }
+
+            Data::Int(i) => (i.to_string(), CellType::Number, Some(DataTypeInfo::Int(*i))),
+
+            Data::Bool(b) => (
+                if *b {
+                    "TRUE".to_string()
+                } else {
+                    "FALSE".to_string()
+                },
+                CellType::Boolean,
+                Some(DataTypeInfo::Bool(*b)),
+            ),
+
+            Data::Error(e) => {
+                let mut value = String::with_capacity(15);
+                value.push_str("Error: ");
+                value.push_str(&format!("{:?}", e));
+                (value, CellType::Text, Some(DataTypeInfo::Error))
+            }
+
+            Data::DateTime(dt) => (
+                dt.to_string(),
+                CellType::Date,
+                Some(DataTypeInfo::DateTime(dt.as_f64())),
+            ),
+
+            Data::DateTimeIso(s) => {
+                let value = s.clone();
+                (
+                    value.clone(),
                     CellType::Date,
-                    Some(DataTypeInfo::DateTime(*dt)),
-                ),
-                DataType::Duration(d) => (
-                    d.to_string(),
+                    Some(DataTypeInfo::DateTimeIso(value)),
+                )
+            }
+
+            Data::DurationIso(s) => {
+                let value = s.clone();
+                (
+                    value.clone(),
                     CellType::Text,
-                    Some(DataTypeInfo::Duration(*d)),
-                ),
-                DataType::DateTimeIso(s) => {
-                    let value = s.to_string();
-                    (
-                        value.clone(),
-                        CellType::Date,
-                        Some(DataTypeInfo::DateTimeIso(value)),
-                    )
-                }
-                DataType::DurationIso(s) => {
-                    let value = s.to_string();
-                    (
-                        value.clone(),
-                        CellType::Text,
-                        Some(DataTypeInfo::DurationIso(value)),
-                    )
-                }
-            };
+                    Some(DataTypeInfo::DurationIso(value)),
+                )
+            }
+        };
 
-            let is_formula = !value.is_empty() && value.starts_with('=');
+        let is_formula = !value.is_empty() && value.starts_with('=');
 
-            data[row_idx + 1][col_idx + 1] =
-                Cell::new_with_type(value, is_formula, cell_type, original_type);
-        }
+        // Store the cell in data grid (using 1-based indexing)
+        data[row_idx + 1][col_idx + 1] =
+            Cell::new_with_type(value, is_formula, cell_type, original_type);
     }
 
     Sheet {

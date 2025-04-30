@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Edit cell content using vim shortcuts
 - Multiple UI improvements
 - Replace ratatui_textarea with tui_textarea
+- Upgraded calamine to version 0.27.0
 
 ## [0.2.0] - 2025-04-27
 
