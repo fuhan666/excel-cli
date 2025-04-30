@@ -42,6 +42,7 @@ pub struct AppState<'a> {
     pub sheet_cell_positions: HashMap<String, CellPosition>, // Store cell positions for each sheet
     pub clipboard: Option<String>, // Store copied/cut cell content
     pub g_pressed: bool,           // Track if 'g' was pressed for 'gg' command
+    pub row_number_width: usize,   // Width for displaying row numbers
     pub search_query: String,      // Current search query
     pub search_results: Vec<(usize, usize)>, // List of cells matching the search query
     pub current_search_idx: Option<usize>, // Index of current search result
@@ -101,6 +102,16 @@ impl AppState<'_> {
         // Initialize TextArea
         let text_area = TextArea::default();
 
+        // Calculate the width needed for row numbers based on the maximum row number
+        let max_rows = workbook.get_current_sheet().max_rows;
+        let row_number_width = if max_rows < 10 {
+            1
+        } else {
+            max_rows.to_string().len()
+        };
+        // Ensure a minimum width of 4 for row numbers
+        let row_number_width = row_number_width.max(4);
+
         Ok(Self {
             workbook,
             file_path,
@@ -118,6 +129,7 @@ impl AppState<'_> {
             sheet_cell_positions,
             clipboard: None,
             g_pressed: false,
+            row_number_width,
             search_query: String::new(),
             search_results: Vec::new(),
             current_search_idx: None,
@@ -140,6 +152,14 @@ impl AppState<'_> {
         if self.notification_messages.len() > self.max_notifications {
             self.notification_messages.remove(0);
         }
+    }
+
+    /// Updates the row number width based on the maximum row number in the current sheet
+    pub fn update_row_number_width(&mut self) {
+        let max_rows = self.workbook.get_current_sheet().max_rows;
+        let width = max_rows.to_string().len();
+        // Ensure a minimum width of 4 for row numbers
+        self.row_number_width = width.max(4);
     }
 
     pub fn adjust_info_panel_height(&mut self, delta: isize) {

@@ -92,6 +92,8 @@ impl AppState<'_> {
             self.current_search_idx = None;
         }
 
+        self.update_row_number_width();
+
         self.add_notification(format!("Switched to sheet: {}", new_sheet_name));
         Ok(())
     }

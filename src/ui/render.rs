@@ -72,8 +72,11 @@ fn update_visible_area(app_state: &mut AppState, area: Rect) {
     // Ensure the selected column is visible
     app_state.ensure_column_visible(app_state.selected_cell.1);
 
+    // Update row number width based on the maximum row number
+    app_state.update_row_number_width();
+
     // Calculate available width for columns (subtract row numbers and borders)
-    let available_width = (area.width as usize).saturating_sub(7); // 5 for row numbers + 2 for borders
+    let available_width = (area.width as usize).saturating_sub(app_state.row_number_width + 2); // row_number_width + 2 for borders
 
     // Calculate how many columns can fit in the available width
     let mut visible_cols = 0;
@@ -143,7 +146,7 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
     let end_col = start_col + app_state.visible_cols - 1;
 
     let mut constraints = Vec::with_capacity(app_state.visible_cols + 1);
-    constraints.push(Constraint::Length(5)); // Row header width
+    constraints.push(Constraint::Length(app_state.row_number_width as u16)); // Dynamic row header width
 
     for col in start_col..=end_col {
         constraints.push(Constraint::Length(app_state.get_column_width(col) as u16));
