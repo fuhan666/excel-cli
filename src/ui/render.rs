@@ -119,7 +119,7 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
             Constraint::Length(app_state.info_panel_height as u16), // Info panel
             Constraint::Length(1), // Status bar
         ])
-        .split(f.area());
+        .split(f.size());
 
     draw_title_with_tabs(f, app_state, chunks[0]);
 
@@ -131,7 +131,7 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
 
     // If in help mode, draw the help popup over everything else
     if let InputMode::Help = app_state.input_mode {
-        draw_help_popup(f, app_state, f.area());
+        draw_help_popup(f, app_state, f.size());
     }
 }
 
@@ -278,10 +278,10 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
     let table = Table::new(
         // Combine header and data rows
         std::iter::once(header).chain(rows),
-        constraints,
     )
     .block(table_block)
-    .style(cell_style);
+    .style(cell_style)
+    .widths(&constraints);
 
     f.render_widget(table, area);
 }
@@ -421,7 +421,7 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
             };
 
             f.render_widget(edit_block, chunks[0]);
-            f.render_widget(&app_state.text_area, padded_area);
+            f.render_widget(app_state.text_area.widget(), padded_area);
         }
         _ => {
             // Get cell content
@@ -543,7 +543,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
             text_area.set_cursor_line_style(Style::default());
             text_area.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
 
-            f.render_widget(&text_area, chunks[1]);
+            f.render_widget(text_area.widget(), chunks[1]);
         }
 
         InputMode::Help => {

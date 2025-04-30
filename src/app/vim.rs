@@ -109,7 +109,7 @@ impl VimState {
                         ctrl: false,
                         ..
                     } => {
-                        textarea.move_cursor(CursorMove::WordEnd);
+                        textarea.move_cursor(CursorMove::WordForward);
                         if matches!(self.mode, VimMode::Operator(_)) {
                             textarea.move_cursor(CursorMove::Forward); // Include the text under the cursor
                         }
