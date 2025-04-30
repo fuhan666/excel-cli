@@ -290,6 +290,15 @@ impl AppState<'_> {
                 sheet_action.column_widths.clone(),
             );
 
+            // Initialize cell position for the restored sheet with default values
+            self.sheet_cell_positions.insert(
+                sheet_action.sheet_name.clone(),
+                crate::app::CellPosition {
+                    selected: (1, 1),
+                    view: (1, 1),
+                },
+            );
+
             if let Err(e) = self.switch_sheet_by_index(sheet_index) {
                 self.add_notification(format!(
                     "Restored sheet {} but couldn't switch to it: {}",
@@ -324,12 +333,29 @@ impl AppState<'_> {
 
     fn cleanup_after_sheet_deletion(&mut self, sheet_name: &str) {
         self.sheet_column_widths.remove(sheet_name);
-
-        self.selected_cell = (1, 1);
-        self.start_row = 1;
-        self.start_col = 1;
+        self.sheet_cell_positions.remove(sheet_name);
 
         let new_sheet_name = self.workbook.get_current_sheet_name();
+
+        // Restore saved cell position for the new current sheet or use default
+        if let Some(saved_position) = self.sheet_cell_positions.get(&new_sheet_name) {
+            // Ensure the saved position is valid for the current sheet
+            let sheet = self.workbook.get_current_sheet();
+            let valid_row = saved_position.selected.0.min(sheet.max_rows.max(1));
+            let valid_col = saved_position.selected.1.min(sheet.max_cols.max(1));
+
+            self.selected_cell = (valid_row, valid_col);
+            self.start_row = saved_position.view.0;
+            self.start_col = saved_position.view.1;
+
+            // Make sure the view position is valid relative to the selected cell
+            self.handle_scrolling();
+        } else {
+            // If no saved position exists, use default position
+            self.selected_cell = (1, 1);
+            self.start_row = 1;
+            self.start_col = 1;
+        }
 
         if let Some(saved_widths) = self.sheet_column_widths.get(&new_sheet_name) {
             self.column_widths = saved_widths.clone();

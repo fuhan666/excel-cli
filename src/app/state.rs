@@ -7,6 +7,15 @@ use crate::actions::UndoHistory;
 use crate::app::VimState;
 use crate::excel::Workbook;
 
+/// Represents a cell position in a sheet, including both the selected cell and view position
+#[derive(Clone, Copy)]
+pub struct CellPosition {
+    /// The selected cell coordinates (row, column)
+    pub selected: (usize, usize),
+    /// The view position (start_row, start_col)
+    pub view: (usize, usize),
+}
+
 pub enum InputMode {
     Normal,
     Editing,
@@ -30,6 +39,7 @@ pub struct AppState<'a> {
     pub should_quit: bool,
     pub column_widths: Vec<usize>, // Store width for current sheet's columns
     pub sheet_column_widths: HashMap<String, Vec<usize>>, // Store column widths for each sheet
+    pub sheet_cell_positions: HashMap<String, CellPosition>, // Store cell positions for each sheet
     pub clipboard: Option<String>, // Store copied/cut cell content
     pub g_pressed: bool,           // Track if 'g' was pressed for 'gg' command
     pub search_query: String,      // Current search query
@@ -56,11 +66,20 @@ impl AppState<'_> {
 
         // Initialize column widths for all sheets
         let mut sheet_column_widths = HashMap::with_capacity(workbook.get_sheet_names().len());
+        let mut sheet_cell_positions = HashMap::with_capacity(workbook.get_sheet_names().len());
         let sheet_names = workbook.get_sheet_names();
 
         for (i, name) in sheet_names.iter().enumerate() {
             if i == workbook.get_current_sheet_index() {
                 sheet_column_widths.insert(name.clone(), column_widths.clone());
+                // Initialize current sheet position with default values
+                sheet_cell_positions.insert(
+                    name.clone(),
+                    CellPosition {
+                        selected: (1, 1),
+                        view: (1, 1),
+                    },
+                );
             } else {
                 let sheet_max_cols = if let Some(sheet) = workbook.get_sheet_by_index(i) {
                     sheet.max_cols
@@ -68,6 +87,14 @@ impl AppState<'_> {
                     max_cols // Fallback to current sheet's max_cols
                 };
                 sheet_column_widths.insert(name.clone(), vec![default_width; sheet_max_cols + 1]);
+                // Initialize other sheets with default positions
+                sheet_cell_positions.insert(
+                    name.clone(),
+                    CellPosition {
+                        selected: (1, 1),
+                        view: (1, 1),
+                    },
+                );
             }
         }
 
@@ -88,6 +115,7 @@ impl AppState<'_> {
             should_quit: false,
             column_widths,
             sheet_column_widths,
+            sheet_cell_positions,
             clipboard: None,
             g_pressed: false,
             search_query: String::new(),
