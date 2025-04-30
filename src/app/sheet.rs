@@ -94,7 +94,20 @@ impl AppState<'_> {
 
         self.update_row_number_width();
 
-        self.add_notification(format!("Switched to sheet: {}", new_sheet_name));
+        // Check if the new sheet is loaded when using lazy loading
+        let is_lazy_loading = self.workbook.is_lazy_loading();
+        let is_sheet_loaded = self.workbook.is_sheet_loaded(index);
+
+        if is_lazy_loading && !is_sheet_loaded {
+            // If the sheet is not loaded, switch to LazyLoading mode
+            self.input_mode = crate::app::InputMode::LazyLoading;
+            self.add_notification(format!(
+                "Switched to sheet: {new_sheet_name} (press Enter to load)"
+            ));
+        } else {
+            self.add_notification(format!("Switched to sheet: {new_sheet_name}"));
+        }
+
         Ok(())
     }
 
@@ -109,12 +122,9 @@ impl AppState<'_> {
 
             if zero_based_index < sheet_names.len() {
                 match self.switch_sheet_by_index(zero_based_index) {
-                    Ok(_) => return,
+                    Ok(()) => return,
                     Err(e) => {
-                        self.add_notification(format!(
-                            "Failed to switch to sheet {}: {}",
-                            index, e
-                        ));
+                        self.add_notification(format!("Failed to switch to sheet {index}: {e}"));
                         return;
                     }
                 }
@@ -125,11 +135,10 @@ impl AppState<'_> {
         for (i, name) in sheet_names.iter().enumerate() {
             if name.eq_ignore_ascii_case(name_or_index) {
                 match self.switch_sheet_by_index(i) {
-                    Ok(_) => return,
+                    Ok(()) => return,
                     Err(e) => {
                         self.add_notification(format!(
-                            "Failed to switch to sheet '{}': {}",
-                            name_or_index, e
+                            "Failed to switch to sheet '{name_or_index}': {e}"
                         ));
                         return;
                     }
@@ -138,7 +147,7 @@ impl AppState<'_> {
         }
 
         // If we get here, no matching sheet was found
-        self.add_notification(format!("Sheet '{}' not found", name_or_index));
+        self.add_notification(format!("Sheet '{name_or_index}' not found"));
     }
 
     pub fn delete_current_sheet(&mut self) {
@@ -150,7 +159,7 @@ impl AppState<'_> {
         let column_widths = self.column_widths.clone();
 
         match self.workbook.delete_current_sheet() {
-            Ok(_) => {
+            Ok(()) => {
                 // Create the undo action
                 let sheet_action = SheetAction {
                     sheet_index,
@@ -164,6 +173,8 @@ impl AppState<'_> {
                 self.sheet_cell_positions.remove(&current_sheet_name);
 
                 let new_sheet_name = self.workbook.get_current_sheet_name();
+                let new_sheet_index = self.workbook.get_current_sheet_index();
+                let is_new_sheet_loaded = self.workbook.is_sheet_loaded(new_sheet_index);
 
                 // Restore saved cell position for the new current sheet or use default
                 if let Some(saved_position) = self.sheet_cell_positions.get(&new_sheet_name) {
@@ -200,10 +211,19 @@ impl AppState<'_> {
                 self.search_results.clear();
                 self.current_search_idx = None;
 
-                self.add_notification(format!("Deleted sheet: {}", current_sheet_name));
+                // Check if the new current sheet is loaded when using lazy loading
+                if self.workbook.is_lazy_loading() && !is_new_sheet_loaded {
+                    // If the sheet is not loaded, switch to LazyLoading mode
+                    self.input_mode = crate::app::InputMode::LazyLoading;
+                    self.add_notification(format!(
+                        "Deleted sheet: {current_sheet_name}. Switched to sheet: {new_sheet_name} (press Enter to load)"
+                    ));
+                } else {
+                    self.add_notification(format!("Deleted sheet: {current_sheet_name}"));
+                }
             }
             Err(e) => {
-                self.add_notification(format!("Failed to delete sheet: {}", e));
+                self.add_notification(format!("Failed to delete sheet: {e}"));
             }
         }
     }
@@ -251,7 +271,7 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!("Deleted row {}", row));
+        self.add_notification(format!("Deleted row {row}"));
         Ok(())
     }
 
@@ -297,7 +317,7 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!("Deleted row {}", row));
+        self.add_notification(format!("Deleted row {row}"));
         Ok(())
     }
 
@@ -357,10 +377,7 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!(
-            "Deleted rows {} to {}",
-            start_row, effective_end_row
-        ));
+        self.add_notification(format!("Deleted rows {start_row} to {effective_end_row}"));
         Ok(())
     }
 
@@ -427,7 +444,8 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!("Deleted column {}", index_to_col_name(col)));
+        let col_name = index_to_col_name(col);
+        self.add_notification(format!("Deleted column {col_name}"));
         Ok(())
     }
 
@@ -493,7 +511,8 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!("Deleted column {}", index_to_col_name(col)));
+        let col_name = index_to_col_name(col);
+        self.add_notification(format!("Deleted column {col_name}"));
         Ok(())
     }
 
@@ -589,12 +608,25 @@ impl AppState<'_> {
     }
 
     pub fn auto_adjust_column_width(&mut self, col: Option<usize>) {
-        let sheet = self.workbook.get_current_sheet();
+        // Get sheet information before any mutable operations
+        let is_loaded = self.workbook.get_current_sheet().is_loaded;
+        let max_cols = self.workbook.get_current_sheet().max_cols;
         let default_min_width = 5;
+
+        if !is_loaded && max_cols == 0 {
+            self.add_notification(
+                "Cannot adjust column widths in lazy loading mode until sheet is loaded"
+                    .to_string(),
+            );
+            return;
+        }
 
         match col {
             // Adjust specific column
             Some(column) => {
+                // Ensure column_widths is large enough
+                self.ensure_column_widths();
+
                 if column < self.column_widths.len() {
                     // Calculate and set new column width
                     let width = self.calculate_column_width(column);
@@ -610,15 +642,21 @@ impl AppState<'_> {
             }
             // Adjust all columns
             None => {
-                for col_idx in 1..=sheet.max_cols {
-                    let width = self.calculate_column_width(col_idx);
-                    self.column_widths[col_idx] = width.max(default_min_width);
+                // Ensure column_widths is large enough
+                self.ensure_column_widths();
+
+                // Only process columns if there are any
+                if max_cols > 0 {
+                    for col_idx in 1..=max_cols {
+                        let width = self.calculate_column_width(col_idx);
+                        self.column_widths[col_idx] = width.max(default_min_width);
+                    }
+
+                    let column = self.selected_cell.1;
+                    self.ensure_column_visible(column);
+
+                    self.add_notification("All column widths adjusted".to_string());
                 }
-
-                let column = self.selected_cell.1;
-                self.ensure_column_visible(column);
-
-                self.add_notification("All column widths adjusted".to_string());
             }
         }
     }

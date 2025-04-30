@@ -10,7 +10,7 @@ impl AppState<'_> {
     pub fn start_editing(&mut self) {
         self.input_mode = InputMode::Editing;
         let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
-        self.input_buffer = content.clone();
+        self.input_buffer.clone_from(&content);
 
         // Initialize TextArea with content and settings
         let mut text_area = tui_textarea::TextArea::default();
@@ -57,7 +57,7 @@ impl AppState<'_> {
             let old_cell = self.workbook.get_current_sheet().data[row][col].clone();
 
             let mut new_cell = old_cell.clone();
-            new_cell.value = content.clone();
+            new_cell.value.clone_from(&content);
 
             let cell_action = CellAction::new(
                 sheet_index,
@@ -134,7 +134,7 @@ impl AppState<'_> {
             let old_cell = self.workbook.get_current_sheet().data[row][col].clone();
 
             let mut new_cell = old_cell.clone();
-            new_cell.value = content.clone();
+            new_cell.value.clone_from(&content);
 
             let cell_action = CellAction::new(
                 sheet_index,

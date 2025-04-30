@@ -75,6 +75,7 @@ excel-cli path/to/your/file.xlsx -j > data.json # (example) Save JSON output to 
 - `--json-export`, `-j`: Export all sheets to JSON and output to stdout (for piping)
 - `--direction`, `-d`: Header direction in Excel: 'h' for horizontal (top rows), 'v' for vertical (left columns). Default: 'h'
 - `--header-count`, `-r`: Number of header rows (for horizontal) or columns (for vertical) in Excel. Default: 1
+- `--lazy-loading`, `-l`: Enable lazy loading for large Excel files (only loads data when needed)
 
 ## User Interface
 

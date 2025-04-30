@@ -23,6 +23,8 @@ pub enum InputMode {
     SearchForward,
     SearchBackward,
     Help,
+    LazyLoading,
+    CommandInLazyLoading,
 }
 
 pub struct AppState<'a> {
@@ -112,6 +114,16 @@ impl AppState<'_> {
         // Ensure a minimum width of 4 for row numbers
         let row_number_width = row_number_width.max(4);
 
+        // Check if the workbook is using lazy loading and the first sheet is not loaded
+        let is_lazy_loading = workbook.is_lazy_loading() && !workbook.is_sheet_loaded(0);
+
+        // Set initial input mode based on lazy loading status
+        let initial_input_mode = if is_lazy_loading {
+            InputMode::LazyLoading
+        } else {
+            InputMode::Normal
+        };
+
         Ok(Self {
             workbook,
             file_path,
@@ -120,7 +132,7 @@ impl AppState<'_> {
             start_col: 1,
             visible_rows: 30, // Default values, will be adjusted based on window size
             visible_cols: 15, // Default values, will be adjusted based on window size
-            input_mode: InputMode::Normal,
+            input_mode: initial_input_mode,
             input_buffer: String::new(),
             text_area,
             should_quit: false,
@@ -213,6 +225,14 @@ impl AppState<'_> {
             return;
         }
 
+        // If in CommandInLazyLoading mode, return to LazyLoading mode
+        if let InputMode::CommandInLazyLoading = self.input_mode {
+            self.input_mode = InputMode::LazyLoading;
+            self.input_buffer = String::new();
+            self.text_area = TextArea::default();
+            return;
+        }
+
         // Otherwise, cancel the current input
         self.input_mode = InputMode::Normal;
         self.input_buffer = String::new();
@@ -229,6 +249,11 @@ impl AppState<'_> {
 
     pub fn start_command_mode(&mut self) {
         self.input_mode = InputMode::Command;
+        self.input_buffer = String::new();
+    }
+
+    pub fn start_command_in_lazy_loading_mode(&mut self) {
+        self.input_mode = InputMode::CommandInLazyLoading;
         self.input_buffer = String::new();
     }
 }

@@ -1,38 +1,132 @@
 use anyhow::{Context, Result};
-use calamine::{open_workbook_auto, DataType, Reader};
+use calamine::{open_workbook_auto, Data, Reader, Xls, Xlsx};
 use chrono::Local;
 use rust_xlsxwriter::{Format, Workbook as XlsxWorkbook};
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 
 use crate::excel::{Cell, CellType, DataTypeInfo, Sheet};
 
-#[derive(Clone)]
+pub enum CalamineWorkbook {
+    Xlsx(Box<Xlsx<BufReader<File>>>),
+    Xls(Xls<BufReader<File>>),
+    None,
+}
+
+impl Clone for CalamineWorkbook {
+    fn clone(&self) -> Self {
+        CalamineWorkbook::None
+    }
+}
+
 pub struct Workbook {
     sheets: Vec<Sheet>,
     current_sheet_index: usize,
     file_path: String,
     is_modified: bool,
+    calamine_workbook: CalamineWorkbook,
+    lazy_loading: bool,
+    loaded_sheets: HashSet<usize>, // Track which sheets have been loaded
 }
 
-pub fn open_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
+impl Clone for Workbook {
+    fn clone(&self) -> Self {
+        Workbook {
+            sheets: self.sheets.clone(),
+            current_sheet_index: self.current_sheet_index,
+            file_path: self.file_path.clone(),
+            is_modified: self.is_modified,
+            calamine_workbook: CalamineWorkbook::None,
+            lazy_loading: false,
+            loaded_sheets: self.loaded_sheets.clone(),
+        }
+    }
+}
+
+pub fn open_workbook<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Result<Workbook> {
     let path_str = path.as_ref().to_string_lossy().to_string();
+    let path_ref = path.as_ref();
+
+    // Determine if the file format supports lazy loading
+    let extension = path_ref
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase());
+
+    // Only enable lazy loading if both the flag is set AND the format supports it
+    let supports_lazy_loading =
+        enable_lazy_loading && matches!(extension.as_deref(), Some("xlsx" | "xlsm"));
 
     // Open workbook directly from path
-    let mut workbook = open_workbook_auto(&path).context("Unable to parse Excel file")?;
+    let mut workbook = open_workbook_auto(&path)
+        .with_context(|| format!("Unable to parse Excel file: {}", path_str))?;
 
     let sheet_names = workbook.sheet_names().to_vec();
-    let mut sheets = Vec::new();
 
-    for name in &sheet_names {
-        let range = workbook
-            .worksheet_range(name)
-            .context(format!("Unable to read worksheet: {}", name))?;
-        let sheet = create_sheet_from_range(name, range?);
-        sheets.push(sheet);
+    // Pre-allocate with the right capacity
+    let mut sheets = Vec::with_capacity(sheet_names.len());
+
+    // Store the original calamine workbook for lazy loading if enabled
+    let mut calamine_workbook = CalamineWorkbook::None;
+
+    if supports_lazy_loading {
+        // For formats that support lazy loading, keep the original workbook
+        // and only load sheet metadata
+        for name in &sheet_names {
+            // Create a minimal sheet with just the name
+            let sheet = Sheet {
+                name: name.to_string(),
+                data: vec![vec![Cell::empty(); 1]; 1],
+                max_rows: 0,
+                max_cols: 0,
+                is_loaded: false,
+            };
+
+            sheets.push(sheet);
+        }
+
+        // Try to reopen the file to get a fresh reader for lazy loading
+        if let Ok(file) = File::open(&path) {
+            let reader = BufReader::new(file);
+
+            // Try to open as XLSX first
+            if let Ok(xlsx_workbook) = Xlsx::new(reader) {
+                calamine_workbook = CalamineWorkbook::Xlsx(Box::new(xlsx_workbook));
+            } else {
+                // If not XLSX, try to open as XLS
+                if let Ok(file) = File::open(&path) {
+                    let reader = BufReader::new(file);
+                    if let Ok(xls_workbook) = Xls::new(reader) {
+                        calamine_workbook = CalamineWorkbook::Xls(xls_workbook);
+                    }
+                }
+            }
+        }
+    } else {
+        // For formats that don't support lazy loading or if lazy loading is disabled,
+        for name in &sheet_names {
+            let range = workbook
+                .worksheet_range(name)
+                .with_context(|| format!("Unable to read worksheet: {}", name))?;
+
+            let mut sheet = create_sheet_from_range(name, range);
+            sheet.is_loaded = true;
+            sheets.push(sheet);
+        }
     }
 
     if sheets.is_empty() {
         anyhow::bail!("No worksheets found in file");
+    }
+
+    let mut loaded_sheets = HashSet::new();
+
+    if !supports_lazy_loading {
+        for i in 0..sheets.len() {
+            loaded_sheets.insert(i);
+        }
     }
 
     Ok(Workbook {
@@ -40,87 +134,87 @@ pub fn open_workbook<P: AsRef<Path>>(path: P) -> Result<Workbook> {
         current_sheet_index: 0,
         file_path: path_str,
         is_modified: false,
+        calamine_workbook,
+        lazy_loading: supports_lazy_loading,
+        loaded_sheets,
     })
 }
 
-fn create_sheet_from_range(name: &str, range: calamine::Range<DataType>) -> Sheet {
-    let height = range.height();
-    let width = range.width();
+fn create_sheet_from_range(name: &str, range: calamine::Range<Data>) -> Sheet {
+    let (height, width) = range.get_size();
 
+    // Create a data grid with empty cells, adding 1 to dimensions for 1-based indexing
     let mut data = vec![vec![Cell::empty(); width + 1]; height + 1];
 
-    for (row_idx, row) in range.rows().enumerate() {
-        for (col_idx, cell) in row.iter().enumerate() {
-            if let DataType::Empty = cell {
-                continue;
+    // Process only non-empty cells
+    for (row_idx, col_idx, cell) in range.used_cells() {
+        // Extract value, cell_type, and original_type from the Data
+        let (value, cell_type, original_type) = match cell {
+            Data::Empty => (String::new(), CellType::Empty, Some(DataTypeInfo::Empty)),
+
+            Data::String(s) => {
+                let value = s.clone();
+                (value, CellType::Text, Some(DataTypeInfo::String))
             }
 
-            // Extract value, cell_type, and original_type from the DataType
-            let (value, cell_type, original_type) = match cell {
-                DataType::Empty => (String::new(), CellType::Empty, Some(DataTypeInfo::Empty)),
-                DataType::String(s) => {
-                    let mut value = String::with_capacity(s.len());
-                    value.push_str(s);
-                    (value, CellType::Text, Some(DataTypeInfo::String))
-                }
-                DataType::Float(f) => {
-                    let value = if *f == (*f as i64) as f64 && f.abs() < 1e10 {
-                        (*f as i64).to_string()
-                    } else {
-                        f.to_string()
-                    };
-                    (value, CellType::Number, Some(DataTypeInfo::Float(*f)))
-                }
-                DataType::Int(i) => (i.to_string(), CellType::Number, Some(DataTypeInfo::Int(*i))),
-                DataType::Bool(b) => (
-                    if *b {
-                        "TRUE".to_string()
-                    } else {
-                        "FALSE".to_string()
-                    },
-                    CellType::Boolean,
-                    Some(DataTypeInfo::Bool(*b)),
-                ),
-                DataType::Error(e) => {
-                    // Pre-allocate with capacity for error message
-                    let mut value = String::with_capacity(15);
-                    value.push_str("Error: ");
-                    value.push_str(&format!("{:?}", e));
-                    (value, CellType::Text, Some(DataTypeInfo::Error))
-                }
-                DataType::DateTime(dt) => (
-                    dt.to_string(),
+            Data::Float(f) => {
+                let value = if *f == (*f as i64) as f64 && f.abs() < 1e10 {
+                    (*f as i64).to_string()
+                } else {
+                    f.to_string()
+                };
+                (value, CellType::Number, Some(DataTypeInfo::Float(*f)))
+            }
+
+            Data::Int(i) => (i.to_string(), CellType::Number, Some(DataTypeInfo::Int(*i))),
+
+            Data::Bool(b) => (
+                if *b {
+                    "TRUE".to_string()
+                } else {
+                    "FALSE".to_string()
+                },
+                CellType::Boolean,
+                Some(DataTypeInfo::Bool(*b)),
+            ),
+
+            Data::Error(e) => {
+                let mut value = String::with_capacity(15);
+                value.push_str("Error: ");
+                value.push_str(&format!("{:?}", e));
+                (value, CellType::Text, Some(DataTypeInfo::Error))
+            }
+
+            Data::DateTime(dt) => (
+                dt.to_string(),
+                CellType::Date,
+                Some(DataTypeInfo::DateTime(dt.as_f64())),
+            ),
+
+            Data::DateTimeIso(s) => {
+                let value = s.clone();
+                (
+                    value.clone(),
                     CellType::Date,
-                    Some(DataTypeInfo::DateTime(*dt)),
-                ),
-                DataType::Duration(d) => (
-                    d.to_string(),
+                    Some(DataTypeInfo::DateTimeIso(value)),
+                )
+            }
+
+            Data::DurationIso(s) => {
+                let value = s.clone();
+                (
+                    value.clone(),
                     CellType::Text,
-                    Some(DataTypeInfo::Duration(*d)),
-                ),
-                DataType::DateTimeIso(s) => {
-                    let value = s.to_string();
-                    (
-                        value.clone(),
-                        CellType::Date,
-                        Some(DataTypeInfo::DateTimeIso(value)),
-                    )
-                }
-                DataType::DurationIso(s) => {
-                    let value = s.to_string();
-                    (
-                        value.clone(),
-                        CellType::Text,
-                        Some(DataTypeInfo::DurationIso(value)),
-                    )
-                }
-            };
+                    Some(DataTypeInfo::DurationIso(value)),
+                )
+            }
+        };
 
-            let is_formula = !value.is_empty() && value.starts_with('=');
+        let is_formula = !value.is_empty() && value.starts_with('=');
 
-            data[row_idx + 1][col_idx + 1] =
-                Cell::new_with_type(value, is_formula, cell_type, original_type);
-        }
+        // Store the cell in data grid (using 1-based indexing)
+        data[row_idx + 1][col_idx + 1] =
+            Cell::new_with_type(value, is_formula, cell_type, original_type);
     }
 
     Sheet {
@@ -128,6 +222,7 @@ fn create_sheet_from_range(name: &str, range: calamine::Range<DataType>) -> Shee
         data,
         max_rows: height,
         max_cols: width,
+        is_loaded: true,
     }
 }
 
@@ -138,6 +233,51 @@ impl Workbook {
 
     pub fn get_current_sheet_mut(&mut self) -> &mut Sheet {
         &mut self.sheets[self.current_sheet_index]
+    }
+
+    pub fn ensure_sheet_loaded(&mut self, sheet_index: usize, sheet_name: &str) -> Result<()> {
+        if !self.lazy_loading || self.sheets[sheet_index].is_loaded {
+            return Ok(());
+        }
+
+        // Load the sheet data from the calamine workbook
+        match &mut self.calamine_workbook {
+            CalamineWorkbook::Xlsx(xlsx) => {
+                if let Ok(range) = xlsx.worksheet_range(sheet_name) {
+                    // Replace the placeholder sheet with a fully loaded one
+                    let mut sheet = create_sheet_from_range(sheet_name, range);
+
+                    // Preserve the original name in case it was customized
+                    let original_name = self.sheets[sheet_index].name.clone();
+                    sheet.name = original_name;
+
+                    self.sheets[sheet_index] = sheet;
+
+                    // Mark the sheet as loaded
+                    self.loaded_sheets.insert(sheet_index);
+                }
+            }
+            CalamineWorkbook::Xls(xls) => {
+                if let Ok(range) = xls.worksheet_range(sheet_name) {
+                    // Replace the placeholder sheet with a fully loaded one
+                    let mut sheet = create_sheet_from_range(sheet_name, range);
+
+                    // Preserve the original name in case it was customized
+                    let original_name = self.sheets[sheet_index].name.clone();
+                    sheet.name = original_name;
+
+                    self.sheets[sheet_index] = sheet;
+
+                    // Mark the sheet as loaded
+                    self.loaded_sheets.insert(sheet_index);
+                }
+            }
+            CalamineWorkbook::None => {
+                return Err(anyhow::anyhow!("Cannot load sheet: no workbook available"));
+            }
+        }
+
+        Ok(())
     }
 
     pub fn get_sheet_by_index(&self, index: usize) -> Option<&Sheet> {
@@ -394,6 +534,18 @@ impl Workbook {
 
     pub fn get_file_path(&self) -> &str {
         &self.file_path
+    }
+
+    pub fn is_lazy_loading(&self) -> bool {
+        self.lazy_loading
+    }
+
+    pub fn is_sheet_loaded(&self, sheet_index: usize) -> bool {
+        if !self.lazy_loading || sheet_index >= self.sheets.len() {
+            return true;
+        }
+
+        self.sheets[sheet_index].is_loaded
     }
 
     pub fn save(&mut self) -> Result<()> {

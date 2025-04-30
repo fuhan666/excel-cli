@@ -6,4 +6,5 @@ pub struct Sheet {
     pub data: Vec<Vec<Cell>>,
     pub max_rows: usize,
     pub max_cols: usize,
+    pub is_loaded: bool,
 }

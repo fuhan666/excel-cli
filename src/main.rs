@@ -27,6 +27,10 @@ struct Cli {
     /// Number of header rows (for horizontal) or columns (for vertical) in JSON export
     #[arg(long, short = 'r', default_value = "1")]
     header_count: usize,
+
+    /// Enable lazy loading for large Excel files
+    #[arg(long, short = 'l')]
+    lazy_loading: bool,
 }
 
 fn main() -> Result<()> {
@@ -38,14 +42,13 @@ fn main() -> Result<()> {
     }
 
     // Open Excel file
-    let workbook = excel::open_workbook(&cli.file_path)?;
+    let workbook = excel::open_workbook(&cli.file_path, cli.lazy_loading)?;
 
     // If JSON export flag is set, export to stdout and exit
     if cli.json_export {
         // Parse header direction
-        let direction = match json_export::HeaderDirection::from_str(&cli.direction) {
-            Ok(dir) => dir,
-            Err(_) => anyhow::bail!("Invalid header direction: {}", cli.direction),
+        let Ok(direction) = json_export::HeaderDirection::from_str(&cli.direction) else {
+            anyhow::bail!("Invalid header direction: {}", cli.direction)
         };
 
         // Generate JSON for all sheets
@@ -54,7 +57,7 @@ fn main() -> Result<()> {
 
         // Serialize to JSON and print to stdout
         let json_string = json_export::serialize_to_json(&all_sheets)?;
-        println!("{}", json_string);
+        println!("{json_string}");
 
         return Ok(());
     }
