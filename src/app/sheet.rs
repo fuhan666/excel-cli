@@ -611,8 +611,7 @@ impl AppState<'_> {
 
             max_width = max_width.max(display_width);
         }
-        let padding = (max_width / 5).max(2);
-        max_width + padding
+        max_width
     }
 
     pub fn get_column_width(&self, col: usize) -> usize {

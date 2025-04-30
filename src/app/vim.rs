@@ -3,6 +3,8 @@ use ratatui::widgets::Block;
 use std::fmt;
 use tui_textarea::{CursorMove, Input, Key, TextArea};
 
+use crate::app::word::move_cursor_to_word_end;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VimMode {
     Normal,
@@ -109,9 +111,39 @@ impl VimState {
                         ctrl: false,
                         ..
                     } => {
-                        textarea.move_cursor(CursorMove::WordEnd);
+                        // Use custom WordEnd implementation
+                        let lines = textarea.lines();
+                        let (row, col) = textarea.cursor();
+                        let (new_row, new_col) = move_cursor_to_word_end(lines, row, col);
+
+                        // Set the cursor to the new position
+                        if row != new_row {
+                            // If need to move to a different row
+                            while textarea.cursor().0 < new_row {
+                                textarea.move_cursor(CursorMove::Down);
+                            }
+                            textarea.move_cursor(CursorMove::Head);
+                            while textarea.cursor().1 < new_col {
+                                textarea.move_cursor(CursorMove::Forward);
+                            }
+                        } else {
+                            // If staying on the same row
+                            if col < new_col {
+                                // Move forward
+                                while textarea.cursor().1 < new_col {
+                                    textarea.move_cursor(CursorMove::Forward);
+                                }
+                            } else {
+                                // Move backward
+                                while textarea.cursor().1 > new_col {
+                                    textarea.move_cursor(CursorMove::Back);
+                                }
+                            }
+                        }
+
+                        // For operator mode, include the character under the cursor
                         if matches!(self.mode, VimMode::Operator(_)) {
-                            textarea.move_cursor(CursorMove::Forward); // Include the text under the cursor
+                            textarea.move_cursor(CursorMove::Forward);
                         }
                     }
                     Input {

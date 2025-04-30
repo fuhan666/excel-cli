@@ -22,13 +22,9 @@ use crate::utils::index_to_col_name;
 
 pub fn run_app(mut app_state: AppState) -> Result<()> {
     // Setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    stdout.execute(EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = setup_terminal()?;
 
-    // Main loop
+    // Main event loop
     while !app_state.should_quit {
         terminal.draw(|f| ui(f, &mut app_state))?;
 
@@ -42,6 +38,25 @@ pub fn run_app(mut app_state: AppState) -> Result<()> {
     }
 
     // Restore terminal
+    restore_terminal(&mut terminal)?;
+
+    Ok(())
+}
+
+/// Setup the terminal for the application
+fn setup_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>> {
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    stdout.execute(EnterAlternateScreen)?;
+
+    let backend = CrosstermBackend::new(stdout);
+    let terminal = Terminal::new(backend)?;
+
+    Ok(terminal)
+}
+
+/// Restore the terminal to its original state
+fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
     disable_raw_mode()?;
     terminal.backend_mut().execute(LeaveAlternateScreen)?;
     terminal.show_cursor()?;
@@ -49,8 +64,9 @@ pub fn run_app(mut app_state: AppState) -> Result<()> {
     Ok(())
 }
 
+/// Update the visible area of the spreadsheet based on the available space
 fn update_visible_area(app_state: &mut AppState, area: Rect) {
-    // Calculate visible rows based on available height
+    // Calculate visible rows based on available height (subtract header and borders)
     app_state.visible_rows = (area.height as usize).saturating_sub(3);
 
     // Ensure the selected column is visible
@@ -63,31 +79,28 @@ fn update_visible_area(app_state: &mut AppState, area: Rect) {
     let mut visible_cols = 0;
     let mut width_used = 0;
 
-    // Start from the leftmost visible column and add columns until run out of space
+    // Iterate through columns starting from the leftmost visible column
     for col_idx in app_state.start_col.. {
         let col_width = app_state.get_column_width(col_idx);
 
-        // Always include the first column even if it's wider than available space
         if col_idx == app_state.start_col {
+            // Always include the first column even if it's wider than available space
             width_used += col_width;
             visible_cols += 1;
 
             if width_used >= available_width {
                 break;
             }
-        }
-        // For subsequent columns, add them if they fit completely
-        else if width_used + col_width <= available_width {
+        } else if width_used + col_width <= available_width {
+            // Add columns that fit completely
             width_used += col_width;
             visible_cols += 1;
-        }
-        // Excel-like behavior: include one partially visible column if there's any space left
-        else if width_used < available_width {
+        } else if width_used < available_width {
+            // Excel-like behavior: include one partially visible column
             visible_cols += 1;
             break;
-        }
-        // No more space available
-        else {
+        } else {
+            // No more space available
             break;
         }
     }
@@ -106,7 +119,7 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
             Constraint::Length(app_state.info_panel_height as u16), // Info panel
             Constraint::Length(1), // Status bar
         ])
-        .split(f.area());
+        .split(f.size());
 
     draw_title_with_tabs(f, app_state, chunks[0]);
 
@@ -118,7 +131,7 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
 
     // If in help mode, draw the help popup over everything else
     if let InputMode::Help = app_state.input_mode {
-        draw_help_popup(f, app_state, f.area());
+        draw_help_popup(f, app_state, f.size());
     }
 }
 
@@ -129,11 +142,11 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
     let start_col = app_state.start_col;
     let end_col = start_col + app_state.visible_cols - 1;
 
-    let mut col_constraints = Vec::with_capacity(app_state.visible_cols + 1);
-    col_constraints.push(Constraint::Length(5)); // Row header width
+    let mut constraints = Vec::with_capacity(app_state.visible_cols + 1);
+    constraints.push(Constraint::Length(5)); // Row header width
 
     for col in start_col..=end_col {
-        col_constraints.push(Constraint::Length(app_state.get_column_width(col) as u16));
+        constraints.push(Constraint::Length(app_state.get_column_width(col) as u16));
     }
 
     // Set table style based on current mode
@@ -156,6 +169,7 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
             )
         };
 
+    // Create header row
     let mut header_cells = Vec::with_capacity(app_state.visible_cols + 1);
     header_cells.push(Cell::from("").style(header_style));
 
@@ -165,16 +179,14 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
         header_cells.push(Cell::from(col_name).style(header_style));
     }
 
-    let header_row = Row::new(header_cells).height(1);
-
-    let mut rows = Vec::with_capacity(app_state.visible_rows);
+    let header = Row::new(header_cells).height(1);
 
     // Create data rows
-    for row in start_row..=end_row {
-        let row_header = Cell::from(row.to_string()).style(header_style);
-
+    let rows = (start_row..=end_row).map(|row| {
         let mut cells = Vec::with_capacity(app_state.visible_cols + 1);
-        cells.push(row_header);
+
+        // Add row header
+        cells.push(Cell::from(row.to_string()).style(header_style));
 
         // Add cells for this row
         for col in start_col..=end_col {
@@ -259,14 +271,17 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
             cells.push(Cell::from(content).style(style));
         }
 
-        rows.push(Row::new(cells));
-    }
+        Row::new(cells)
+    });
 
-    let table = Table::new(std::iter::once(header_row).chain(rows), &col_constraints)
-        .block(table_block)
-        .style(cell_style)
-        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
-        .highlight_symbol(">> ");
+    // Create table with header and rows
+    let table = Table::new(
+        // Combine header and data rows
+        std::iter::once(header).chain(rows),
+    )
+    .block(table_block)
+    .style(cell_style)
+    .widths(&constraints);
 
     f.render_widget(table, area);
 }
@@ -396,8 +411,6 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
                 .border_style(Style::default().fg(Color::LightCyan))
                 .title(title);
 
-            f.render_widget(edit_block.clone(), chunks[0]);
-
             // Calculate inner area with padding
             let inner_area = edit_block.inner(chunks[0]);
             let padded_area = Rect {
@@ -407,7 +420,8 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
                 height: inner_area.height,
             };
 
-            f.render_widget(&app_state.text_area, padded_area);
+            f.render_widget(edit_block, chunks[0]);
+            f.render_widget(app_state.text_area.widget(), padded_area);
         }
         _ => {
             // Get cell content
@@ -416,22 +430,12 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
             let title = format!(" Cell {} Content ", cell_ref);
             let cell_block = Block::default().borders(Borders::ALL).title(title);
 
-            f.render_widget(cell_block.clone(), chunks[0]);
-
-            // Calculate inner area with padding
-            let inner_area = cell_block.inner(chunks[0]);
-            let padded_area = Rect {
-                x: inner_area.x + 1, // Add 1 character padding on the left
-                y: inner_area.y,
-                width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
-                height: inner_area.height,
-            };
-
+            // Create paragraph with cell content
             let cell_paragraph = Paragraph::new(content)
-                .wrap(ratatui::widgets::Wrap { trim: false })
-                .scroll((0, 0));
+                .block(cell_block)
+                .wrap(ratatui::widgets::Wrap { trim: false });
 
-            f.render_widget(cell_paragraph, padded_area);
+            f.render_widget(cell_paragraph, chunks[0]);
         }
     }
 
@@ -450,77 +454,49 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
             .title(" Notifications ")
     };
 
-    f.render_widget(notification_block.clone(), chunks[1]);
-
-    // Calculate inner area with padding
-    let inner_area = notification_block.inner(chunks[1]);
-    let padded_area = Rect {
-        x: inner_area.x + 1, // Add 1 character padding on the left
-        y: inner_area.y,
-        width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
-        height: inner_area.height,
-    };
-
     // Calculate how many notifications can be shown
-    let notification_height = inner_area.height as usize;
+    let notification_height = notification_block.inner(chunks[1]).height as usize;
 
+    // Prepare notifications text
     let notifications_text = if app_state.notification_messages.is_empty() {
         String::new()
     } else if app_state.notification_messages.len() <= notification_height {
         app_state.notification_messages.join("\n")
     } else {
+        // Show only the most recent notifications that fit
         let start_idx = app_state.notification_messages.len() - notification_height;
-
-        let mut result = String::with_capacity(
-            app_state.notification_messages[start_idx..]
-                .iter()
-                .map(|s| s.len())
-                .sum::<usize>()
-                + notification_height, // Account for newlines
-        );
-
-        for (i, msg) in app_state.notification_messages[start_idx..]
-            .iter()
-            .enumerate()
-        {
-            if i > 0 {
-                result.push('\n');
-            }
-            result.push_str(msg);
-        }
-
-        result
+        app_state.notification_messages[start_idx..].join("\n")
     };
 
-    let notification_paragraph = if matches!(app_state.input_mode, InputMode::Editing) {
-        Paragraph::new(notifications_text)
-            .style(Style::default().fg(Color::DarkGray))
-            .wrap(ratatui::widgets::Wrap { trim: false })
-            .scroll((0, 0))
-    } else {
-        Paragraph::new(notifications_text)
-            .wrap(ratatui::widgets::Wrap { trim: false })
-            .scroll((0, 0))
-    };
+    let notification_paragraph = Paragraph::new(notifications_text)
+        .block(notification_block)
+        .wrap(ratatui::widgets::Wrap { trim: false })
+        .style(if matches!(app_state.input_mode, InputMode::Editing) {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default()
+        });
 
-    f.render_widget(notification_paragraph, padded_area);
+    f.render_widget(notification_paragraph, chunks[1]);
 }
 
 fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
     match app_state.input_mode {
         InputMode::Normal => {
-            let status =
-                "Input :help for operating instructions | hjkl=move [ ]=prev/next-sheet Enter=edit y=copy d=cut p=paste /=search N/n=prev/next-search-result :=command ".to_string();
+            let status = "Input :help for operating instructions | hjkl=move [ ]=prev/next-sheet Enter=edit y=copy d=cut p=paste /=search N/n=prev/next-search-result :=command ";
 
-            let status_style = Style::default();
-            let status_widget = Paragraph::new(status).style(status_style);
+            let status_widget = Paragraph::new(status)
+                .style(Style::default())
+                .alignment(ratatui::layout::Alignment::Left);
+
             f.render_widget(status_widget, area);
         }
 
         InputMode::Editing => {
-            let status_style = Style::default().fg(Color::DarkGray);
-            let status_widget =
-                Paragraph::new("Press Esc to exit editing mode".to_string()).style(status_style);
+            let status_widget = Paragraph::new("Press Esc to exit editing mode")
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(ratatui::layout::Alignment::Left);
+
             f.render_widget(status_widget, area);
         }
 
@@ -531,52 +507,57 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
             spans.extend(command_spans);
 
             let text = Line::from(spans);
-            let status_style = Style::default();
-            let status_widget = Paragraph::new(text).style(status_style);
+            let status_widget = Paragraph::new(text)
+                .style(Style::default())
+                .alignment(ratatui::layout::Alignment::Left);
+
             f.render_widget(status_widget, area);
         }
 
-        InputMode::SearchForward => {
-            let text_area = app_state.text_area.clone();
+        InputMode::SearchForward | InputMode::SearchBackward => {
+            // Get search prefix based on mode
+            let prefix = if matches!(app_state.input_mode, InputMode::SearchForward) {
+                "/"
+            } else {
+                "?"
+            };
 
+            // Split the area for search prefix and search input
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Length(1), Constraint::Min(1)])
+                .constraints([
+                    Constraint::Length(1), // Search prefix
+                    Constraint::Min(1),    // Search input
+                ])
                 .split(area);
 
-            let prefix_widget = Paragraph::new("/").style(Style::default());
+            // Render search prefix
+            let prefix_widget = Paragraph::new(prefix)
+                .style(Style::default())
+                .alignment(ratatui::layout::Alignment::Left);
+
             f.render_widget(prefix_widget, chunks[0]);
 
-            f.render_widget(&text_area, chunks[1]);
+            // Render search input with cursor visible
+            let mut text_area = app_state.text_area.clone();
+            text_area.set_cursor_line_style(Style::default());
+            text_area.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+
+            f.render_widget(text_area.widget(), chunks[1]);
         }
 
-        InputMode::SearchBackward => {
-            let text_area = app_state.text_area.clone();
-
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Length(1), Constraint::Min(1)])
-                .split(area);
-
-            let prefix_widget = Paragraph::new("?").style(Style::default());
-            f.render_widget(prefix_widget, chunks[0]);
-
-            f.render_widget(&text_area, chunks[1]);
+        InputMode::Help => {
+            // No status bar in help mode
         }
-
-        InputMode::Help => {}
     }
 }
 
 fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
-    let overlay = Block::default()
-        .style(Style::default())
-        .borders(Borders::NONE);
+    // Clear the background
     f.render_widget(Clear, area);
-    f.render_widget(overlay, area);
 
+    // Calculate popup dimensions
     let line_count = app_state.help_text.lines().count() as u16;
-
     let content_height = line_count + 2; // +2 for borders
 
     let max_line_width = app_state
@@ -588,6 +569,7 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
 
     let content_width = max_line_width + 4; // +4 for borders and padding
 
+    // Ensure popup fits within screen
     let popup_width = content_width.min(area.width.saturating_sub(4));
     let popup_height = content_height.min(area.height.saturating_sub(4));
 
@@ -597,6 +579,7 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
 
     let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
 
+    // Calculate scrolling parameters
     let visible_lines = popup_height.saturating_sub(2) as usize; // Subtract 2 for top and bottom borders
     app_state.help_visible_lines = visible_lines;
 
@@ -607,7 +590,6 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
 
     let mut title = " [ESC/Enter to close] ".to_string();
 
-    // Add scroll indicators if content is scrollable
     if max_scroll > 0 {
         let scroll_indicator = if app_state.help_scroll == 0 {
             " [↓ or j to scroll] "
@@ -630,21 +612,13 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
         .border_style(Style::default().fg(Color::LightCyan))
         .style(Style::default().bg(Color::Blue).fg(Color::White));
 
-    f.render_widget(help_block.clone(), popup_area);
-
-    let inner_area = help_block.inner(popup_area);
-    let padded_area = Rect {
-        x: inner_area.x + 1, // Add 1 character padding on the left
-        y: inner_area.y,
-        width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
-        height: inner_area.height,
-    };
-
+    // Create paragraph with help text
     let help_paragraph = Paragraph::new(app_state.help_text.clone())
+        .block(help_block)
         .wrap(ratatui::widgets::Wrap { trim: false })
         .scroll((app_state.help_scroll as u16, 0));
 
-    f.render_widget(help_paragraph, padded_area);
+    f.render_widget(help_paragraph, popup_area);
 }
 
 fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
@@ -669,21 +643,25 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
     let mut tab_widths = Vec::new();
     let mut total_width = 0;
     let mut visible_tabs = Vec::new();
+
     for (i, name) in sheet_names.iter().enumerate() {
-        let tab_width = name.len() + 2;
+        let tab_width = name.len();
 
         if total_width + tab_width <= available_width {
             tab_widths.push(tab_width as u16);
             total_width += tab_width;
             visible_tabs.push(i);
         } else {
+            // If current tab isn't visible, make room for it
             if !visible_tabs.contains(&current_index) {
+                // Remove tabs from the beginning until there's enough space
                 while !visible_tabs.is_empty() && total_width + tab_width > available_width {
                     let removed_width = tab_widths.remove(0) as usize;
                     visible_tabs.remove(0);
                     total_width -= removed_width;
                 }
 
+                // Add current tab if there's now enough space
                 if total_width + tab_width <= available_width {
                     tab_widths.push(tab_width as u16);
                     visible_tabs.push(current_index);
@@ -693,6 +671,7 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
         }
     }
 
+    // Limit title width to at most 2/3 of the area
     let max_title_width = (area.width * 2 / 3).min(title_width);
 
     // Create a two-column layout: title column and tab column
@@ -701,27 +680,29 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
         .constraints([Constraint::Length(max_title_width), Constraint::Min(0)])
         .split(area);
 
-    let title_widget = if is_editing {
-        Paragraph::new(title_content.clone())
-            .style(Style::default().bg(Color::DarkGray).fg(Color::Gray))
+    let title_style = if is_editing {
+        Style::default().bg(Color::DarkGray).fg(Color::Gray)
     } else {
-        Paragraph::new(title_content.clone())
-            .style(Style::default().bg(Color::DarkGray).fg(Color::White))
+        Style::default().bg(Color::DarkGray).fg(Color::White)
     };
+
+    let title_widget = Paragraph::new(title_content).style(title_style);
+
     f.render_widget(title_widget, horizontal_layout[0]);
 
+    // Create constraints for tab layout
     let mut tab_constraints = Vec::new();
     for &width in &tab_widths {
         tab_constraints.push(Constraint::Length(width));
     }
-
-    tab_constraints.push(Constraint::Min(0));
+    tab_constraints.push(Constraint::Min(0)); // Filler space
 
     let tab_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(tab_constraints)
         .split(horizontal_layout[1]);
 
+    // Render each visible tab
     for (layout_idx, &sheet_idx) in visible_tabs.iter().enumerate() {
         if layout_idx >= tab_layout.len() - 1 {
             break;
@@ -745,14 +726,17 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
         let tab_widget = Paragraph::new(name.to_string())
             .style(style)
             .alignment(ratatui::layout::Alignment::Center);
+
         f.render_widget(tab_widget, tab_layout[layout_idx]);
     }
 
+    // Show indicator if not all tabs are visible
     if visible_tabs.len() < sheet_names.len() {
         let more_indicator = "...";
         let indicator_style = Style::default().bg(Color::DarkGray).fg(Color::White);
         let indicator_width = more_indicator.len() as u16;
 
+        // Position indicator at the right edge
         let indicator_rect = Rect {
             x: area.x + area.width - indicator_width,
             y: area.y,

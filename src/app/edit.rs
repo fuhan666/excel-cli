@@ -3,6 +3,7 @@ use crate::app::AppState;
 use crate::app::InputMode;
 use crate::app::{Transition, VimMode, VimState};
 use anyhow::Result;
+use ratatui::style::{Modifier, Style};
 use tui_textarea::Input;
 
 impl AppState<'_> {
@@ -11,10 +12,14 @@ impl AppState<'_> {
         let content = self.get_cell_content(self.selected_cell.0, self.selected_cell.1);
         self.input_buffer = content.clone();
 
-        self.text_area = tui_textarea::TextArea::default();
-        self.text_area.insert_str(&content);
-        self.text_area.set_tab_length(4);
+        // Initialize TextArea with content and settings
+        let mut text_area = tui_textarea::TextArea::default();
+        text_area.insert_str(&content);
+        text_area.set_tab_length(4);
+        text_area.set_cursor_line_style(Style::default());
+        text_area.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
 
+        self.text_area = text_area;
         self.vim_state = Some(VimState::new(VimMode::Normal));
     }
 

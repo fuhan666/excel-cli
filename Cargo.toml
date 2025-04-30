@@ -10,7 +10,7 @@ categories = ["command-line-utilities", "development-tools", "data-structures", 
 exclude = ["/.github", "CHANGELOG.md", ".gitignore"]
 
 [dependencies]
-ratatui = "0.29.0"
+ratatui = "0.24.0"
 crossterm = "0.27.0"
 calamine = "0.22.1"
 anyhow = "1.0.79"
@@ -20,7 +20,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = "0.4"
 indexmap = { version = "2.0", features = ["serde"] }
-tui-textarea = "0.7.0"
+tui-textarea = "0.4.0"
 
 [profile.release]
 opt-level = 3

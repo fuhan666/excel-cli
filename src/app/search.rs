@@ -1,11 +1,18 @@
 use crate::app::AppState;
 use crate::app::InputMode;
+use ratatui::style::{Modifier, Style};
 
 impl AppState<'_> {
     pub fn start_search_forward(&mut self) {
         self.input_mode = InputMode::SearchForward;
         self.input_buffer = String::new();
-        self.text_area = tui_textarea::TextArea::default();
+
+        // Initialize TextArea
+        let mut text_area = tui_textarea::TextArea::default();
+        text_area.set_cursor_line_style(Style::default());
+        text_area.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+        self.text_area = text_area;
+
         self.add_notification("Search forward mode".to_string());
         self.highlight_enabled = true;
     }
@@ -13,7 +20,13 @@ impl AppState<'_> {
     pub fn start_search_backward(&mut self) {
         self.input_mode = InputMode::SearchBackward;
         self.input_buffer = String::new();
-        self.text_area = tui_textarea::TextArea::default();
+
+        // Initialize TextArea
+        let mut text_area = tui_textarea::TextArea::default();
+        text_area.set_cursor_line_style(Style::default());
+        text_area.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+        self.text_area = text_area;
+
         self.add_notification("Search backward mode".to_string());
         self.highlight_enabled = true;
     }
