@@ -33,7 +33,7 @@ impl AppState<'_> {
 
     pub fn execute_search(&mut self) {
         let query = self.text_area.lines().join("\n");
-        self.input_buffer = query.clone();
+        self.input_buffer.clone_from(&query);
 
         if query.is_empty() {
             self.input_mode = InputMode::Normal;
@@ -41,7 +41,7 @@ impl AppState<'_> {
         }
 
         // Save the query for n/N commands
-        self.search_query = query.clone();
+        self.search_query.clone_from(&query);
 
         // Set search direction based on mode
         match self.input_mode {
@@ -53,7 +53,7 @@ impl AppState<'_> {
         self.search_results = self.find_all_matches(&query);
 
         if self.search_results.is_empty() {
-            self.add_notification(format!("Pattern not found: {}", query));
+            self.add_notification(format!("Pattern not found: {query}"));
             self.current_search_idx = None;
         } else {
             // Find the appropriate result to jump to based on search direction and current position
@@ -87,7 +87,7 @@ impl AppState<'_> {
                         continue;
                     }
 
-                    if self.case_insensitive_contains(cell_content, &query_lower) {
+                    if Self::case_insensitive_contains(cell_content, &query_lower) {
                         results.push((row, col));
                     }
                 }
@@ -97,7 +97,7 @@ impl AppState<'_> {
         results
     }
 
-    fn case_insensitive_contains(&self, haystack: &str, needle: &str) -> bool {
+    fn case_insensitive_contains(haystack: &str, needle: &str) -> bool {
         if needle.is_empty() {
             return true;
         }
@@ -123,17 +123,14 @@ impl AppState<'_> {
                 pos.0 > current_pos.0 || (pos.0 == current_pos.0 && pos.1 > current_pos.1)
             });
 
-            match next_idx {
-                Some(idx) => {
-                    self.current_search_idx = Some(idx);
-                    self.selected_cell = self.search_results[idx];
-                }
-                None => {
-                    // Wrap around to the first result
-                    self.current_search_idx = Some(0);
-                    self.selected_cell = self.search_results[0];
-                    self.add_notification("Search wrapped to top".to_string());
-                }
+            if let Some(idx) = next_idx {
+                self.current_search_idx = Some(idx);
+                self.selected_cell = self.search_results[idx];
+            } else {
+                // Wrap around to the first result
+                self.current_search_idx = Some(0);
+                self.selected_cell = self.search_results[0];
+                self.add_notification("Search wrapped to top".to_string());
             }
         } else {
             // Backward search
@@ -141,18 +138,15 @@ impl AppState<'_> {
                 pos.0 < current_pos.0 || (pos.0 == current_pos.0 && pos.1 < current_pos.1)
             });
 
-            match prev_idx {
-                Some(idx) => {
-                    self.current_search_idx = Some(idx);
-                    self.selected_cell = self.search_results[idx];
-                }
-                None => {
-                    // Wrap around to the last result
-                    let last_idx = self.search_results.len() - 1;
-                    self.current_search_idx = Some(last_idx);
-                    self.selected_cell = self.search_results[last_idx];
-                    self.add_notification("Search wrapped to bottom".to_string());
-                }
+            if let Some(idx) = prev_idx {
+                self.current_search_idx = Some(idx);
+                self.selected_cell = self.search_results[idx];
+            } else {
+                // Wrap around to the last result
+                let last_idx = self.search_results.len() - 1;
+                self.current_search_idx = Some(last_idx);
+                self.selected_cell = self.search_results[last_idx];
+                self.add_notification("Search wrapped to bottom".to_string());
             }
         }
 

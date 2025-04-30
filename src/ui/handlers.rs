@@ -41,7 +41,7 @@ fn handle_ctrl_key(app_state: &mut AppState, key_code: KeyCode) {
         }
         KeyCode::Char('r') => {
             if let Err(e) = app_state.redo() {
-                app_state.add_notification(format!("Redo failed: {}", e));
+                app_state.add_notification(format!("Redo failed: {e}"));
             }
         }
         _ => {}
@@ -101,7 +101,7 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
             if app_state.workbook.is_lazy_loading() && !app_state.workbook.is_sheet_loaded(index) {
                 // If the sheet is not loaded, load it first
                 if let Err(e) = app_state.workbook.ensure_sheet_loaded(index, &sheet_name) {
-                    app_state.add_notification(format!("Failed to load sheet: {}", e));
+                    app_state.add_notification(format!("Failed to load sheet: {e}"));
                 } else {
                     app_state.start_editing();
                 }
@@ -128,10 +128,10 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Char('u') => {
             app_state.g_pressed = false;
             if let Err(e) = app_state.undo() {
-                app_state.add_notification(format!("Undo failed: {}", e));
+                app_state.add_notification(format!("Undo failed: {e}"));
             }
         }
-        KeyCode::Char('=') | KeyCode::Char('+') => {
+        KeyCode::Char('=' | '+') => {
             app_state.g_pressed = false;
             app_state.adjust_info_panel_height(1);
         }
@@ -142,13 +142,13 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Char('[') => {
             app_state.g_pressed = false;
             if let Err(e) = app_state.prev_sheet() {
-                app_state.add_notification(format!("Failed to switch to previous sheet: {}", e));
+                app_state.add_notification(format!("Failed to switch to previous sheet: {e}"));
             }
         }
         KeyCode::Char(']') => {
             app_state.g_pressed = false;
             if let Err(e) = app_state.next_sheet() {
-                app_state.add_notification(format!("Failed to switch to next sheet: {}", e));
+                app_state.add_notification(format!("Failed to switch to next sheet: {e}"));
             }
         }
         KeyCode::Char('g') => {
@@ -182,13 +182,13 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
         KeyCode::Char('d') => {
             app_state.g_pressed = false;
             if let Err(e) = app_state.cut_cell() {
-                app_state.add_notification(format!("Cut failed: {}", e));
+                app_state.add_notification(format!("Cut failed: {e}"));
             }
         }
         KeyCode::Char('p') => {
             app_state.g_pressed = false;
             if let Err(e) = app_state.paste_cell() {
-                app_state.add_notification(format!("Paste failed: {}", e));
+                app_state.add_notification(format!("Paste failed: {e}"));
             }
         }
         KeyCode::Char(':') => {
@@ -261,7 +261,7 @@ fn handle_editing_mode(app_state: &mut AppState, key: KeyEvent) {
     };
 
     if let Err(e) = app_state.handle_vim_input(input) {
-        app_state.add_notification(format!("Vim input error: {}", e));
+        app_state.add_notification(format!("Vim input error: {e}"));
     }
 }
 
@@ -299,13 +299,12 @@ fn key_code_to_tui_key(key_code: KeyCode) -> Key {
         KeyCode::PageUp => Key::PageUp,
         KeyCode::PageDown => Key::PageDown,
         KeyCode::Tab => Key::Tab,
-        KeyCode::BackTab => Key::Null, // BackTab not supported in tui-textarea
         KeyCode::Delete => Key::Delete,
-        KeyCode::Insert => Key::Null, // Insert not supported in tui-textarea
+        // BackTab and Insert not supported in tui-textarea
+        KeyCode::BackTab | KeyCode::Insert => Key::Null,
         KeyCode::Esc => Key::Esc,
         KeyCode::Char(c) => Key::Char(c),
         KeyCode::F(n) => Key::F(n),
-        KeyCode::Null => Key::Null,
         _ => Key::Null,
     }
 }
@@ -318,7 +317,7 @@ fn handle_lazy_loading_mode(app_state: &mut AppState, key_code: KeyCode) {
 
             // Load the sheet
             if let Err(e) = app_state.workbook.ensure_sheet_loaded(index, &sheet_name) {
-                app_state.add_notification(format!("Failed to load sheet: {}", e));
+                app_state.add_notification(format!("Failed to load sheet: {e}"));
             }
 
             app_state.input_mode = InputMode::Normal;
@@ -332,8 +331,7 @@ fn handle_lazy_loading_mode(app_state: &mut AppState, key_code: KeyCode) {
             } else {
                 // The method will automatically set the input mode to LazyLoading if the sheet is not loaded
                 if let Err(e) = app_state.switch_sheet_by_index(current_index - 1) {
-                    app_state
-                        .add_notification(format!("Failed to switch to previous sheet: {}", e));
+                    app_state.add_notification(format!("Failed to switch to previous sheet: {e}"));
                 }
             }
         }
@@ -347,7 +345,7 @@ fn handle_lazy_loading_mode(app_state: &mut AppState, key_code: KeyCode) {
             } else {
                 // The method will automatically set the input mode to LazyLoading if the sheet is not loaded
                 if let Err(e) = app_state.switch_sheet_by_index(current_index + 1) {
-                    app_state.add_notification(format!("Failed to switch to next sheet: {}", e));
+                    app_state.add_notification(format!("Failed to switch to next sheet: {e}"));
                 }
             }
         }

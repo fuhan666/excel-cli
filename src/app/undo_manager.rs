@@ -317,7 +317,7 @@ impl AppState<'_> {
             }
 
             if let Err(e) = self.workbook.delete_current_sheet() {
-                self.add_notification(format!("Failed to delete sheet: {}", e));
+                self.add_notification(format!("Failed to delete sheet: {e}"));
                 return Ok(());
             }
 

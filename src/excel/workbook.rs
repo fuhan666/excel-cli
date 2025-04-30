@@ -10,7 +10,7 @@ use std::path::Path;
 use crate::excel::{Cell, CellType, DataTypeInfo, Sheet};
 
 pub enum CalamineWorkbook {
-    Xlsx(Xlsx<BufReader<File>>),
+    Xlsx(Box<Xlsx<BufReader<File>>>),
     Xls(Xls<BufReader<File>>),
     None,
 }
@@ -57,7 +57,7 @@ pub fn open_workbook<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Resu
 
     // Only enable lazy loading if both the flag is set AND the format supports it
     let supports_lazy_loading =
-        enable_lazy_loading && matches!(extension.as_deref(), Some("xlsx") | Some("xlsm"));
+        enable_lazy_loading && matches!(extension.as_deref(), Some("xlsx" | "xlsm"));
 
     // Open workbook directly from path
     let mut workbook = open_workbook_auto(&path)
@@ -93,7 +93,7 @@ pub fn open_workbook<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Resu
 
             // Try to open as XLSX first
             if let Ok(xlsx_workbook) = Xlsx::new(reader) {
-                calamine_workbook = CalamineWorkbook::Xlsx(xlsx_workbook);
+                calamine_workbook = CalamineWorkbook::Xlsx(Box::new(xlsx_workbook));
             } else {
                 // If not XLSX, try to open as XLS
                 if let Ok(file) = File::open(&path) {

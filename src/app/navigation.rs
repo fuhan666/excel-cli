@@ -108,9 +108,9 @@ impl AppState<'_> {
                 || sheet.data[row][col].value.is_empty();
 
             let message = if is_cell_empty {
-                format!("Jumped to first non-empty cell ({})", dir_name)
+                format!("Jumped to first non-empty cell ({dir_name})")
             } else {
-                format!("Jumped to last non-empty cell ({})", dir_name)
+                format!("Jumped to last non-empty cell ({dir_name})")
             };
 
             self.add_notification(message);

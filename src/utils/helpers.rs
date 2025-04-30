@@ -1,3 +1,4 @@
+#[must_use]
 pub fn index_to_col_name(index: usize) -> String {
     let mut col_name = String::new();
     let mut n = index;
@@ -15,6 +16,7 @@ pub fn index_to_col_name(index: usize) -> String {
     col_name
 }
 
+#[must_use]
 pub fn col_name_to_index(name: &str) -> Option<usize> {
     let mut result = 0;
 
@@ -31,6 +33,7 @@ pub fn col_name_to_index(name: &str) -> Option<usize> {
 }
 
 // Format cell reference (e.g., A1, B2)
+#[must_use]
 pub fn cell_reference(cell: (usize, usize)) -> String {
     format!("{}{}", index_to_col_name(cell.1), cell.0)
 }

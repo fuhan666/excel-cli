@@ -391,69 +391,66 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
     let cell_ref = cell_reference(app_state.selected_cell);
 
     // Handle the top panel based on the input mode
-    match app_state.input_mode {
-        InputMode::Editing => {
-            let (vim_mode_str, mode_color) = if let Some(vim_state) = &app_state.vim_state {
-                match vim_state.mode {
-                    crate::app::VimMode::Normal => ("NORMAL", Color::Green),
-                    crate::app::VimMode::Insert => ("INSERT", Color::LightBlue),
-                    crate::app::VimMode::Visual => ("VISUAL", Color::Yellow),
-                    crate::app::VimMode::Operator(op) => {
-                        let op_str = match op {
-                            'y' => "YANK",
-                            'd' => "DELETE",
-                            'c' => "CHANGE",
-                            _ => "OPERATOR",
-                        };
-                        (op_str, Color::LightRed)
-                    }
+    if let InputMode::Editing = app_state.input_mode {
+        let (vim_mode_str, mode_color) = if let Some(vim_state) = &app_state.vim_state {
+            match vim_state.mode {
+                crate::app::VimMode::Normal => ("NORMAL", Color::Green),
+                crate::app::VimMode::Insert => ("INSERT", Color::LightBlue),
+                crate::app::VimMode::Visual => ("VISUAL", Color::Yellow),
+                crate::app::VimMode::Operator(op) => {
+                    let op_str = match op {
+                        'y' => "YANK",
+                        'd' => "DELETE",
+                        'c' => "CHANGE",
+                        _ => "OPERATOR",
+                    };
+                    (op_str, Color::LightRed)
                 }
-            } else {
-                ("VIM", Color::White)
-            };
+            }
+        } else {
+            ("VIM", Color::White)
+        };
 
-            let title = Line::from(vec![
-                Span::raw(" Editing Cell "),
-                Span::raw(cell_ref.clone()),
-                Span::raw(" - "),
-                Span::styled(
-                    vim_mode_str,
-                    Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" "),
-            ]);
+        let title = Line::from(vec![
+            Span::raw(" Editing Cell "),
+            Span::raw(cell_ref.clone()),
+            Span::raw(" - "),
+            Span::styled(
+                vim_mode_str,
+                Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+        ]);
 
-            let edit_block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::LightCyan))
-                .title(title);
+        let edit_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::LightCyan))
+            .title(title);
 
-            // Calculate inner area with padding
-            let inner_area = edit_block.inner(chunks[0]);
-            let padded_area = Rect {
-                x: inner_area.x + 1, // Add 1 character padding on the left
-                y: inner_area.y,
-                width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
-                height: inner_area.height,
-            };
+        // Calculate inner area with padding
+        let inner_area = edit_block.inner(chunks[0]);
+        let padded_area = Rect {
+            x: inner_area.x + 1, // Add 1 character padding on the left
+            y: inner_area.y,
+            width: inner_area.width.saturating_sub(2), // Subtract 2 for left and right padding
+            height: inner_area.height,
+        };
 
-            f.render_widget(edit_block, chunks[0]);
-            f.render_widget(app_state.text_area.widget(), padded_area);
-        }
-        _ => {
-            // Get cell content
-            let content = app_state.get_cell_content(row, col);
+        f.render_widget(edit_block, chunks[0]);
+        f.render_widget(app_state.text_area.widget(), padded_area);
+    } else {
+        // Get cell content
+        let content = app_state.get_cell_content(row, col);
 
-            let title = format!(" Cell {} Content ", cell_ref);
-            let cell_block = Block::default().borders(Borders::ALL).title(title);
+        let title = format!(" Cell {cell_ref} Content ");
+        let cell_block = Block::default().borders(Borders::ALL).title(title);
 
-            // Create paragraph with cell content
-            let cell_paragraph = Paragraph::new(content)
-                .block(cell_block)
-                .wrap(ratatui::widgets::Wrap { trim: false });
+        // Create paragraph with cell content
+        let cell_paragraph = Paragraph::new(content)
+            .block(cell_block)
+            .wrap(ratatui::widgets::Wrap { trim: false });
 
-            f.render_widget(cell_paragraph, chunks[0]);
-        }
+        f.render_widget(cell_paragraph, chunks[0]);
     }
 
     // Create notification block
@@ -694,7 +691,7 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
         .and_then(|n| n.to_str())
         .unwrap_or("Untitled");
 
-    let title_content = format!(" {} ", file_name);
+    let title_content = format!(" {file_name} ");
 
     let title_width = title_content
         .chars()

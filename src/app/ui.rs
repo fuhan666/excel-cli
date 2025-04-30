@@ -102,7 +102,7 @@ impl AppState<'_> {
                 self.should_quit = true;
             }
             Err(e) => {
-                self.add_notification(format!("Save failed: {}", e));
+                self.add_notification(format!("Save failed: {e}"));
                 self.input_mode = InputMode::Normal;
             }
         }
@@ -120,7 +120,7 @@ impl AppState<'_> {
                 self.add_notification("File saved".to_string());
             }
             Err(e) => {
-                self.add_notification(format!("Save failed: {}", e));
+                self.add_notification(format!("Save failed: {e}"));
             }
         }
         Ok(())

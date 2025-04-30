@@ -262,9 +262,8 @@ impl VimState {
                         if self.mode == VimMode::Visual {
                             textarea.cancel_selection();
                             return Transition::Mode(VimMode::Normal);
-                        } else {
-                            return Transition::Exit;
                         }
+                        return Transition::Exit;
                     }
 
                     // Scrolling

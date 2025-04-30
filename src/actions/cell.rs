@@ -14,6 +14,7 @@ pub struct CellAction {
 }
 
 impl CellAction {
+    #[must_use]
     pub fn new(
         sheet_index: usize,
         sheet_name: String,

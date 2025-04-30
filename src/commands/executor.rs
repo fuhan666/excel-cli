@@ -24,7 +24,7 @@ impl AppState<'_> {
         match command.as_str() {
             "w" => {
                 if let Err(e) = self.save() {
-                    self.add_notification(format!("Save failed: {}", e));
+                    self.add_notification(format!("Save failed: {e}"));
                 }
             }
             "wq" | "x" => self.save_and_exit(),
@@ -42,12 +42,12 @@ impl AppState<'_> {
             "y" => self.copy_cell(),
             "d" => {
                 if let Err(e) = self.cut_cell() {
-                    self.add_notification(format!("Cut failed: {}", e));
+                    self.add_notification(format!("Cut failed: {e}"));
                 }
             }
             "put" | "pu" => {
                 if let Err(e) = self.paste_cell() {
-                    self.add_notification(format!("Paste failed: {}", e));
+                    self.add_notification(format!("Paste failed: {e}"));
                 }
             }
             "nohlsearch" | "noh" => self.disable_search_highlight(),
@@ -126,7 +126,7 @@ impl AppState<'_> {
         if parts.len() == 1 {
             // Delete current row
             if let Err(e) = self.delete_current_row() {
-                self.add_notification(format!("Failed to delete row: {}", e));
+                self.add_notification(format!("Failed to delete row: {e}"));
             }
             return;
         }
@@ -169,7 +169,7 @@ impl AppState<'_> {
         if parts.len() == 1 {
             // Delete current column
             if let Err(e) = self.delete_current_column() {
-                self.add_notification(format!("Failed to delete column: {}", e));
+                self.add_notification(format!("Failed to delete column: {e}"));
             }
             return;
         }
@@ -322,7 +322,7 @@ impl AppState<'_> {
                 self.add_notification(format!("Exported to {}", new_filepath.display()));
             }
             Err(e) => {
-                self.add_notification(format!("Export failed: {}", e));
+                self.add_notification(format!("Export failed: {e}"));
             }
         }
     }

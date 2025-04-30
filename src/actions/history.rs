@@ -13,6 +13,7 @@ impl Default for UndoHistory {
 }
 
 impl UndoHistory {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             undo_stack: Vec::with_capacity(100), // Pre-allocate capacity
@@ -44,6 +45,7 @@ impl UndoHistory {
         }
     }
 
+    #[must_use]
     pub fn all_undone(&self) -> bool {
         self.undo_stack.is_empty()
     }

@@ -12,6 +12,7 @@ pub enum Direction {
 /// Find non-empty cell in specified direction
 ///
 /// Returns the position of found cell, or None if already at boundary
+#[must_use]
 pub fn find_non_empty_cell(
     sheet: &Sheet,
     current_pos: (usize, usize),
@@ -97,9 +98,8 @@ pub fn find_non_empty_cell(
                     if row < sheet.data.len() && c < sheet.data[row].len() {
                         if sheet.data[row][c].value.is_empty() {
                             return Some((row, c + 1));
-                        } else {
-                            last_non_empty = c;
                         }
+                        last_non_empty = c;
                     } else {
                         return Some((row, c + 1));
                     }
@@ -114,9 +114,8 @@ pub fn find_non_empty_cell(
                     if row < sheet.data.len() && c < sheet.data[row].len() {
                         if sheet.data[row][c].value.is_empty() {
                             return Some((row, c - 1));
-                        } else {
-                            last_non_empty = c;
                         }
+                        last_non_empty = c;
                     } else {
                         return Some((row, c - 1));
                     }
@@ -131,9 +130,8 @@ pub fn find_non_empty_cell(
                     if r < sheet.data.len() && col < sheet.data[r].len() {
                         if sheet.data[r][col].value.is_empty() {
                             return Some((r + 1, col));
-                        } else {
-                            last_non_empty = r;
                         }
+                        last_non_empty = r;
                     } else {
                         return Some((r + 1, col));
                     }
@@ -148,9 +146,8 @@ pub fn find_non_empty_cell(
                     if r < sheet.data.len() && col < sheet.data[r].len() {
                         if sheet.data[r][col].value.is_empty() {
                             return Some((r - 1, col));
-                        } else {
-                            last_non_empty = r;
                         }
+                        last_non_empty = r;
                     } else {
                         return Some((r - 1, col));
                     }

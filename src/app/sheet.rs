@@ -102,11 +102,10 @@ impl AppState<'_> {
             // If the sheet is not loaded, switch to LazyLoading mode
             self.input_mode = crate::app::InputMode::LazyLoading;
             self.add_notification(format!(
-                "Switched to sheet: {} (press Enter to load)",
-                new_sheet_name
+                "Switched to sheet: {new_sheet_name} (press Enter to load)"
             ));
         } else {
-            self.add_notification(format!("Switched to sheet: {}", new_sheet_name));
+            self.add_notification(format!("Switched to sheet: {new_sheet_name}"));
         }
 
         Ok(())
@@ -123,12 +122,9 @@ impl AppState<'_> {
 
             if zero_based_index < sheet_names.len() {
                 match self.switch_sheet_by_index(zero_based_index) {
-                    Ok(_) => return,
+                    Ok(()) => return,
                     Err(e) => {
-                        self.add_notification(format!(
-                            "Failed to switch to sheet {}: {}",
-                            index, e
-                        ));
+                        self.add_notification(format!("Failed to switch to sheet {index}: {e}"));
                         return;
                     }
                 }
@@ -139,11 +135,10 @@ impl AppState<'_> {
         for (i, name) in sheet_names.iter().enumerate() {
             if name.eq_ignore_ascii_case(name_or_index) {
                 match self.switch_sheet_by_index(i) {
-                    Ok(_) => return,
+                    Ok(()) => return,
                     Err(e) => {
                         self.add_notification(format!(
-                            "Failed to switch to sheet '{}': {}",
-                            name_or_index, e
+                            "Failed to switch to sheet '{name_or_index}': {e}"
                         ));
                         return;
                     }
@@ -152,7 +147,7 @@ impl AppState<'_> {
         }
 
         // If we get here, no matching sheet was found
-        self.add_notification(format!("Sheet '{}' not found", name_or_index));
+        self.add_notification(format!("Sheet '{name_or_index}' not found"));
     }
 
     pub fn delete_current_sheet(&mut self) {
@@ -164,7 +159,7 @@ impl AppState<'_> {
         let column_widths = self.column_widths.clone();
 
         match self.workbook.delete_current_sheet() {
-            Ok(_) => {
+            Ok(()) => {
                 // Create the undo action
                 let sheet_action = SheetAction {
                     sheet_index,
@@ -221,15 +216,14 @@ impl AppState<'_> {
                     // If the sheet is not loaded, switch to LazyLoading mode
                     self.input_mode = crate::app::InputMode::LazyLoading;
                     self.add_notification(format!(
-                        "Deleted sheet: {}. Switched to sheet: {} (press Enter to load)",
-                        current_sheet_name, new_sheet_name
+                        "Deleted sheet: {current_sheet_name}. Switched to sheet: {new_sheet_name} (press Enter to load)"
                     ));
                 } else {
-                    self.add_notification(format!("Deleted sheet: {}", current_sheet_name));
+                    self.add_notification(format!("Deleted sheet: {current_sheet_name}"));
                 }
             }
             Err(e) => {
-                self.add_notification(format!("Failed to delete sheet: {}", e));
+                self.add_notification(format!("Failed to delete sheet: {e}"));
             }
         }
     }
@@ -277,7 +271,7 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!("Deleted row {}", row));
+        self.add_notification(format!("Deleted row {row}"));
         Ok(())
     }
 
@@ -323,7 +317,7 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!("Deleted row {}", row));
+        self.add_notification(format!("Deleted row {row}"));
         Ok(())
     }
 
@@ -383,10 +377,7 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!(
-            "Deleted rows {} to {}",
-            start_row, effective_end_row
-        ));
+        self.add_notification(format!("Deleted rows {start_row} to {effective_end_row}"));
         Ok(())
     }
 
@@ -453,7 +444,8 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!("Deleted column {}", index_to_col_name(col)));
+        let col_name = index_to_col_name(col);
+        self.add_notification(format!("Deleted column {col_name}"));
         Ok(())
     }
 
@@ -519,7 +511,8 @@ impl AppState<'_> {
         self.search_results.clear();
         self.current_search_idx = None;
 
-        self.add_notification(format!("Deleted column {}", index_to_col_name(col)));
+        let col_name = index_to_col_name(col);
+        self.add_notification(format!("Deleted column {col_name}"));
         Ok(())
     }
 
