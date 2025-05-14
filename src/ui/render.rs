@@ -295,6 +295,7 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
     let table = Table::new(
         // Combine header and data rows
         std::iter::once(header).chain(rows),
+        [Constraint::Length(1)]
     )
     .block(table_block)
     .style(cell_style)
