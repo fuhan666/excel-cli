@@ -23,7 +23,7 @@
 该软件包已发布到 crates.io，可以直接使用以下命令安装：
 
 ```bash
-cargo install excel-cli
+cargo install excel-cli --locked
 ```
 
 #### 方式 2：从 GitHub Release 下载
@@ -45,7 +45,7 @@ cd excel-cli
 cargo build --release
 
 # 安装到系统
-cargo install --path .
+cargo install --path . --locked
 ```
 
 ### 卸载
