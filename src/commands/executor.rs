@@ -366,25 +366,21 @@ impl AppState<'_> {
 // Parse a cell reference like "A1", "B10", etc.
 fn parse_cell_reference(input: &str) -> Option<(usize, usize)> {
     // Cell references should have at least 2 characters (e.g., A1)
-    if input.len() < 2 {
+    if input.chars().count() < 2 {
         return None;
     }
 
     // Find the first digit to separate column and row parts
-    let mut col_end = 0;
-    for (i, c) in input.chars().enumerate() {
-        if c.is_ascii_digit() {
-            col_end = i;
-            break;
-        }
-    }
+    let col_end = input
+        .char_indices()
+        .find(|(_, c)| c.is_ascii_digit())
+        .map(|(index, _)| index)?;
 
     if col_end == 0 {
         return None; // No digits found
     }
 
-    let col_part = &input[0..col_end];
-    let row_part = &input[col_end..];
+    let (col_part, row_part) = input.split_at(col_end);
 
     // Convert column letters to index
     let col = col_name_to_index(&col_part.to_uppercase())?;
@@ -393,4 +389,21 @@ fn parse_cell_reference(input: &str) -> Option<(usize, usize)> {
     let row = row_part.parse::<usize>().ok()?;
 
     Some((row, col))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_cell_reference;
+
+    #[test]
+    fn parses_valid_cell_references() {
+        assert_eq!(parse_cell_reference("A1"), Some((1, 1)));
+        assert_eq!(parse_cell_reference("BC12"), Some((12, 55)));
+    }
+
+    #[test]
+    fn ignores_commands_with_non_ascii_arguments() {
+        assert_eq!(parse_cell_reference("addsheet 测试1"), None);
+        assert_eq!(parse_cell_reference("测试1"), None);
+    }
 }
