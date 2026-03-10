@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-10
+
+### Added
+
+- Added `:addsheet <name>` to create a new sheet after the current sheet
+- Added undo and redo support for sheet creation
+
+### Fixed
+
+- Load all lazy-loaded sheets before saving to avoid writing unloaded sheets as blank
+- Count sheet name length by characters so non-ASCII names such as Chinese sheet names are validated correctly
+
 ## [0.3.0] - 2025-05-07
 
 ### Added
@@ -74,7 +86,8 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.4.0
 [0.3.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.3.0
 [0.2.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.2.0
 [0.1.1]: https://github.com/fuhan666/excel-cli/releases/tag/v0.1.1

@@ -304,7 +304,7 @@ fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
 }
 
 // Parse command input and identify keywords and parameters for highlighting
-fn parse_command(input: &str) -> Vec<Span> {
+fn parse_command(input: &str) -> Vec<Span<'_>> {
     if input.is_empty() {
         return vec![Span::raw("")];
     }
@@ -322,10 +322,11 @@ fn parse_command(input: &str) -> Vec<Span> {
         "nohlsearch",
         "noh",
         "help",
+        "addsheet",
         "delsheet",
     ];
 
-    let commands_with_params = ["cw", "ej", "eja", "sheet", "dr", "dc"];
+    let commands_with_params = ["cw", "ej", "eja", "sheet", "dr", "dc", "addsheet"];
 
     let special_keywords = ["fit", "min", "all", "h", "v", "horizontal", "vertical"];
 
@@ -567,7 +568,7 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
         InputMode::LazyLoading => {
             // Show a status message for lazy loading mode
             let status_widget = Paragraph::new(
-                "Sheet data not loaded... Press Enter to load, [ and ] to switch sheets, :delsheet to delete current sheet, :q to quit, :q! to quit without saving",
+                "Sheet data not loaded... Press Enter to load, [ and ] to switch sheets, :addsheet <name> to add a sheet, :delsheet to delete current sheet, :q to quit, :q! to quit without saving",
             )
             .style(Style::default().fg(Color::LightYellow))
             .alignment(ratatui::layout::Alignment::Left);

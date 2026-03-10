@@ -53,12 +53,15 @@ impl AppState<'_> {
             "nohlsearch" | "noh" => self.disable_search_highlight(),
             "help" => self.show_help(),
             "delsheet" => self.delete_current_sheet(),
+            "addsheet" => self.add_notification("Usage: :addsheet <name>".to_string()),
             _ => {
                 // Handle commands with parameters
                 if command.starts_with("cw ") {
                     self.handle_column_width_command(&command);
                 } else if command.starts_with("ej") {
                     self.handle_json_export_command(&command);
+                } else if let Some(sheet_name) = command.strip_prefix("addsheet ") {
+                    self.create_sheet(sheet_name.trim());
                 } else if command.starts_with("sheet ") {
                     let sheet_name = command.strip_prefix("sheet ").unwrap().trim();
                     self.switch_to_sheet(sheet_name);

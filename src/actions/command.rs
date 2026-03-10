@@ -1,4 +1,5 @@
-use super::types::{ActionCommand, ActionType};
+use super::types::ActionCommand;
+use super::{ActionType, Command};
 
 impl ActionCommand {
     // Returns the action type of this command
@@ -13,7 +14,7 @@ impl ActionCommand {
             ActionCommand::MultiRow(_) => ActionType::DeleteMultiRows,
             ActionCommand::Column(_) => ActionType::DeleteColumn,
             ActionCommand::MultiColumn(_) => ActionType::DeleteMultiColumns,
-            ActionCommand::Sheet(_) => ActionType::DeleteSheet,
+            ActionCommand::Sheet(action) => action.action_type(),
         }
     }
 }
