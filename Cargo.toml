@@ -1,13 +1,13 @@
 [package]
 name = "excel-cli"
-version = "0.3.0"
+version = "0.4.1"
 edition = "2021"
 description = "A lightweight terminal-based Excel viewer with Vim-like navigation for viewing, editing, and exporting Excel data to JSON format."
 license = "MIT"
 repository = "https://github.com/fuhan666/excel-cli"
 keywords = ["Excel", "Excel-export", "Excel-json", "calamine", "ratatui"]
 categories = ["command-line-utilities", "development-tools", "data-structures", "parsing"]
-exclude = ["/.github", "CHANGELOG.md", ".gitignore"]
+exclude = ["/.github", "AGENTS.md", "CHANGELOG.md", ".gitignore"]
 
 [dependencies]
 ratatui = "0.24.0"
