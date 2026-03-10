@@ -7,10 +7,10 @@ English | [中文](README_zh.md)
 ## Features
 
 - Browse and navigate Excel worksheets with Vim-like hotkeys
-- Switch between sheets in multi-sheet workbooks
+- Create, switch, and delete sheets in multi-sheet workbooks
 - Edit cell contents directly in the terminal
 - Export data to JSON format
-- Delete rows, columns, and sheets
+- Delete rows and columns
 - Search functionality with highlighting
 - Command mode for advanced operations
 
@@ -105,7 +105,7 @@ The application has a simple and intuitive interface:
 - `y`: Copy current cell content
 - `d`: Cut current cell content
 - `p`: Paste clipboard content to current cell
-- `u`: Undo the last operation (edit, row/column/sheet deletion)
+- `u`: Undo the last operation (edit, row/column changes, sheet creation/deletion)
 - `Ctrl+r`: Redo the last undone operation
 - `/`: Start forward search
 - `?`: Start backward search
@@ -218,6 +218,7 @@ The JSON files are saved in the same directory as the original Excel file.
 
 ### Sheet Management Commands
 
+- `:addsheet [name]` - Add a new sheet after the current sheet
 - `:sheet [name/number]` - Switch to sheet by name or index (1-based)
 - `:delsheet` - Delete the current sheet
 
@@ -241,6 +242,7 @@ Excel-CLI uses a non-destructive approach to file saving:
 
 - When you save a file (using `:w`, `:wq`, or `:x`), the application checks if any changes have been made
 - If no changes have been made, no new file is created, and a "No changes to save" message is displayed
+- If lazy loading is enabled, all unloaded sheets are loaded before saving so the workbook content is preserved
 - If changes have been made, a new file is created with a timestamp in the filename, following the format `original_filename_YYYYMMDD_HHMMSS.xlsx`
 - The new file is created without any styling
 - The original file is never modified

@@ -54,6 +54,7 @@ impl AppState<'_> {
                                 h=horizontal (default), v=vertical\n\
                                 [rows]=number of header rows (default: 1)\n\n\
              SHEET OPERATIONS:\n\
+             :addsheet [name] - Add a new sheet after the current sheet\n\
              :delsheet   - Delete the current sheet\n\n\
              UI ADJUSTMENTS:\n\
              +/=         - Increase info panel height\n\

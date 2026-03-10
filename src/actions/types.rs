@@ -3,6 +3,7 @@ pub enum ActionType {
     Edit,
     Cut,
     Paste,
+    CreateSheet,
     DeleteRow,
     DeleteColumn,
     DeleteSheet,

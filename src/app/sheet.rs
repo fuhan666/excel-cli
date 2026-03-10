@@ -1,5 +1,6 @@
 use crate::actions::{
     ActionCommand, ColumnAction, MultiColumnAction, MultiRowAction, RowAction, SheetAction,
+    SheetOperation,
 };
 use crate::app::AppState;
 use crate::utils::index_to_col_name;
@@ -150,6 +151,56 @@ impl AppState<'_> {
         self.add_notification(format!("Sheet '{name_or_index}' not found"));
     }
 
+    pub fn create_sheet(&mut self, name: &str) {
+        let insert_index = self.workbook.get_current_sheet_index() + 1;
+
+        match self.workbook.add_sheet(name, insert_index) {
+            Ok(sheet_name) => {
+                let default_width = 15;
+                let max_cols = self
+                    .workbook
+                    .get_sheet_by_index(insert_index)
+                    .map(|sheet| sheet.max_cols)
+                    .unwrap_or(1);
+
+                self.sheet_column_widths
+                    .insert(sheet_name.clone(), vec![default_width; max_cols + 1]);
+                self.sheet_cell_positions.insert(
+                    sheet_name.clone(),
+                    crate::app::CellPosition {
+                        selected: (1, 1),
+                        view: (1, 1),
+                    },
+                );
+
+                if let Err(e) = self.switch_sheet_by_index(insert_index) {
+                    self.sheet_column_widths.remove(&sheet_name);
+                    self.sheet_cell_positions.remove(&sheet_name);
+                    let _ = self.workbook.delete_sheet_at_index(insert_index);
+                    self.add_notification(format!("Failed to switch to new sheet: {e}"));
+                    return;
+                }
+
+                self.notification_messages.pop();
+
+                let sheet_action = SheetAction {
+                    sheet_index: insert_index,
+                    sheet_name: sheet_name.clone(),
+                    sheet_data: self.workbook.get_current_sheet().clone(),
+                    column_widths: self.column_widths.clone(),
+                    operation: SheetOperation::Create,
+                };
+
+                self.undo_history.push(ActionCommand::Sheet(sheet_action));
+                self.input_mode = crate::app::InputMode::Normal;
+                self.add_notification(format!("Created sheet: {sheet_name}"));
+            }
+            Err(e) => {
+                self.add_notification(format!("Failed to add sheet: {e}"));
+            }
+        }
+    }
+
     pub fn delete_current_sheet(&mut self) {
         let current_sheet_name = self.workbook.get_current_sheet_name();
         let sheet_index = self.workbook.get_current_sheet_index();
@@ -166,6 +217,7 @@ impl AppState<'_> {
                     sheet_name: current_sheet_name.clone(),
                     sheet_data,
                     column_widths,
+                    operation: SheetOperation::Delete,
                 };
 
                 self.undo_history.push(ActionCommand::Sheet(sheet_action));
@@ -210,6 +262,7 @@ impl AppState<'_> {
                 // Clear search results as they're specific to the previous sheet
                 self.search_results.clear();
                 self.current_search_idx = None;
+                self.update_row_number_width();
 
                 // Check if the new current sheet is loaded when using lazy loading
                 if self.workbook.is_lazy_loading() && !is_new_sheet_loaded {
@@ -720,5 +773,33 @@ impl AppState<'_> {
                 // Column widths are already correct, do nothing
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app::AppState;
+    use crate::excel::{Sheet, Workbook};
+    use std::path::PathBuf;
+
+    #[test]
+    fn create_sheet_can_be_undone_and_redone() {
+        let workbook = Workbook::from_sheets_for_test(vec![Sheet::blank("Sheet1".to_string())]);
+        let mut app = AppState::new(workbook, PathBuf::from("test.xlsx")).unwrap();
+
+        app.create_sheet("Report");
+        assert_eq!(app.workbook.get_sheet_names(), vec!["Sheet1", "Report"]);
+        assert_eq!(app.workbook.get_current_sheet_name(), "Report");
+        assert!(app.workbook.is_modified());
+
+        app.undo().unwrap();
+        assert_eq!(app.workbook.get_sheet_names(), vec!["Sheet1"]);
+        assert_eq!(app.workbook.get_current_sheet_name(), "Sheet1");
+        assert!(!app.workbook.is_modified());
+
+        app.redo().unwrap();
+        assert_eq!(app.workbook.get_sheet_names(), vec!["Sheet1", "Report"]);
+        assert_eq!(app.workbook.get_current_sheet_name(), "Report");
+        assert!(app.workbook.is_modified());
     }
 }

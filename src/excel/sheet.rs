@@ -8,3 +8,16 @@ pub struct Sheet {
     pub max_cols: usize,
     pub is_loaded: bool,
 }
+
+impl Sheet {
+    #[must_use]
+    pub fn blank(name: String) -> Self {
+        Self {
+            name,
+            data: vec![vec![Cell::empty(); 2]; 2],
+            max_rows: 1,
+            max_cols: 1,
+            is_loaded: true,
+        }
+    }
+}

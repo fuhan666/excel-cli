@@ -1,6 +1,6 @@
 use crate::actions::{
     ActionCommand, ActionExecutor, ActionType, CellAction, ColumnAction, MultiColumnAction,
-    MultiRowAction, RowAction, SheetAction,
+    MultiRowAction, RowAction, SheetAction, SheetOperation,
 };
 use crate::app::AppState;
 use crate::utils::index_to_col_name;
@@ -271,61 +271,31 @@ impl AppState<'_> {
     }
 
     fn apply_sheet_action(&mut self, sheet_action: &SheetAction, is_undo: bool) -> Result<()> {
-        if is_undo {
-            let sheet_index = sheet_action.sheet_index;
-
-            if let Err(e) = self
-                .workbook
-                .insert_sheet_at_index(sheet_action.sheet_data.clone(), sheet_index)
-            {
-                self.add_notification(format!(
-                    "Failed to restore sheet {}: {}",
-                    sheet_action.sheet_name, e
-                ));
-                return Ok(());
+        match (sheet_action.operation, is_undo) {
+            (SheetOperation::Delete, true) => {
+                self.restore_sheet_from_action(
+                    sheet_action,
+                    format!("Undid sheet {} deletion", sheet_action.sheet_name),
+                );
             }
-
-            self.sheet_column_widths.insert(
-                sheet_action.sheet_name.clone(),
-                sheet_action.column_widths.clone(),
-            );
-
-            // Initialize cell position for the restored sheet with default values
-            self.sheet_cell_positions.insert(
-                sheet_action.sheet_name.clone(),
-                crate::app::CellPosition {
-                    selected: (1, 1),
-                    view: (1, 1),
-                },
-            );
-
-            if let Err(e) = self.switch_sheet_by_index(sheet_index) {
-                self.add_notification(format!(
-                    "Restored sheet {} but couldn't switch to it: {}",
-                    sheet_action.sheet_name, e
-                ));
-            } else {
-                self.add_notification(format!("Undid sheet {} deletion", sheet_action.sheet_name));
+            (SheetOperation::Delete, false) => {
+                self.delete_sheet_from_action(
+                    sheet_action,
+                    format!("Redid deletion of sheet {}", sheet_action.sheet_name),
+                );
             }
-        } else {
-            if let Err(e) = self.switch_sheet_by_index(sheet_action.sheet_index) {
-                self.add_notification(format!(
-                    "Cannot switch to sheet {} to delete it: {}",
-                    sheet_action.sheet_name, e
-                ));
-                return Ok(());
+            (SheetOperation::Create, true) => {
+                self.delete_sheet_from_action(
+                    sheet_action,
+                    format!("Undid creation of sheet {}", sheet_action.sheet_name),
+                );
             }
-
-            if let Err(e) = self.workbook.delete_current_sheet() {
-                self.add_notification(format!("Failed to delete sheet: {e}"));
-                return Ok(());
+            (SheetOperation::Create, false) => {
+                self.restore_sheet_from_action(
+                    sheet_action,
+                    format!("Redid creation of sheet {}", sheet_action.sheet_name),
+                );
             }
-
-            self.cleanup_after_sheet_deletion(&sheet_action.sheet_name);
-            self.add_notification(format!(
-                "Redid deletion of sheet {}",
-                sheet_action.sheet_name
-            ));
         }
 
         Ok(())
@@ -370,6 +340,73 @@ impl AppState<'_> {
 
         self.search_results.clear();
         self.current_search_idx = None;
+        self.update_row_number_width();
+
+        let new_sheet_index = self.workbook.get_current_sheet_index();
+        if self.workbook.is_lazy_loading() && !self.workbook.is_sheet_loaded(new_sheet_index) {
+            self.input_mode = crate::app::InputMode::LazyLoading;
+        } else {
+            self.input_mode = crate::app::InputMode::Normal;
+        }
+    }
+
+    fn restore_sheet_from_action(&mut self, sheet_action: &SheetAction, notification: String) {
+        let sheet_index = sheet_action.sheet_index;
+
+        if let Err(e) = self
+            .workbook
+            .insert_sheet_at_index(sheet_action.sheet_data.clone(), sheet_index)
+        {
+            self.add_notification(format!(
+                "Failed to restore sheet {}: {}",
+                sheet_action.sheet_name, e
+            ));
+            return;
+        }
+
+        self.sheet_column_widths.insert(
+            sheet_action.sheet_name.clone(),
+            sheet_action.column_widths.clone(),
+        );
+
+        self.sheet_cell_positions.insert(
+            sheet_action.sheet_name.clone(),
+            crate::app::CellPosition {
+                selected: (1, 1),
+                view: (1, 1),
+            },
+        );
+
+        if let Err(e) = self.switch_sheet_by_index(sheet_index) {
+            self.add_notification(format!(
+                "Restored sheet {} but couldn't switch to it: {}",
+                sheet_action.sheet_name, e
+            ));
+            return;
+        }
+
+        self.notification_messages.pop();
+        self.add_notification(notification);
+    }
+
+    fn delete_sheet_from_action(&mut self, sheet_action: &SheetAction, notification: String) {
+        if let Err(e) = self.switch_sheet_by_index(sheet_action.sheet_index) {
+            self.add_notification(format!(
+                "Cannot switch to sheet {} to delete it: {}",
+                sheet_action.sheet_name, e
+            ));
+            return;
+        }
+
+        self.notification_messages.pop();
+
+        if let Err(e) = self.workbook.delete_current_sheet() {
+            self.add_notification(format!("Failed to delete sheet: {e}"));
+            return;
+        }
+
+        self.cleanup_after_sheet_deletion(&sheet_action.sheet_name);
+        self.add_notification(notification);
     }
 
     fn apply_multi_row_action(
@@ -602,8 +639,28 @@ impl ActionExecutor for AppState<'_> {
     }
 
     fn execute_sheet_action(&mut self, action: &SheetAction) -> Result<()> {
-        self.switch_sheet_by_index(action.sheet_index)?;
-        self.workbook.delete_current_sheet()
+        match action.operation {
+            SheetOperation::Create => {
+                self.workbook
+                    .insert_sheet_at_index(action.sheet_data.clone(), action.sheet_index)?;
+                self.sheet_column_widths
+                    .insert(action.sheet_name.clone(), action.column_widths.clone());
+                self.sheet_cell_positions.insert(
+                    action.sheet_name.clone(),
+                    crate::app::CellPosition {
+                        selected: (1, 1),
+                        view: (1, 1),
+                    },
+                );
+                self.switch_sheet_by_index(action.sheet_index)
+            }
+            SheetOperation::Delete => {
+                self.switch_sheet_by_index(action.sheet_index)?;
+                self.workbook.delete_current_sheet()?;
+                self.cleanup_after_sheet_deletion(&action.sheet_name);
+                Ok(())
+            }
+        }
     }
 
     fn execute_multi_row_action(&mut self, action: &MultiRowAction) -> Result<()> {

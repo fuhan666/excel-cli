@@ -359,17 +359,35 @@ impl Workbook {
         Ok(())
     }
 
+    pub fn add_sheet(&mut self, name: &str, index: usize) -> Result<String> {
+        let sheet_name = name.trim();
+
+        self.validate_sheet_name(sheet_name)?;
+        self.insert_sheet_at_index(Sheet::blank(sheet_name.to_string()), index)?;
+
+        Ok(sheet_name.to_string())
+    }
+
     pub fn delete_current_sheet(&mut self) -> Result<()> {
+        self.delete_sheet_at_index(self.current_sheet_index)
+    }
+
+    pub fn delete_sheet_at_index(&mut self, index: usize) -> Result<()> {
         // Prevent deleting the last sheet
         if self.sheets.len() <= 1 {
             anyhow::bail!("Cannot delete the last sheet");
         }
 
-        self.sheets.remove(self.current_sheet_index);
+        if index >= self.sheets.len() {
+            anyhow::bail!("Sheet index out of range");
+        }
+
+        self.sheets.remove(index);
         self.is_modified = true;
 
-        // Adjust current_sheet_index
-        if self.current_sheet_index >= self.sheets.len() {
+        if index < self.current_sheet_index {
+            self.current_sheet_index = self.current_sheet_index.saturating_sub(1);
+        } else if self.current_sheet_index >= self.sheets.len() {
             self.current_sheet_index = self.sheets.len() - 1;
         }
 
@@ -554,6 +572,8 @@ impl Workbook {
             return Ok(());
         }
 
+        self.ensure_all_sheets_loaded()?;
+
         // Create a new workbook with rust_xlsxwriter
         let mut workbook = XlsxWorkbook::new();
 
@@ -653,6 +673,11 @@ impl Workbook {
                 self.sheets.len()
             );
         }
+
+        if index <= self.current_sheet_index {
+            self.current_sheet_index += 1;
+        }
+
         self.sheets.insert(index, sheet);
         self.is_modified = true;
         Ok(())
@@ -694,5 +719,134 @@ impl Workbook {
             .unwrap_or(0);
 
         sheet.max_rows = actual_max_row.max(1);
+    }
+
+    fn ensure_all_sheets_loaded(&mut self) -> Result<()> {
+        if !self.lazy_loading {
+            return Ok(());
+        }
+
+        let pending_sheets: Vec<(usize, String)> = self
+            .sheets
+            .iter()
+            .enumerate()
+            .filter(|(_, sheet)| !sheet.is_loaded)
+            .map(|(index, sheet)| (index, sheet.name.clone()))
+            .collect();
+
+        for (index, name) in pending_sheets {
+            self.ensure_sheet_loaded(index, &name)?;
+        }
+
+        Ok(())
+    }
+
+    fn validate_sheet_name(&self, name: &str) -> Result<()> {
+        if name.is_empty() {
+            anyhow::bail!("Sheet name cannot be empty");
+        }
+
+        if name.chars().count() > 31 {
+            anyhow::bail!("Sheet name cannot exceed 31 characters");
+        }
+
+        if name.starts_with('\'') || name.ends_with('\'') {
+            anyhow::bail!("Sheet name cannot start or end with apostrophes");
+        }
+
+        if name
+            .chars()
+            .any(|c| matches!(c, '[' | ']' | ':' | '*' | '?' | '/' | '\\'))
+        {
+            anyhow::bail!("Sheet name cannot contain any of these characters: [ ] : * ? / \\");
+        }
+
+        if self
+            .sheets
+            .iter()
+            .any(|sheet| sheet.name.eq_ignore_ascii_case(name))
+        {
+            anyhow::bail!("Sheet '{}' already exists", name);
+        }
+
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_sheets_for_test(sheets: Vec<Sheet>) -> Self {
+        let loaded_sheets = (0..sheets.len()).collect();
+
+        Self {
+            sheets,
+            current_sheet_index: 0,
+            file_path: "test.xlsx".to_string(),
+            is_modified: false,
+            calamine_workbook: CalamineWorkbook::None,
+            lazy_loading: false,
+            loaded_sheets,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Workbook;
+    use crate::excel::Sheet;
+
+    fn blank_sheet(name: &str) -> Sheet {
+        Sheet::blank(name.to_string())
+    }
+
+    #[test]
+    fn adds_blank_sheet_after_current_sheet() {
+        let mut workbook =
+            Workbook::from_sheets_for_test(vec![blank_sheet("Sheet1"), blank_sheet("Sheet2")]);
+
+        let sheet_name = workbook.add_sheet("Added", 1).unwrap();
+
+        assert_eq!(sheet_name, "Added");
+        assert_eq!(
+            workbook.get_sheet_names(),
+            vec!["Sheet1", "Added", "Sheet2"]
+        );
+
+        let added_sheet = workbook.get_sheet_by_index(1).unwrap();
+        assert_eq!(added_sheet.name, "Added");
+        assert_eq!(added_sheet.max_rows, 1);
+        assert_eq!(added_sheet.max_cols, 1);
+        assert!(added_sheet.is_loaded);
+        assert_eq!(added_sheet.data.len(), 2);
+        assert_eq!(added_sheet.data[1].len(), 2);
+    }
+
+    #[test]
+    fn rejects_duplicate_sheet_names_case_insensitively() {
+        let mut workbook = Workbook::from_sheets_for_test(vec![blank_sheet("Summary")]);
+
+        let error = workbook.add_sheet("summary", 1).unwrap_err().to_string();
+
+        assert!(error.contains("already exists"));
+    }
+
+    #[test]
+    fn rejects_invalid_sheet_names() {
+        let mut workbook = Workbook::from_sheets_for_test(vec![blank_sheet("Sheet1")]);
+
+        assert!(workbook.add_sheet("", 1).is_err());
+        assert!(workbook.add_sheet("Bad/Name", 1).is_err());
+        assert!(workbook.add_sheet("'quoted", 1).is_err());
+        assert!(workbook
+            .add_sheet("this-sheet-name-is-definitely-too-long", 1)
+            .is_err());
+    }
+
+    #[test]
+    fn counts_sheet_name_length_by_characters() {
+        let mut workbook = Workbook::from_sheets_for_test(vec![blank_sheet("Sheet1")]);
+        let valid_name = "表".repeat(31);
+        let invalid_name = "表".repeat(32);
+
+        assert!(workbook.add_sheet(&valid_name, 1).is_ok());
+        assert!(workbook.add_sheet(&invalid_name, 2).is_err());
     }
 }
