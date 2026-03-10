@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-03-10
+
+### Fixed
+
+- Publish crates.io release with the correct crate version after the `v0.4.0` GitHub release
+
 ## [0.4.0] - 2026-03-10
 
 ### Added
@@ -86,7 +92,8 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/fuhan666/excel-cli/releases/tag/v0.4.1
 [0.4.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.4.0
 [0.3.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.3.0
 [0.2.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.2.0
