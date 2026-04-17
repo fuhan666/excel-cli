@@ -60,6 +60,21 @@ cargo uninstall excel-cli
 # Open an Excel file in interactive mode
 excel-cli path/to/your/file.xlsx
 
+# List all sheets
+excel-cli path/to/your/file.xlsx --sheets
+
+# Show sheet metadata
+excel-cli path/to/your/file.xlsx --sheet Orders
+
+# Peek a range (TSV output)
+excel-cli path/to/your/file.xlsx --peek Orders!A1:F10
+
+# Read a single cell value
+excel-cli path/to/your/file.xlsx --cell Summary!B2
+
+# Export a single sheet to JSON
+excel-cli path/to/your/file.xlsx --sheet Orders --json-export
+
 # Export all sheets to JSON and output to stdout (for piping)
 excel-cli path/to/your/file.xlsx --json-export
 
@@ -72,10 +87,23 @@ excel-cli path/to/your/file.xlsx -j > data.json # (example) Save JSON output to 
 
 ### Command-line Options
 
-- `--json-export`, `-j`: Export all sheets to JSON and output to stdout (for piping)
-- `--direction`, `-d`: Header direction in Excel: 'h' for horizontal (top rows), 'v' for vertical (left columns). Default: 'h'
-- `--header-count`, `-r`: Number of header rows (for horizontal) or columns (for vertical) in Excel. Default: 1
+- `--sheets`, `-s`: List all sheets and exit
+- `--sheet <sheet>`: Target sheet for inspect or export (by name or 0-based index)
+- `--peek <sheet>!<range>`, `-p <sheet>!<range>`: Peek a range and exit (e.g., `Orders!A1:F10`)
+- `--cell <sheet>!<cell>`, `-c <sheet>!<cell>`: Read a single cell and exit (e.g., `Summary!B2`)
+- `--format <text|json>`, `-f <text|json>`: Output format for inspect commands. Default: `text`
+- `--json-export`, `-j`: Export to JSON and output to stdout (for piping). When combined with `--sheet`, exports only that sheet
+- `--direction`, `-d`: Header direction in JSON export: 'h' for horizontal (top rows), 'v' for vertical (left columns). Default: 'h'
+- `--header-count`, `-r`: Number of header rows (for horizontal) or columns (for vertical) in JSON export. Default: 1
 - `--lazy-loading`, `-l`: Enable lazy loading for large Excel files (only loads data when needed)
+
+**Inspect command output rules:**
+- `stdout` only contains data
+- `stderr` only contains errors
+- Success returns exit code `0`
+- Failure returns a non-zero exit code
+- Out-of-bounds ranges are clamped to the actual sheet bounds
+- Empty cells output an empty string in text mode and `null` in JSON mode
 
 ## User Interface
 

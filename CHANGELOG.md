@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-17
+
+### Added
+
+- Added AI-friendly headless inspect/query commands:
+  - `--sheets` to list all sheets
+  - `--sheet <sheet>` to show sheet metadata
+  - `--peek <sheet>!<range>` to preview a cell range
+  - `--cell <sheet>!<cell>` to read a single cell value
+  - `--sheet <sheet> --json-export` to export a single sheet to JSON
+- Added `--format <text|json>` flag for inspect commands
+- Added A1 notation parsing helpers for range and cell references
+- Added `Workbook::resolve_sheet` and `Workbook::get_used_range` utilities
+
+### Changed
+
+- `--json-export` now also supports `--sheet` to export a single sheet instead of the whole workbook
+- Inspect commands output only data to stdout and errors to stderr with stable exit codes
+- Out-of-bounds peek ranges are clamped to actual sheet bounds
+- Empty cells output empty string in text mode and `null` in JSON mode
+
 ## [0.4.2] - 2026-03-10
 
 ### Fixed
@@ -98,7 +119,8 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.0
 [0.4.2]: https://github.com/fuhan666/excel-cli/releases/tag/v0.4.2
 [0.4.1]: https://github.com/fuhan666/excel-cli/releases/tag/v0.4.1
 [0.4.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.4.0

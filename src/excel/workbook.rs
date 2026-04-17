@@ -8,6 +8,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 use crate::excel::{Cell, CellType, DataTypeInfo, Sheet};
+use crate::utils::index_to_col_name;
 
 pub enum CalamineWorkbook {
     Xlsx(Box<Xlsx<BufReader<File>>>),
@@ -282,6 +283,43 @@ impl Workbook {
 
     pub fn get_sheet_by_index(&self, index: usize) -> Option<&Sheet> {
         self.sheets.get(index)
+    }
+
+    pub fn get_sheet_by_name(&self, name: &str) -> Option<&Sheet> {
+        self.sheets.iter().find(|s| s.name == name)
+    }
+
+    /// Resolve a sheet specifier (name or 0-based index) to a sheet index.
+    pub fn resolve_sheet(&self, spec: &str) -> Result<usize> {
+        // Try parsing as 0-based index first
+        if let Ok(index) = spec.parse::<usize>() {
+            if index < self.sheets.len() {
+                return Ok(index);
+            }
+        }
+
+        // Try matching by exact name
+        if let Some(index) = self.sheets.iter().position(|s| s.name == spec) {
+            return Ok(index);
+        }
+
+        anyhow::bail!("Sheet '{}' not found", spec)
+    }
+
+    /// Get the used range of a sheet in A1 notation (e.g., "A1:H2048").
+    /// Returns an empty string if the sheet has no data.
+    pub fn get_used_range(&self, sheet_index: usize) -> Result<String> {
+        let sheet = self
+            .sheets
+            .get(sheet_index)
+            .ok_or_else(|| anyhow::anyhow!("Sheet index out of range"))?;
+
+        if sheet.max_rows == 0 || sheet.max_cols == 0 {
+            return Ok(String::new());
+        }
+
+        let end_col = index_to_col_name(sheet.max_cols);
+        Ok(format!("A1:{}{}", end_col, sheet.max_rows))
     }
 
     pub fn ensure_cell_exists(&mut self, row: usize, col: usize) {
@@ -848,5 +886,43 @@ mod tests {
 
         assert!(workbook.add_sheet(&valid_name, 1).is_ok());
         assert!(workbook.add_sheet(&invalid_name, 2).is_err());
+    }
+
+    #[test]
+    fn resolves_sheet_by_index_and_name() {
+        let workbook = Workbook::from_sheets_for_test(vec![
+            blank_sheet("Sheet1"),
+            blank_sheet("Orders"),
+            blank_sheet("客户"),
+        ]);
+
+        assert_eq!(workbook.resolve_sheet("0").unwrap(), 0);
+        assert_eq!(workbook.resolve_sheet("2").unwrap(), 2);
+        assert_eq!(workbook.resolve_sheet("Sheet1").unwrap(), 0);
+        assert_eq!(workbook.resolve_sheet("Orders").unwrap(), 1);
+        assert_eq!(workbook.resolve_sheet("客户").unwrap(), 2);
+
+        assert!(workbook.resolve_sheet("99").is_err());
+        assert!(workbook.resolve_sheet("Missing").is_err());
+    }
+
+    #[test]
+    fn computes_used_range_for_sheet() {
+        let mut sheet = Sheet::blank("Test".to_string());
+        sheet.max_rows = 10;
+        sheet.max_cols = 5;
+        let workbook = Workbook::from_sheets_for_test(vec![sheet]);
+
+        assert_eq!(workbook.get_used_range(0).unwrap(), "A1:E10");
+        assert!(workbook.get_used_range(99).is_err());
+    }
+
+    #[test]
+    fn empty_sheet_has_no_used_range() {
+        let mut sheet = Sheet::blank("Empty".to_string());
+        sheet.max_rows = 0;
+        sheet.max_cols = 0;
+        let workbook = Workbook::from_sheets_for_test(vec![sheet]);
+        assert_eq!(workbook.get_used_range(0).unwrap(), "");
     }
 }
