@@ -35,7 +35,7 @@ struct Cli {
     lazy_loading: bool,
 
     /// List all sheets and exit
-    #[arg(long)]
+    #[arg(long, short = 's')]
     sheets: bool,
 
     /// Target sheet for inspect or export (by name or 0-based index)

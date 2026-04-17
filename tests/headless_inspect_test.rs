@@ -82,6 +82,36 @@ fn test_sheets_text_output() {
 }
 
 #[test]
+fn test_sheets_short_flag() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_sheets_short.xlsx");
+    create_test_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg(&file_path)
+        .arg("-s")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("0\tSummary"),
+        "Expected Summary sheet, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("1\tOrders"),
+        "Expected Orders sheet, got: {}",
+        stdout
+    );
+}
+
+#[test]
 fn test_sheets_json_output() {
     let temp_dir = std::env::temp_dir();
     let file_path = temp_dir.join("excel_cli_test_sheets_json.xlsx");
@@ -197,7 +227,7 @@ fn test_sheet_info_json() {
     let json: serde_json::Value = serde_json::from_str(&stdout).expect("Invalid JSON output");
     assert_eq!(json["name"], "Orders");
     assert_eq!(json["index"], 1);
-    assert!(json["used_range"].as_str().unwrap().len() > 0);
+    assert!(!json["used_range"].as_str().unwrap().is_empty());
     assert_eq!(json["max_rows"], 2);
     assert_eq!(json["max_cols"], 2);
 }
