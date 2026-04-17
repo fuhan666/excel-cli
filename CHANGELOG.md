@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-17
+
+### Fixed
+
+- Prevent process panic when opening malformed XLSX files with invalid shared-string references. Parser panics from `calamine` are now caught and converted into controlled `anyhow` errors with a non-zero exit code.
+
 ## [0.5.0] - 2026-04-17
 
 ### Added
@@ -119,7 +125,8 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.1
 [0.5.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.0
 [0.4.2]: https://github.com/fuhan666/excel-cli/releases/tag/v0.4.2
 [0.4.1]: https://github.com/fuhan666/excel-cli/releases/tag/v0.4.1

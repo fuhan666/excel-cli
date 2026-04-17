@@ -5,6 +5,7 @@ use rust_xlsxwriter::{Format, Workbook as XlsxWorkbook};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufReader;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
 use crate::excel::{Cell, CellType, DataTypeInfo, Sheet};
@@ -47,6 +48,25 @@ impl Clone for Workbook {
 }
 
 pub fn open_workbook<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Result<Workbook> {
+    let path_str = path.as_ref().to_string_lossy().to_string();
+
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        open_workbook_impl(path.as_ref(), enable_lazy_loading)
+    }));
+    std::panic::set_hook(hook);
+
+    match result {
+        Ok(inner) => inner,
+        Err(_) => anyhow::bail!(
+            "Unable to parse Excel file: {} (parser panic: malformed workbook data)",
+            path_str
+        ),
+    }
+}
+
+fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Result<Workbook> {
     let path_str = path.as_ref().to_string_lossy().to_string();
     let path_ref = path.as_ref();
 
@@ -242,38 +262,57 @@ impl Workbook {
         }
 
         // Load the sheet data from the calamine workbook
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
         match &mut self.calamine_workbook {
             CalamineWorkbook::Xlsx(xlsx) => {
-                if let Ok(range) = xlsx.worksheet_range(sheet_name) {
-                    // Replace the placeholder sheet with a fully loaded one
-                    let mut sheet = create_sheet_from_range(sheet_name, range);
-
-                    // Preserve the original name in case it was customized
-                    let original_name = self.sheets[sheet_index].name.clone();
-                    sheet.name = original_name;
-
-                    self.sheets[sheet_index] = sheet;
-
-                    // Mark the sheet as loaded
-                    self.loaded_sheets.insert(sheet_index);
+                let result = catch_unwind(AssertUnwindSafe(|| xlsx.worksheet_range(sheet_name)));
+                std::panic::set_hook(hook);
+                match result {
+                    Ok(Ok(range)) => {
+                        let mut sheet = create_sheet_from_range(sheet_name, range);
+                        let original_name = self.sheets[sheet_index].name.clone();
+                        sheet.name = original_name;
+                        self.sheets[sheet_index] = sheet;
+                        self.loaded_sheets.insert(sheet_index);
+                    }
+                    Ok(Err(_)) => {
+                        // Non-panic parse error: leave sheet unloaded and continue
+                    }
+                    Err(_) => {
+                        self.calamine_workbook = CalamineWorkbook::None;
+                        return Err(anyhow::anyhow!(
+                            "Unable to read worksheet '{}': parser panic: malformed workbook data",
+                            sheet_name
+                        ));
+                    }
                 }
             }
             CalamineWorkbook::Xls(xls) => {
-                if let Ok(range) = xls.worksheet_range(sheet_name) {
-                    // Replace the placeholder sheet with a fully loaded one
-                    let mut sheet = create_sheet_from_range(sheet_name, range);
-
-                    // Preserve the original name in case it was customized
-                    let original_name = self.sheets[sheet_index].name.clone();
-                    sheet.name = original_name;
-
-                    self.sheets[sheet_index] = sheet;
-
-                    // Mark the sheet as loaded
-                    self.loaded_sheets.insert(sheet_index);
+                let result = catch_unwind(AssertUnwindSafe(|| xls.worksheet_range(sheet_name)));
+                std::panic::set_hook(hook);
+                match result {
+                    Ok(Ok(range)) => {
+                        let mut sheet = create_sheet_from_range(sheet_name, range);
+                        let original_name = self.sheets[sheet_index].name.clone();
+                        sheet.name = original_name;
+                        self.sheets[sheet_index] = sheet;
+                        self.loaded_sheets.insert(sheet_index);
+                    }
+                    Ok(Err(_)) => {
+                        // Non-panic parse error: leave sheet unloaded and continue
+                    }
+                    Err(_) => {
+                        self.calamine_workbook = CalamineWorkbook::None;
+                        return Err(anyhow::anyhow!(
+                            "Unable to read worksheet '{}': parser panic: malformed workbook data",
+                            sheet_name
+                        ));
+                    }
                 }
             }
             CalamineWorkbook::None => {
+                std::panic::set_hook(hook);
                 return Err(anyhow::anyhow!("Cannot load sheet: no workbook available"));
             }
         }
