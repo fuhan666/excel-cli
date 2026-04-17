@@ -93,7 +93,12 @@ fn main() -> Result<()> {
 
     if let Some(sheet_spec) = cli.sheet {
         if cli.json_export {
-            return export_single_sheet(&mut workbook, &sheet_spec, &cli.direction, cli.header_count);
+            return export_single_sheet(
+                &mut workbook,
+                &sheet_spec,
+                &cli.direction,
+                cli.header_count,
+            );
         }
         return sheet_info(&mut workbook, &sheet_spec, &cli.format);
     }
