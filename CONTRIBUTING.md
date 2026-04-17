@@ -1,6 +1,6 @@
 # Contributing to excel-cli
 
-Thank you for your interest in contributing! This document defines the collaboration workflow for all contributors and automated agents working on this repository.
+Thank you for your interest in contributing! This document defines the collaboration workflow for all contributors working on this repository.
 
 ## Workflow: GitHub Flow
 
@@ -66,13 +66,3 @@ chore: bump version to 0.5.0
 - Provide a clear summary of what changed and why.
 - Reference related issues using `Closes #<number>` or `Relates to #<number>`.
 - Ensure CI checks pass before requesting review.
-
-## Agent-Specific Notes
-
-For AI coding agents working in this Multica workspace:
-
-- Use planner-first execution: let the Plan Agent produce an execution-ready plan before the Coding Agent implements it.
-- Create branches according to the naming convention above.
-- Every commit message must be in English and follow Conventional Commits.
-- Every PR title and body must be in English.
-- Do not commit directly to `main`.
