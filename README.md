@@ -256,6 +256,10 @@ Excel-CLI uses a non-destructive approach to file saving:
 - rust_xlsxwriter for writing Excel files
 - serde_json for JSON serialization
 
+## Contributing
+
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, commit message, and Pull Request conventions.
+
 ## License
 
 MIT

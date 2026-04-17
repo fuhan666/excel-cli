@@ -256,6 +256,10 @@ Excel-CLI 使用非破坏性的文件保存方法：
 - 使用 rust_xlsxwriter 写入 Excel 文件
 - 使用 serde_json 进行 JSON 序列化
 
+## 贡献指南
+
+请参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 了解分支命名、提交信息和 Pull Request 规范（英文）。
+
 ## 许可证
 
 MIT
