@@ -644,7 +644,7 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
     app_state.help_visible_lines = visible_lines;
 
     let line_count = app_state.help_text.lines().count();
-    let max_scroll = line_count.saturating_sub(visible_lines).max(0);
+    let max_scroll = line_count.saturating_sub(visible_lines);
 
     app_state.help_scroll = app_state.help_scroll.min(max_scroll);
 

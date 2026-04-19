@@ -366,7 +366,7 @@ fn handle_help_mode(app_state: &mut AppState, key_code: KeyCode) {
 
     let visible_lines = app_state.help_visible_lines;
 
-    let max_scroll = line_count.saturating_sub(visible_lines).max(0);
+    let max_scroll = line_count.saturating_sub(visible_lines);
 
     match key_code {
         KeyCode::Enter | KeyCode::Esc => {
