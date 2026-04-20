@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-20
+
+### Fixed
+
+- Remove redundant `.max(0)` calls after `saturating_sub` to satisfy clippy's `unnecessary_min_or_max` lint without changing behavior.
+
 ## [0.5.1] - 2026-04-17
 
 ### Fixed
