@@ -41,23 +41,73 @@ fn create_test_workbook(path: &std::path::Path) {
     workbook.save(path).unwrap();
 }
 
+fn create_read_contract_workbook(path: &std::path::Path) {
+    use rust_xlsxwriter::{ExcelDateTime, Format, Workbook as XlsxWorkbook};
+
+    let mut workbook = XlsxWorkbook::new();
+
+    let typed_sheet = workbook.add_worksheet();
+    typed_sheet.set_name("TypedCells").unwrap();
+    typed_sheet.write_string(0, 0, "text_value").unwrap();
+    typed_sheet.write_string(0, 1, "number_value").unwrap();
+    typed_sheet.write_string(0, 2, "date_value").unwrap();
+    typed_sheet.write_string(0, 3, "boolean_value").unwrap();
+    typed_sheet.write_string(0, 4, "formula_value").unwrap();
+    typed_sheet.write_string(0, 5, "empty_value").unwrap();
+    typed_sheet.write_string(1, 0, "hello").unwrap();
+    typed_sheet.write_number(1, 1, 42.5).unwrap();
+    let date_format = Format::new().set_num_format("yyyy-mm-dd");
+    let date = ExcelDateTime::from_ymd(2024, 2, 3).unwrap();
+    typed_sheet
+        .write_datetime_with_format(1, 2, &date, &date_format)
+        .unwrap();
+    typed_sheet.write_boolean(1, 3, true).unwrap();
+    typed_sheet.write_formula(1, 4, "=B2*2").unwrap();
+    typed_sheet.set_formula_result(1, 4, "85");
+
+    let rows_sheet = workbook.add_worksheet();
+    rows_sheet.set_name("RowCases").unwrap();
+    rows_sheet.write_string(0, 0, "Quarterly export").unwrap();
+    rows_sheet.write_string(1, 0, "order_id").unwrap();
+    rows_sheet.write_string(1, 1, "customer").unwrap();
+    rows_sheet.write_string(1, 2, "customer").unwrap();
+    rows_sheet.write_string(2, 0, "1001").unwrap();
+    rows_sheet.write_string(2, 1, "Alice").unwrap();
+    rows_sheet.write_string(2, 2, "VIP").unwrap();
+    rows_sheet.write_boolean(2, 3, true).unwrap();
+    rows_sheet.write_string(3, 0, "1002").unwrap();
+    rows_sheet.write_string(3, 1, "Bob").unwrap();
+    rows_sheet.write_string(3, 2, "Standard").unwrap();
+    rows_sheet.write_boolean(3, 3, false).unwrap();
+
+    workbook.save(path).unwrap();
+}
+
 fn assert_json_success(output: &std::process::Output) -> serde_json::Value {
     assert!(
         output.status.success(),
         "Expected success. stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert!(
+        output.stderr.is_empty(),
+        "Expected empty stderr on success. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     serde_json::from_slice(&output.stdout).expect("Expected valid JSON output")
 }
 
 fn assert_json_error(output: &std::process::Output, expected_exit_code: i32) {
+    assert!(!output.status.success(), "Expected failure but got success");
     assert!(
-        !output.status.success(),
-        "Expected failure but got success"
+        output.stdout.is_empty(),
+        "Expected empty stdout on error. stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
     );
     let actual = output.status.code().unwrap_or(-1);
     assert_eq!(
-        actual, expected_exit_code,
+        actual,
+        expected_exit_code,
         "Expected exit code {}, got {}. stderr: {}",
         expected_exit_code,
         actual,
@@ -66,9 +116,18 @@ fn assert_json_error(output: &std::process::Output, expected_exit_code: i32) {
     // Error should be valid JSON on stderr
     let err_json: serde_json::Value =
         serde_json::from_slice(&output.stderr).expect("Expected valid JSON error on stderr");
-    assert!(err_json["error"].is_object(), "Error envelope missing error field");
-    assert!(err_json["error"]["code"].is_string(), "Error code should be a string");
-    assert!(err_json["error"]["message"].is_string(), "Error message should be a string");
+    assert!(
+        err_json["error"].is_object(),
+        "Error envelope missing error field"
+    );
+    assert!(
+        err_json["error"]["code"].is_string(),
+        "Error code should be a string"
+    );
+    assert!(
+        err_json["error"]["message"].is_string(),
+        "Error message should be a string"
+    );
 }
 
 #[test]
@@ -87,7 +146,10 @@ fn test_inspect_workbook_json() {
     let json = assert_json_success(&output);
     assert_eq!(json["schema_version"], "1.0");
     assert_eq!(json["command"], "inspect.workbook");
-    assert!(json["file"]["path"].as_str().unwrap().contains("excel_cli_test_inspect_workbook"));
+    assert!(json["file"]["path"]
+        .as_str()
+        .unwrap()
+        .contains("excel_cli_test_inspect_workbook"));
     assert_eq!(json["file"]["format"], "xlsx");
     assert_eq!(json["data"]["sheet_count"], 4);
 
@@ -344,6 +406,30 @@ fn test_read_cell_invalid_reference() {
 }
 
 #[test]
+fn test_read_cell_formula_reports_formula_metadata() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_cell_formula.xlsx");
+    create_read_contract_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("cell")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("TypedCells")
+        .arg("--cell")
+        .arg("E2")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    assert_eq!(json["data"]["cell"], "E2");
+    assert_eq!(json["data"]["type"], "formula");
+    assert_eq!(json["data"]["value"], 85);
+    assert_eq!(json["data"]["formula"], "=B2*2");
+}
+
+#[test]
 fn test_read_range_json() {
     let temp_dir = std::env::temp_dir();
     let file_path = temp_dir.join("excel_cli_test_read_range.xlsx");
@@ -413,6 +499,34 @@ fn test_read_range_invalid_format() {
         .expect("Failed to execute excel-cli");
 
     assert_json_error(&output, 6); // EXIT_INVALID_QUERY
+}
+
+#[test]
+fn test_read_range_preserves_typed_values() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_range_typed.xlsx");
+    create_read_contract_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("range")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("TypedCells")
+        .arg("--range")
+        .arg("A2:F2")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    let rows = json["data"]["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0][0], "hello");
+    assert_eq!(rows[0][1], 42.5);
+    assert_eq!(rows[0][2], "2024-02-03");
+    assert_eq!(rows[0][3], true);
+    assert_eq!(rows[0][4], 85);
+    assert!(rows[0][5].is_null());
 }
 
 #[test]
@@ -486,6 +600,62 @@ fn test_read_rows_no_header() {
     assert_eq!(json["data"]["mode"], "rows");
     let rows = json["data"]["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
+}
+
+#[test]
+fn test_read_rows_auto_skips_preamble_and_keeps_unique_keys() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_rows_auto_contract.xlsx");
+    create_read_contract_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("rows")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("RowCases")
+        .arg("--range")
+        .arg("A1:D4")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    assert_eq!(json["data"]["mode"], "records");
+    assert_eq!(json["data"]["resolved_header_row"], 2);
+    let records = json["data"]["records"].as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["order_id"], "1001");
+    assert_eq!(records[0]["customer"], "Alice");
+    assert_eq!(records[0]["customer_2"], "VIP");
+    assert_eq!(records[0]["col_D"], true);
+    assert_eq!(records[1]["order_id"], "1002");
+}
+
+#[test]
+fn test_read_rows_explicit_header_row_respects_selected_range() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_rows_explicit_contract.xlsx");
+    create_read_contract_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("rows")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("RowCases")
+        .arg("--range")
+        .arg("A1:D4")
+        .arg("--header-row")
+        .arg("2")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    assert_eq!(json["data"]["mode"], "records");
+    assert_eq!(json["data"]["resolved_header_row"], 2);
+    let records = json["data"]["records"].as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    assert!(records[0].get("Quarterly export").is_none());
 }
 
 #[test]

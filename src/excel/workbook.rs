@@ -132,7 +132,8 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
                 .worksheet_range(name)
                 .with_context(|| format!("Unable to read worksheet: {}", name))?;
 
-            let mut sheet = create_sheet_from_range(name, range);
+            let formula_range = workbook.worksheet_formula(name).ok();
+            let mut sheet = create_sheet_from_range(name, range, formula_range);
             sheet.is_loaded = true;
             sheets.push(sheet);
         }
@@ -161,7 +162,11 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
     })
 }
 
-fn create_sheet_from_range(name: &str, range: calamine::Range<Data>) -> Sheet {
+fn create_sheet_from_range(
+    name: &str,
+    range: calamine::Range<Data>,
+    formula_range: Option<calamine::Range<String>>,
+) -> Sheet {
     let (height, width) = range.get_size();
 
     // Create a data grid with empty cells, adding 1 to dimensions for 1-based indexing
@@ -238,6 +243,24 @@ fn create_sheet_from_range(name: &str, range: calamine::Range<Data>) -> Sheet {
             Cell::new_with_type(value, is_formula, cell_type, original_type);
     }
 
+    if let Some(formulas) = formula_range {
+        for (row_idx, col_idx, formula) in formulas.used_cells() {
+            if formula.is_empty() {
+                continue;
+            }
+
+            let normalized = if formula.starts_with('=') {
+                formula.to_string()
+            } else {
+                format!("={formula}")
+            };
+
+            let cell = &mut data[row_idx + 1][col_idx + 1];
+            cell.is_formula = true;
+            cell.formula = Some(normalized);
+        }
+    }
+
     Sheet {
         name: name.to_string(),
         data,
@@ -270,7 +293,8 @@ impl Workbook {
                 std::panic::set_hook(hook);
                 match result {
                     Ok(Ok(range)) => {
-                        let mut sheet = create_sheet_from_range(sheet_name, range);
+                        let formula_range = xlsx.worksheet_formula(sheet_name).ok();
+                        let mut sheet = create_sheet_from_range(sheet_name, range, formula_range);
                         let original_name = self.sheets[sheet_index].name.clone();
                         sheet.name = original_name;
                         self.sheets[sheet_index] = sheet;
@@ -293,7 +317,8 @@ impl Workbook {
                 std::panic::set_hook(hook);
                 match result {
                     Ok(Ok(range)) => {
-                        let mut sheet = create_sheet_from_range(sheet_name, range);
+                        let formula_range = xls.worksheet_formula(sheet_name).ok();
+                        let mut sheet = create_sheet_from_range(sheet_name, range, formula_range);
                         let original_name = self.sheets[sheet_index].name.clone();
                         sheet.name = original_name;
                         self.sheets[sheet_index] = sheet;
@@ -376,9 +401,7 @@ impl Workbook {
         let mut count = 0;
         for row in 1..=sheet.max_rows {
             if row < sheet.data.len() {
-                let has_data = sheet.data[row]
-                    .iter()
-                    .any(|cell| !cell.value.is_empty());
+                let has_data = sheet.data[row].iter().any(|cell| !cell.value.is_empty());
                 if has_data {
                     count += 1;
                 }
@@ -412,7 +435,10 @@ impl Workbook {
 
     /// Find header row candidates for a sheet.
     /// Returns (candidates[], recommended_header_row).
-    pub fn find_header_candidates(&self, sheet_index: usize) -> Result<(Vec<usize>, Option<usize>)> {
+    pub fn find_header_candidates(
+        &self,
+        sheet_index: usize,
+    ) -> Result<(Vec<usize>, Option<usize>)> {
         let sheet = self
             .sheets
             .get(sheet_index)
@@ -808,6 +834,17 @@ impl Workbook {
                             let row_idx = (row - 1) as u32;
                             let col_idx = (col - 1) as u16;
 
+                            if cell.is_formula {
+                                let formula_text =
+                                    cell.formula.as_deref().unwrap_or(cell.value.as_str());
+                                let formula = rust_xlsxwriter::Formula::new(formula_text);
+                                worksheet.write_formula(row_idx, col_idx, formula)?;
+                                if !cell.value.is_empty() && cell.value != formula_text {
+                                    worksheet.set_formula_result(row_idx, col_idx, &cell.value);
+                                }
+                                continue;
+                            }
+
                             // Write cell based on its type
                             match cell.cell_type {
                                 CellType::Number => {
@@ -838,12 +875,7 @@ impl Workbook {
                                     }
                                 }
                                 CellType::Text => {
-                                    if cell.is_formula {
-                                        let formula = rust_xlsxwriter::Formula::new(&cell.value);
-                                        worksheet.write_formula(row_idx, col_idx, formula)?;
-                                    } else {
-                                        worksheet.write_string(row_idx, col_idx, &cell.value)?;
-                                    }
+                                    worksheet.write_string(row_idx, col_idx, &cell.value)?;
                                 }
                                 CellType::Empty => {}
                             }
