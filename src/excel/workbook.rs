@@ -132,7 +132,8 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
                 .worksheet_range(name)
                 .with_context(|| format!("Unable to read worksheet: {}", name))?;
 
-            let mut sheet = create_sheet_from_range(name, range);
+            let formula_range = workbook.worksheet_formula(name).ok();
+            let mut sheet = create_sheet_from_range(name, range, formula_range);
             sheet.is_loaded = true;
             sheets.push(sheet);
         }
@@ -161,7 +162,11 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
     })
 }
 
-fn create_sheet_from_range(name: &str, range: calamine::Range<Data>) -> Sheet {
+fn create_sheet_from_range(
+    name: &str,
+    range: calamine::Range<Data>,
+    formula_range: Option<calamine::Range<String>>,
+) -> Sheet {
     let (height, width) = range.get_size();
 
     // Create a data grid with empty cells, adding 1 to dimensions for 1-based indexing
@@ -238,6 +243,24 @@ fn create_sheet_from_range(name: &str, range: calamine::Range<Data>) -> Sheet {
             Cell::new_with_type(value, is_formula, cell_type, original_type);
     }
 
+    if let Some(formulas) = formula_range {
+        for (row_idx, col_idx, formula) in formulas.used_cells() {
+            if formula.is_empty() {
+                continue;
+            }
+
+            let normalized = if formula.starts_with('=') {
+                formula.to_string()
+            } else {
+                format!("={formula}")
+            };
+
+            let cell = &mut data[row_idx + 1][col_idx + 1];
+            cell.is_formula = true;
+            cell.formula = Some(normalized);
+        }
+    }
+
     Sheet {
         name: name.to_string(),
         data,
@@ -270,7 +293,8 @@ impl Workbook {
                 std::panic::set_hook(hook);
                 match result {
                     Ok(Ok(range)) => {
-                        let mut sheet = create_sheet_from_range(sheet_name, range);
+                        let formula_range = xlsx.worksheet_formula(sheet_name).ok();
+                        let mut sheet = create_sheet_from_range(sheet_name, range, formula_range);
                         let original_name = self.sheets[sheet_index].name.clone();
                         sheet.name = original_name;
                         self.sheets[sheet_index] = sheet;
@@ -293,7 +317,8 @@ impl Workbook {
                 std::panic::set_hook(hook);
                 match result {
                     Ok(Ok(range)) => {
-                        let mut sheet = create_sheet_from_range(sheet_name, range);
+                        let formula_range = xls.worksheet_formula(sheet_name).ok();
+                        let mut sheet = create_sheet_from_range(sheet_name, range, formula_range);
                         let original_name = self.sheets[sheet_index].name.clone();
                         sheet.name = original_name;
                         self.sheets[sheet_index] = sheet;
@@ -343,6 +368,124 @@ impl Workbook {
         }
 
         anyhow::bail!("Sheet '{}' not found", spec)
+    }
+
+    /// Resolve sheet by exact name.
+    pub fn resolve_sheet_by_name(&self, name: &str) -> Result<usize> {
+        self.sheets
+            .iter()
+            .position(|s| s.name == name)
+            .ok_or_else(|| anyhow::anyhow!("Sheet '{}' not found", name))
+    }
+
+    /// Resolve sheet by 0-based index.
+    pub fn resolve_sheet_by_index(&self, index: usize) -> Result<usize> {
+        if index < self.sheets.len() {
+            Ok(index)
+        } else {
+            anyhow::bail!(
+                "Sheet index {} out of range (max: {})",
+                index,
+                self.sheets.len().saturating_sub(1)
+            )
+        }
+    }
+
+    /// Compute non-empty row count for a sheet.
+    pub fn count_non_empty_rows(&self, sheet_index: usize) -> Result<usize> {
+        let sheet = self
+            .sheets
+            .get(sheet_index)
+            .ok_or_else(|| anyhow::anyhow!("Sheet index out of range"))?;
+
+        let mut count = 0;
+        for row in 1..=sheet.max_rows {
+            if row < sheet.data.len() {
+                let has_data = sheet.data[row].iter().any(|cell| !cell.value.is_empty());
+                if has_data {
+                    count += 1;
+                }
+            }
+        }
+        Ok(count)
+    }
+
+    /// Compute non-empty column count for a sheet.
+    pub fn count_non_empty_cols(&self, sheet_index: usize) -> Result<usize> {
+        let sheet = self
+            .sheets
+            .get(sheet_index)
+            .ok_or_else(|| anyhow::anyhow!("Sheet index out of range"))?;
+
+        let mut count = 0;
+        for col in 1..=sheet.max_cols {
+            let has_data = sheet.data.iter().any(|row| {
+                if col < row.len() {
+                    !row[col].value.is_empty()
+                } else {
+                    false
+                }
+            });
+            if has_data {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
+    /// Find header row candidates for a sheet.
+    /// Returns (candidates[], recommended_header_row).
+    pub fn find_header_candidates(
+        &self,
+        sheet_index: usize,
+    ) -> Result<(Vec<usize>, Option<usize>)> {
+        let sheet = self
+            .sheets
+            .get(sheet_index)
+            .ok_or_else(|| anyhow::anyhow!("Sheet index out of range"))?;
+
+        if sheet.max_rows == 0 {
+            return Ok((vec![], None));
+        }
+
+        let mut candidates = Vec::new();
+        let max_scan = sheet.max_rows.min(20);
+
+        for row in 1..=max_scan {
+            if row >= sheet.data.len() {
+                break;
+            }
+            let row_data = &sheet.data[row];
+            let non_empty_count = row_data
+                .iter()
+                .take(sheet.max_cols + 1)
+                .filter(|c| !c.value.is_empty())
+                .count();
+            let text_count = row_data
+                .iter()
+                .take(sheet.max_cols + 1)
+                .filter(|c| {
+                    !c.value.is_empty()
+                        && (c.cell_type == CellType::Text || c.cell_type == CellType::Boolean)
+                })
+                .count();
+            let total_cols = sheet.max_cols.max(1);
+
+            let non_empty_ratio = non_empty_count as f64 / total_cols as f64;
+            let text_ratio = if non_empty_count > 0 {
+                text_count as f64 / non_empty_count as f64
+            } else {
+                0.0
+            };
+
+            // A good header row has decent coverage and mostly text values
+            if non_empty_ratio >= 0.3 && text_ratio >= 0.5 {
+                candidates.push(row);
+            }
+        }
+
+        let recommended = candidates.first().copied();
+        Ok((candidates, recommended))
     }
 
     /// Get the used range of a sheet in A1 notation (e.g., "A1:H2048").
@@ -691,6 +834,17 @@ impl Workbook {
                             let row_idx = (row - 1) as u32;
                             let col_idx = (col - 1) as u16;
 
+                            if cell.is_formula {
+                                let formula_text =
+                                    cell.formula.as_deref().unwrap_or(cell.value.as_str());
+                                let formula = rust_xlsxwriter::Formula::new(formula_text);
+                                worksheet.write_formula(row_idx, col_idx, formula)?;
+                                if !cell.value.is_empty() && cell.value != formula_text {
+                                    worksheet.set_formula_result(row_idx, col_idx, &cell.value);
+                                }
+                                continue;
+                            }
+
                             // Write cell based on its type
                             match cell.cell_type {
                                 CellType::Number => {
@@ -721,12 +875,7 @@ impl Workbook {
                                     }
                                 }
                                 CellType::Text => {
-                                    if cell.is_formula {
-                                        let formula = rust_xlsxwriter::Formula::new(&cell.value);
-                                        worksheet.write_formula(row_idx, col_idx, formula)?;
-                                    } else {
-                                        worksheet.write_string(row_idx, col_idx, &cell.value)?;
-                                    }
+                                    worksheet.write_string(row_idx, col_idx, &cell.value)?;
                                 }
                                 CellType::Empty => {}
                             }

@@ -18,10 +18,11 @@ fn malformed_fixture_path() -> PathBuf {
 }
 
 #[test]
-fn malformed_xlsx_non_lazy_returns_controlled_error() {
+fn malformed_xlsx_inspect_workbook_returns_controlled_error() {
     let output = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("workbook")
         .arg(malformed_fixture_path())
-        .arg("--sheets")
         .output()
         .expect("Failed to execute excel-cli");
 
@@ -29,9 +30,12 @@ fn malformed_xlsx_non_lazy_returns_controlled_error() {
         !output.status.success(),
         "Expected failure for malformed workbook, got success"
     );
+    let actual = output.status.code().unwrap_or(-1);
+    assert_eq!(actual, 4, "Expected exit code 4 (parse_error), got {}", actual);
+
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("parser panic: malformed workbook data"),
+        stderr.contains("parse_error") || stderr.contains("parser panic: malformed workbook data"),
         "Expected controlled parser error, got: {}",
         stderr
     );
@@ -44,28 +48,34 @@ fn malformed_xlsx_non_lazy_returns_controlled_error() {
 }
 
 #[test]
-fn malformed_xlsx_lazy_loading_returns_controlled_error() {
+fn malformed_xlsx_read_cell_returns_controlled_error() {
     let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("cell")
         .arg(malformed_fixture_path())
-        .arg("-l")
-        .arg("--peek")
-        .arg("0!A1:B2")
+        .arg("--sheet-index")
+        .arg("0")
+        .arg("--cell")
+        .arg("A1")
         .output()
         .expect("Failed to execute excel-cli");
 
     assert!(
         !output.status.success(),
-        "Expected failure for malformed workbook in lazy mode, got success"
+        "Expected failure for malformed workbook in read mode, got success"
     );
+    let actual = output.status.code().unwrap_or(-1);
+    assert_eq!(actual, 4, "Expected exit code 4 (parse_error), got {}", actual);
+
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("parser panic: malformed workbook data"),
-        "Expected controlled parser error in lazy mode, got: {}",
+        stderr.contains("parse_error") || stderr.contains("parser panic: malformed workbook data"),
+        "Expected controlled parser error in read mode, got: {}",
         stderr
     );
     assert!(
         !stderr.contains("stack backtrace"),
-        "Should not contain a Rust backtrace in lazy mode, got: {}",
+        "Should not contain a Rust backtrace in read mode, got: {}",
         stderr
     );
 }

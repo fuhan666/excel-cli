@@ -1,6 +1,7 @@
 #[derive(Clone)]
 pub struct Cell {
     pub value: String,
+    pub formula: Option<String>,
     pub is_formula: bool,
     pub cell_type: CellType,
     pub original_type: Option<DataTypeInfo>,
@@ -58,6 +59,7 @@ impl Cell {
     ) -> Self {
         Self {
             value,
+            formula: None,
             is_formula,
             cell_type,
             original_type,
@@ -67,6 +69,7 @@ impl Cell {
     pub fn empty() -> Self {
         Self {
             value: String::new(),
+            formula: None,
             is_formula: false,
             cell_type: CellType::Empty,
             original_type: Some(DataTypeInfo::Empty),

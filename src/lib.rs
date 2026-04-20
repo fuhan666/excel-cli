@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod app;
+pub mod cli;
 pub mod commands;
 pub mod excel;
 pub mod json_export;
