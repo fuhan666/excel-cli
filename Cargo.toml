@@ -1,6 +1,6 @@
 [package]
 name = "excel-cli"
-version = "0.5.2"
+version = "1.0.0"
 edition = "2021"
 description = "A single-file read-only Excel CLI for AI and scripting. Inspect, read, and browse Excel files with a stable JSON API."
 license = "MIT"

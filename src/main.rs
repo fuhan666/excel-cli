@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{error::ErrorKind, Parser};
 
 use excel_cli::cli::args::Cli;
 use excel_cli::cli::dispatch;
@@ -8,15 +8,20 @@ use excel_cli::cli::output;
 fn main() {
     let cli = match Cli::try_parse() {
         Ok(c) => c,
-        Err(e) => {
-            // For clap parse errors, output a controlled error envelope to stderr
-            let err = AppError::InvalidArgs {
-                message: e.to_string(),
-            };
-            let envelope = err.to_envelope("", "", "unknown");
-            output::write_error(&envelope);
-            std::process::exit(err.exit_code());
-        }
+        Err(e) => match e.kind() {
+            ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+                print!("{e}");
+                std::process::exit(0);
+            }
+            _ => {
+                let err = AppError::InvalidArgs {
+                    message: e.to_string(),
+                };
+                let envelope = err.to_envelope("", "", "unknown");
+                output::write_error(&envelope);
+                std::process::exit(err.exit_code());
+            }
+        },
     };
 
     let result = dispatch::dispatch(cli);

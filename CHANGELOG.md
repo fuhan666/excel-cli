@@ -165,7 +165,9 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/fuhan666/excel-cli/releases/tag/v1.0.0
+[0.5.2]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.2
 [0.5.1]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.1
 [0.5.0]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.0
 [0.4.2]: https://github.com/fuhan666/excel-cli/releases/tag/v0.4.2
