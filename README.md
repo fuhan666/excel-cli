@@ -1,8 +1,8 @@
 # Excel-CLI
 
-A lightweight terminal-based Excel viewer with Vim-like navigation for viewing, editing, and exporting Excel data to JSON format.
+A single-file read-only Excel CLI for AI and scripting. Inspect, read, and browse Excel files with a stable JSON API.
 
-English | [中文](README_zh.md)
+English-only GitHub documentation.
 
 ## Features
 
@@ -57,53 +57,86 @@ cargo uninstall excel-cli
 ## Usage
 
 ```bash
-# Open an Excel file in interactive mode
-excel-cli path/to/your/file.xlsx
+# Inspect workbook metadata
+excel-cli inspect workbook path/to/your/file.xlsx
 
-# List all sheets
-excel-cli path/to/your/file.xlsx --sheets
+# Inspect a single sheet
+excel-cli inspect sheet path/to/your/file.xlsx --sheet Orders
+excel-cli inspect sheet path/to/your/file.xlsx --sheet-index 0
 
-# Show sheet metadata
-excel-cli path/to/your/file.xlsx --sheet Orders
+# Sample data from a sheet
+excel-cli inspect sample path/to/your/file.xlsx --sheet Orders --rows 10
 
-# Peek a range (TSV output)
-excel-cli path/to/your/file.xlsx --peek Orders!A1:F10
+# Read a single cell
+excel-cli read cell path/to/your/file.xlsx --sheet Orders --cell B2
 
-# Read a single cell value
-excel-cli path/to/your/file.xlsx --cell Summary!B2
+# Read a range
+excel-cli read range path/to/your/file.xlsx --sheet Orders --range A1:F20
 
-# Export a single sheet to JSON
-excel-cli path/to/your/file.xlsx --sheet Orders --json-export
+# Read rows (with auto-detected header)
+excel-cli read rows path/to/your/file.xlsx --sheet Orders
 
-# Export all sheets to JSON and output to stdout (for piping)
-excel-cli path/to/your/file.xlsx --json-export
+# Read rows with explicit header row (1-based)
+excel-cli read rows path/to/your/file.xlsx --sheet Orders --header-row 1
 
-# Export with custom header direction and count
-excel-cli path/to/your/file.xlsx -j -d v -r 2
-
-# Pipe JSON output to another command
-excel-cli path/to/your/file.xlsx -j > data.json # (example) Save JSON output to a file
+# Open interactive TUI browser
+excel-cli ui path/to/your/file.xlsx
 ```
 
 ### Command-line Options
 
-- `--sheets`, `-s`: List all sheets and exit
-- `--sheet <sheet>`: Target sheet for inspect or export (by name or 0-based index)
-- `--peek <sheet>!<range>`, `-p <sheet>!<range>`: Peek a range and exit (e.g., `Orders!A1:F10`)
-- `--cell <sheet>!<cell>`, `-c <sheet>!<cell>`: Read a single cell and exit (e.g., `Summary!B2`)
-- `--format <text|json>`, `-f <text|json>`: Output format for inspect commands. Default: `text`
-- `--json-export`, `-j`: Export to JSON and output to stdout (for piping). When combined with `--sheet`, exports only that sheet
-- `--direction`, `-d`: Header direction in JSON export: 'h' for horizontal (top rows), 'v' for vertical (left columns). Default: 'h'
-- `--header-count`, `-r`: Number of header rows (for horizontal) or columns (for vertical) in JSON export. Default: 1
-- `--lazy-loading`, `-l`: Enable lazy loading for large Excel files (only loads data when needed)
+All headless commands (`inspect`, `read`, `check`) default to JSON output. Use `--format text` for human-readable output.
 
-**Inspect command output rules:**
-- `stdout` only contains data
+**Global output rules:**
+- `stdout` only contains results
 - `stderr` only contains errors
 - Success returns exit code `0`
-- Failure returns a non-zero exit code
-- Out-of-bounds ranges are clamped to the actual sheet bounds
-- Empty cells output an empty string in text mode and `null` in JSON mode
+- Failure returns a non-zero exit code (see Exit Codes below)
+- Empty cells output `null` in JSON mode and empty string in text mode
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Check completed with findings (reserved for v1.3.0) |
+| `2` | Invalid command or arguments |
+| `3` | File cannot be opened or read |
+| `4` | Workbook parse failure or unsupported format |
+| `5` | Sheet, cell, range, or target not found |
+| `6` | Invalid query or check rule |
+| `7` | Internal error |
+
+### Output Format
+
+Headless success responses follow a stable envelope:
+
+```json
+{
+  "schema_version": "1.0",
+  "command": "inspect.sheet",
+  "file": { "path": "report.xlsx", "format": "xlsx" },
+  "target": { "sheet": "Orders", "sheet_index": 1 },
+  "meta": {},
+  "data": { ... },
+  "warnings": []
+}
+```
+
+Headless error responses follow a stable envelope:
+
+```json
+{
+  "schema_version": "1.0",
+  "command": "read.rows",
+  "file": { "path": "report.xlsx", "format": "xlsx" },
+  "error": {
+    "code": "target_not_found",
+    "message": "Sheet 'Orders' not found",
+    "details": {}
+  }
+}
+```
 
 ## User Interface
 

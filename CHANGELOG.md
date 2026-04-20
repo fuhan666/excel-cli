@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-20
+
+### Added
+
+- New explicit subcommand architecture: `inspect`, `read`, `check`, `ui`
+  - `inspect workbook <file>` — list all sheets with metadata
+  - `inspect sheet <file> --sheet <name>` / `--sheet-index <n>` — sheet metadata
+  - `inspect sample <file> --sheet <name> [--range] [--rows]` — sampled data
+  - `read cell <file> --sheet <name> --cell <A1>` — single cell value
+  - `read range <file> --sheet <name> --range <A1:F20>` — rectangular range
+  - `read rows <file> --sheet <name> [--range] [--header-row auto|N]` — row-oriented data
+  - `ui <file>` — explicit interactive TUI entry (replaces bare file path)
+  - `check <file> --rule <rule>` — namespace reserved for v1.3.0 quality checks
+- Unified success/error JSON envelope with stable schema
+  - Success: `schema_version`, `command`, `file`, `target`, `meta`, `data`, `warnings`
+  - Error: `schema_version`, `command`, `file`, `error` with `code`, `message`, `details`
+- Stable exit code taxonomy: 0 (success), 1 (check findings), 2 (invalid args), 3 (file error), 4 (parse error), 5 (target not found), 6 (invalid query), 7 (internal error)
+- `--sheet` and `--sheet-index` are now independent and explicit (no ambiguity with numeric sheet names)
+- `--format json|text` with `json` as the default for all headless commands
+- Header row auto-detection with `header_candidates` and `recommended_header_row` in `inspect sheet`
+- New internal `src/cli/` module for command parsing, dispatch, envelope, and error handling
+
+### Changed
+
+- CLI entry is now subcommand-based; bare file path is rejected with exit code 2
+- `json` is the default headless output format (was `text`)
+- `stdout` only contains results; `stderr` only contains errors
+- All headless outputs use the unified envelope structure
+
+### Removed
+
+- Old positional-file-plus-flags public CLI surface (`--sheets`, `--peek`, `--cell`, `--json-export`, `--direction`, `--header-count`)
+- No backward-compatibility layer for old flags
+
 ## [0.5.2] - 2026-04-20
 
 ### Fixed
@@ -44,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Prevent command parsing from panicking on non-ASCII sheet names such as `:addsheet 测试1`
+- Prevent command parsing from panicking on non-ASCII sheet names such as `:addsheet test1`
 
 ## [0.4.1] - 2026-03-10
 

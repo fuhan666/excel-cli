@@ -2,7 +2,7 @@
 name = "excel-cli"
 version = "0.5.2"
 edition = "2021"
-description = "A lightweight terminal-based Excel viewer with Vim-like navigation for viewing, editing, and exporting Excel data to JSON format."
+description = "A single-file read-only Excel CLI for AI and scripting. Inspect, read, and browse Excel files with a stable JSON API."
 license = "MIT"
 repository = "https://github.com/fuhan666/excel-cli"
 keywords = ["Excel", "Excel-export", "Excel-json", "calamine", "ratatui"]

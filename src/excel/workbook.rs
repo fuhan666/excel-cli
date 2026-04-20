@@ -345,6 +345,123 @@ impl Workbook {
         anyhow::bail!("Sheet '{}' not found", spec)
     }
 
+    /// Resolve sheet by exact name.
+    pub fn resolve_sheet_by_name(&self, name: &str) -> Result<usize> {
+        self.sheets
+            .iter()
+            .position(|s| s.name == name)
+            .ok_or_else(|| anyhow::anyhow!("Sheet '{}' not found", name))
+    }
+
+    /// Resolve sheet by 0-based index.
+    pub fn resolve_sheet_by_index(&self, index: usize) -> Result<usize> {
+        if index < self.sheets.len() {
+            Ok(index)
+        } else {
+            anyhow::bail!(
+                "Sheet index {} out of range (max: {})",
+                index,
+                self.sheets.len().saturating_sub(1)
+            )
+        }
+    }
+
+    /// Compute non-empty row count for a sheet.
+    pub fn count_non_empty_rows(&self, sheet_index: usize) -> Result<usize> {
+        let sheet = self
+            .sheets
+            .get(sheet_index)
+            .ok_or_else(|| anyhow::anyhow!("Sheet index out of range"))?;
+
+        let mut count = 0;
+        for row in 1..=sheet.max_rows {
+            if row < sheet.data.len() {
+                let has_data = sheet.data[row]
+                    .iter()
+                    .any(|cell| !cell.value.is_empty());
+                if has_data {
+                    count += 1;
+                }
+            }
+        }
+        Ok(count)
+    }
+
+    /// Compute non-empty column count for a sheet.
+    pub fn count_non_empty_cols(&self, sheet_index: usize) -> Result<usize> {
+        let sheet = self
+            .sheets
+            .get(sheet_index)
+            .ok_or_else(|| anyhow::anyhow!("Sheet index out of range"))?;
+
+        let mut count = 0;
+        for col in 1..=sheet.max_cols {
+            let has_data = sheet.data.iter().any(|row| {
+                if col < row.len() {
+                    !row[col].value.is_empty()
+                } else {
+                    false
+                }
+            });
+            if has_data {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
+    /// Find header row candidates for a sheet.
+    /// Returns (candidates[], recommended_header_row).
+    pub fn find_header_candidates(&self, sheet_index: usize) -> Result<(Vec<usize>, Option<usize>)> {
+        let sheet = self
+            .sheets
+            .get(sheet_index)
+            .ok_or_else(|| anyhow::anyhow!("Sheet index out of range"))?;
+
+        if sheet.max_rows == 0 {
+            return Ok((vec![], None));
+        }
+
+        let mut candidates = Vec::new();
+        let max_scan = sheet.max_rows.min(20);
+
+        for row in 1..=max_scan {
+            if row >= sheet.data.len() {
+                break;
+            }
+            let row_data = &sheet.data[row];
+            let non_empty_count = row_data
+                .iter()
+                .take(sheet.max_cols + 1)
+                .filter(|c| !c.value.is_empty())
+                .count();
+            let text_count = row_data
+                .iter()
+                .take(sheet.max_cols + 1)
+                .filter(|c| {
+                    !c.value.is_empty()
+                        && (c.cell_type == CellType::Text || c.cell_type == CellType::Boolean)
+                })
+                .count();
+            let total_cols = sheet.max_cols.max(1);
+
+            let non_empty_ratio = non_empty_count as f64 / total_cols as f64;
+            let text_ratio = if non_empty_count > 0 {
+                text_count as f64 / non_empty_count as f64
+            } else {
+                0.0
+            };
+
+            // A good header row has decent coverage and mostly text values
+            if non_empty_ratio >= 0.3 && text_ratio >= 0.5 {
+                candidates.push(row);
+            }
+        }
+
+        let recommended = candidates.first().copied();
+        Ok((candidates, recommended))
+    }
+
     /// Get the used range of a sheet in A1 notation (e.g., "A1:H2048").
     /// Returns an empty string if the sheet has no data.
     pub fn get_used_range(&self, sheet_index: usize) -> Result<String> {
