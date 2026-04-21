@@ -32,37 +32,26 @@ pub fn handle(
 
     let mut workbook =
         open_workbook(&file, false).map_err(crate::cli::error::anyhow_to_app_error)?;
-    let selected_rules = parse_rules(rules.as_deref())?;
-    let threshold = Severity::from_threshold(severity_threshold);
-    let checked_sheet_indices = resolve_checked_sheets(&workbook, sheet.as_deref())?;
-
-    for index in &checked_sheet_indices {
-        let sheet_name = workbook.get_sheet_names()[*index].clone();
-        workbook
-            .ensure_sheet_loaded(*index, &sheet_name)
-            .map_err(crate::cli::error::anyhow_to_app_error)?;
-    }
-
-    let sheet_names = workbook.get_sheet_names();
-    let mut findings = run_rules(&workbook, &selected_rules, &checked_sheet_indices)?;
-    let finding_count_before_threshold = findings.len();
-    findings.retain(|finding| finding.severity >= threshold);
-    sort_findings(&mut findings, &sheet_names);
+    let report = run_check_report(
+        &mut workbook,
+        sheet.as_deref(),
+        rules.as_deref(),
+        severity_threshold,
+    )?;
 
     let data = json!({
-        "summary": summarize_findings(&findings),
-        "stats": build_stats(
-            &workbook,
-            &checked_sheet_indices,
-            &selected_rules,
-            severity_threshold,
-            finding_count_before_threshold,
-        )?,
-        "findings": findings,
+        "summary": report.summary,
+        "stats": report.stats,
+        "findings": report.findings,
     });
 
     let target = if let Some(sheet_name) = sheet {
-        let sheet_index = checked_sheet_indices[0];
+        let sheet_index =
+            workbook
+                .resolve_sheet_by_name(&sheet_name)
+                .map_err(|e| AppError::TargetNotFound {
+                    message: e.to_string(),
+                })?;
         envelope::target_sheet(&sheet_name, sheet_index)
     } else {
         envelope::target_workbook()
@@ -86,6 +75,42 @@ pub fn handle(
         ),
         exit_code,
     ))
+}
+
+pub(crate) fn run_check_report(
+    workbook: &mut Workbook,
+    sheet: Option<&str>,
+    rules: Option<&str>,
+    severity_threshold: SeverityThreshold,
+) -> Result<CheckReport, AppError> {
+    let selected_rules = parse_rules(rules)?;
+    let threshold = Severity::from_threshold(severity_threshold);
+    let checked_sheet_indices = resolve_checked_sheets(workbook, sheet)?;
+
+    for index in &checked_sheet_indices {
+        let sheet_name = workbook.get_sheet_names()[*index].clone();
+        workbook
+            .ensure_sheet_loaded(*index, &sheet_name)
+            .map_err(crate::cli::error::anyhow_to_app_error)?;
+    }
+
+    let sheet_names = workbook.get_sheet_names();
+    let mut findings = run_rules(workbook, &selected_rules, &checked_sheet_indices)?;
+    let finding_count_before_threshold = findings.len();
+    findings.retain(|finding| finding.severity >= threshold);
+    sort_findings(&mut findings, &sheet_names);
+
+    Ok(CheckReport {
+        summary: summarize_findings(&findings),
+        stats: build_stats(
+            workbook,
+            &checked_sheet_indices,
+            &selected_rules,
+            severity_threshold,
+            finding_count_before_threshold,
+        )?,
+        findings,
+    })
 }
 
 fn file_format(path: &Path) -> String {
@@ -857,9 +882,16 @@ fn compare_usize(left: Option<usize>, right: Option<usize>) -> Ordering {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct CheckReport {
+    pub(crate) summary: Value,
+    pub(crate) stats: Value,
+    pub(crate) findings: Vec<CheckFinding>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum CheckRuleId {
+pub(crate) enum CheckRuleId {
     BlankHeaders,
     DuplicateHeaders,
     BlankRows,
@@ -875,7 +907,7 @@ impl CheckRuleId {
         RULES.iter().copied().find(|rule| rule.as_str() == value)
     }
 
-    fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             CheckRuleId::BlankHeaders => "blank_headers",
             CheckRuleId::DuplicateHeaders => "duplicate_headers",
@@ -898,7 +930,7 @@ impl CheckRuleId {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
-enum Severity {
+pub(crate) enum Severity {
     Info,
     Warning,
     Error,
@@ -912,18 +944,26 @@ impl Severity {
             SeverityThreshold::Error => Severity::Error,
         }
     }
+
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Severity::Info => "info",
+            Severity::Warning => "warning",
+            Severity::Error => "error",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
-struct CheckFinding {
-    rule_id: CheckRuleId,
-    severity: Severity,
-    sheet: String,
-    row: Option<usize>,
-    column: Option<usize>,
-    range: Option<String>,
-    message: String,
-    details: Value,
+pub(crate) struct CheckFinding {
+    pub(crate) rule_id: CheckRuleId,
+    pub(crate) severity: Severity,
+    pub(crate) sheet: String,
+    pub(crate) row: Option<usize>,
+    pub(crate) column: Option<usize>,
+    pub(crate) range: Option<String>,
+    pub(crate) message: String,
+    pub(crate) details: Value,
 }
 
 #[cfg(test)]
@@ -932,6 +972,7 @@ mod tests {
 
     use super::*;
     use crate::cli::error::{EXIT_CHECK_FINDINGS, EXIT_SUCCESS};
+    use crate::excel::{Cell, Sheet, Workbook};
 
     #[test]
     fn exit_code_uses_one_for_successful_reports_with_findings() {
@@ -983,5 +1024,43 @@ mod tests {
         assert_eq!(findings[1].rule_id, CheckRuleId::BlankHeaders);
         assert_eq!(findings[1].row, Some(2));
         assert_eq!(findings[2].rule_id, CheckRuleId::DuplicateHeaders);
+    }
+
+    fn sheet_with_values(name: &str, values: &[&[&str]]) -> Sheet {
+        let max_rows = values.len();
+        let max_cols = values.iter().map(|row| row.len()).max().unwrap_or(0);
+        let mut data = vec![vec![Cell::empty(); max_cols + 1]; max_rows + 1];
+
+        for (row_idx, row) in values.iter().enumerate() {
+            for (col_idx, value) in row.iter().enumerate() {
+                data[row_idx + 1][col_idx + 1] = Cell::new((*value).to_string(), false);
+            }
+        }
+
+        Sheet {
+            name: name.to_string(),
+            data,
+            max_rows,
+            max_cols,
+            is_loaded: true,
+        }
+    }
+
+    #[test]
+    fn run_check_report_reuses_rule_pipeline_for_structured_findings() {
+        let mut workbook = Workbook::from_sheets_for_test(vec![sheet_with_values(
+            "Data",
+            &[&["Name", "Name"], &["Ada", ""], &["", ""]],
+        )]);
+
+        let report = run_check_report(&mut workbook, None, None, SeverityThreshold::Info).unwrap();
+
+        assert_eq!(report.summary["status"], "fail");
+        assert_eq!(report.stats["checked_sheet_count"], 1);
+        assert!(!report.findings.is_empty());
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.rule_id == CheckRuleId::DuplicateHeaders));
     }
 }

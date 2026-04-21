@@ -324,6 +324,8 @@ fn parse_command(input: &str) -> Vec<Span<'_>> {
         "help",
         "preview",
         "pv",
+        "findings",
+        "issues",
         "addsheet",
         "delsheet",
     ];
@@ -458,6 +460,17 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
 
         f.render_widget(edit_block, chunks[0]);
         f.render_widget(app_state.text_area.widget(), padded_area);
+    } else if let InputMode::Findings = app_state.input_mode {
+        let title = format!(" Findings ({}) ", app_state.findings.items.len());
+        let findings_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::LightCyan))
+            .title(title);
+        let findings_paragraph = Paragraph::new(format_findings_lines(app_state))
+            .block(findings_block)
+            .wrap(ratatui::widgets::Wrap { trim: false });
+
+        f.render_widget(findings_paragraph, chunks[0]);
     } else {
         // Get cell content
         let content = app_state.get_cell_content(row, col);
@@ -541,10 +554,62 @@ fn format_query_preview(preview: &crate::app::QueryPreview) -> String {
     lines.join("\n")
 }
 
+fn format_findings_lines(app_state: &AppState) -> Vec<Line<'static>> {
+    if let Some(error) = &app_state.findings.last_refresh_error {
+        return vec![Line::from(format!("Refresh failed: {error}"))];
+    }
+
+    if app_state.findings.items.is_empty() {
+        return vec![Line::from("No findings. Press r to refresh.")];
+    }
+
+    app_state
+        .findings
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, finding)| {
+            let location = finding
+                .range
+                .clone()
+                .or_else(|| match (finding.row, finding.column) {
+                    (Some(row), Some(col)) => Some(cell_reference((row, col))),
+                    (Some(row), None) => Some(format!("row {row}")),
+                    (None, Some(col)) => Some(index_to_col_name(col)),
+                    (None, None) => None,
+                })
+                .unwrap_or_else(|| "sheet".to_string());
+
+            let marker = if index == app_state.findings.selected {
+                ">"
+            } else {
+                " "
+            };
+            let summary = format!(
+                "{marker} {} {} {} {}",
+                finding.severity.as_str(),
+                finding.rule_id.as_str(),
+                finding.sheet,
+                location
+            );
+            let style = if index == app_state.findings.selected {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+
+            Line::from(vec![
+                Span::styled(summary, style),
+                Span::raw(format!(" {}", finding.message)),
+            ])
+        })
+        .collect()
+}
+
 fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
     match app_state.input_mode {
         InputMode::Normal => {
-            let status = "Input :help for operating instructions | hjkl=move [ ]=prev/next-sheet Enter=edit y=copy d=cut p=paste /=search N/n=prev/next-search-result :=command ";
+            let status = "Input :help for operating instructions | hjkl=move f=findings [ ]=prev/next-sheet Enter=edit y=copy d=cut p=paste /=search N/n=prev/next-search-result :=command ";
 
             let status_widget = Paragraph::new(status)
                 .style(Style::default())
@@ -615,6 +680,15 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
             let status_widget = Paragraph::new("Query preview: Esc/Enter/q closes")
                 .style(Style::default().fg(Color::LightCyan))
                 .alignment(ratatui::layout::Alignment::Left);
+
+            f.render_widget(status_widget, area);
+        }
+
+        InputMode::Findings => {
+            let status_widget =
+                Paragraph::new("Findings: j/k or arrows=move Enter=jump r/f=refresh Esc/q=close")
+                    .style(Style::default().fg(Color::LightCyan))
+                    .alignment(ratatui::layout::Alignment::Left);
 
             f.render_widget(status_widget, area);
         }
@@ -875,7 +949,7 @@ mod tests {
     fn app_with_preview() -> AppState<'static> {
         let mut data = vec![vec![Cell::empty(); 3]; 3];
         data[1][1] = Cell::new("Name".to_string(), false);
-        data[1][2] = Cell::new("Score".to_string(), false);
+        data[1][2] = Cell::new("Name".to_string(), false);
         data[2][1] = Cell::new("Ada".to_string(), false);
         data[2][2] = Cell::new("10".to_string(), false);
 
@@ -918,5 +992,29 @@ mod tests {
         assert!(rendered.contains("Select: all columns"));
         assert!(rendered.contains("Filters: none"));
         assert!(rendered.contains("Ada"));
+    }
+
+    #[test]
+    fn renders_findings_panel_with_selected_entry() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app_with_preview();
+        app.close_query_preview();
+        app.show_findings();
+
+        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol.as_str())
+            .collect::<String>();
+
+        assert!(matches!(app.input_mode, InputMode::Findings));
+        assert!(rendered.contains("Findings"));
+        assert!(rendered.contains("duplicate_headers"));
+        assert!(rendered.contains("Data"));
     }
 }

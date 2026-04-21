@@ -53,6 +53,7 @@ impl AppState<'_> {
             "nohlsearch" | "noh" => self.disable_search_highlight(),
             "help" => self.show_help(),
             "preview" | "pv" => self.show_query_preview(),
+            "findings" | "issues" => self.show_findings(),
             "delsheet" => self.delete_current_sheet(),
             "addsheet" => self.add_notification("Usage: :addsheet <name>".to_string()),
             _ => {
@@ -415,7 +416,7 @@ mod tests {
     fn app_with_sheet() -> AppState<'static> {
         let mut data = vec![vec![Cell::empty(); 3]; 3];
         data[1][1] = Cell::new("Name".to_string(), false);
-        data[1][2] = Cell::new("Score".to_string(), false);
+        data[1][2] = Cell::new("Name".to_string(), false);
         data[2][1] = Cell::new("Ada".to_string(), false);
         data[2][2] = Cell::new("10".to_string(), false);
 
@@ -459,5 +460,27 @@ mod tests {
 
         assert!(matches!(app.input_mode, InputMode::Preview));
         assert!(app.query_preview.is_some());
+    }
+
+    #[test]
+    fn findings_command_opens_findings_panel() {
+        let mut app = app_with_sheet();
+        app.input_buffer = "findings".to_string();
+
+        app.execute_command();
+
+        assert!(matches!(app.input_mode, InputMode::Findings));
+        assert!(!app.findings.items.is_empty());
+    }
+
+    #[test]
+    fn issues_alias_opens_findings_panel() {
+        let mut app = app_with_sheet();
+        app.input_buffer = "issues".to_string();
+
+        app.execute_command();
+
+        assert!(matches!(app.input_mode, InputMode::Findings));
+        assert!(!app.findings.items.is_empty());
     }
 }
