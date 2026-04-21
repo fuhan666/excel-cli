@@ -322,6 +322,8 @@ fn parse_command(input: &str) -> Vec<Span<'_>> {
         "nohlsearch",
         "noh",
         "help",
+        "preview",
+        "pv",
         "addsheet",
         "delsheet",
     ];
@@ -379,12 +381,14 @@ fn parse_command(input: &str) -> Vec<Span<'_>> {
 }
 
 fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
+    let constraints = if matches!(app_state.input_mode, InputMode::Preview) {
+        [Constraint::Percentage(75), Constraint::Percentage(25)]
+    } else {
+        [Constraint::Percentage(50), Constraint::Percentage(50)]
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(50), // Cell content/editing area
-            Constraint::Percentage(50), // Notifications
-        ])
+        .constraints(constraints)
         .split(area);
 
     // Get the cell reference
@@ -392,7 +396,22 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
     let cell_ref = cell_reference(app_state.selected_cell);
 
     // Handle the top panel based on the input mode
-    if let InputMode::Editing = app_state.input_mode {
+    if let InputMode::Preview = app_state.input_mode {
+        let preview_text = app_state
+            .query_preview
+            .as_ref()
+            .map(format_query_preview)
+            .unwrap_or_else(|| "No preview available".to_string());
+        let preview_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::LightCyan))
+            .title(" Query Preview ");
+        let preview_paragraph = Paragraph::new(preview_text)
+            .block(preview_block)
+            .wrap(ratatui::widgets::Wrap { trim: false });
+
+        f.render_widget(preview_paragraph, chunks[0]);
+    } else if let InputMode::Editing = app_state.input_mode {
         let (vim_mode_str, mode_color) = if let Some(vim_state) = &app_state.vim_state {
             match vim_state.mode {
                 crate::app::VimMode::Normal => ("NORMAL", Color::Green),
@@ -495,6 +514,33 @@ fn draw_info_panel(f: &mut Frame, app_state: &mut AppState, area: Rect) {
     f.render_widget(notification_paragraph, chunks[1]);
 }
 
+fn format_query_preview(preview: &crate::app::QueryPreview) -> String {
+    let mut lines = vec![
+        format!("File: {}", preview.file_path),
+        format!(
+            "Sheet: {} ({}) | Selected: {} | Range: {}",
+            preview.sheet_name, preview.sheet_index, preview.selected_cell, preview.used_range
+        ),
+        format!("Select: {} | Filters: {}", preview.selects, preview.filters),
+    ];
+
+    if preview.rows.is_empty() {
+        lines.push("Sample: no rows".to_string());
+        return lines.join("\n");
+    }
+
+    lines.push(format!("Sample: row | {}", preview.columns.join(" | ")));
+    for row in &preview.rows {
+        lines.push(format!("{} | {}", row.row_number, row.values.join(" | ")));
+    }
+
+    if preview.truncated {
+        lines.push("Sample truncated".to_string());
+    }
+
+    lines.join("\n")
+}
+
 fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
     match app_state.input_mode {
         InputMode::Normal => {
@@ -563,6 +609,14 @@ fn draw_status_bar(f: &mut Frame, app_state: &AppState, area: Rect) {
 
         InputMode::Help => {
             // No status bar in help mode
+        }
+
+        InputMode::Preview => {
+            let status_widget = Paragraph::new("Query preview: Esc/Enter/q closes")
+                .style(Style::default().fg(Color::LightCyan))
+                .alignment(ratatui::layout::Alignment::Left);
+
+            f.render_widget(status_widget, area);
         }
 
         InputMode::LazyLoading => {
@@ -806,5 +860,63 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
 
         let indicator_widget = Paragraph::new(more_indicator).style(indicator_style);
         f.render_widget(indicator_widget, indicator_rect);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{backend::TestBackend, Terminal};
+    use std::path::PathBuf;
+
+    use super::ui;
+    use crate::app::{AppState, InputMode};
+    use crate::excel::{Cell, Sheet, Workbook};
+
+    fn app_with_preview() -> AppState<'static> {
+        let mut data = vec![vec![Cell::empty(); 3]; 3];
+        data[1][1] = Cell::new("Name".to_string(), false);
+        data[1][2] = Cell::new("Score".to_string(), false);
+        data[2][1] = Cell::new("Ada".to_string(), false);
+        data[2][2] = Cell::new("10".to_string(), false);
+
+        let sheet = Sheet {
+            name: "Data".to_string(),
+            data,
+            max_rows: 2,
+            max_cols: 2,
+            is_loaded: true,
+        };
+        let mut app = AppState::new(
+            Workbook::from_sheets_for_test(vec![sheet]),
+            PathBuf::from("scores.xlsx"),
+        )
+        .unwrap();
+        app.show_query_preview();
+        app
+    }
+
+    #[test]
+    fn renders_query_preview_pane_with_target_and_sample() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = app_with_preview();
+
+        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol.as_str())
+            .collect::<String>();
+
+        assert!(matches!(app.input_mode, InputMode::Preview));
+        assert!(rendered.contains("Query Preview"));
+        assert!(rendered.contains("Sheet: Data"));
+        assert!(rendered.contains("Range: A1:B2"));
+        assert!(rendered.contains("Select: all columns"));
+        assert!(rendered.contains("Filters: none"));
+        assert!(rendered.contains("Ada"));
     }
 }

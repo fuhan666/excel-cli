@@ -12,6 +12,7 @@ impl AppState<'_> {
              :q!         - Force quit without saving\n\n\
              NAVIGATION:\n\
              :[cell]     - Jump to cell (e.g., :B10)\n\
+             :preview, :pv - Show read-only preview of current sheet data\n\
              hjkl        - Move cursor (left, down, up, right)\n\
              0           - Jump to first column\n\
              ^           - Jump to first non-empty column\n\
