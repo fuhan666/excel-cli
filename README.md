@@ -1,8 +1,6 @@
 # Excel-CLI
 
-A single-file read-only Excel CLI for AI and scripting. Inspect, read, and browse Excel files with a stable JSON API.
-
-English-only GitHub documentation.
+An Excel CLI for AI and scripting. Inspect, read, and browse Excel files with a stable JSON API.
 
 ## Features
 
@@ -99,7 +97,7 @@ All headless commands (`inspect`, `read`, `check`) default to JSON output. Use `
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `1` | Check completed with findings (reserved for v1.3.0) |
+| `1` | Check completed with findings |
 | `2` | Invalid command or arguments |
 | `3` | File cannot be opened or read |
 | `4` | Workbook parse failure or unsupported format |
@@ -307,15 +305,6 @@ Excel-CLI uses a non-destructive approach to file saving:
 - If changes have been made, a new file is created with a timestamp in the filename, following the format `original_filename_YYYYMMDD_HHMMSS.xlsx`
 - The new file is created without any styling
 - The original file is never modified
-
-## Technical Stack
-
-- Written in Rust
-- Uses ratatui library for terminal UI
-- crossterm for terminal input handling
-- calamine library for reading Excel files
-- rust_xlsxwriter for writing Excel files
-- serde_json for JSON serialization
 
 ## Contributing
 
