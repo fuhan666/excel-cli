@@ -65,6 +65,12 @@ excel-cli inspect sheet path/to/your/file.xlsx --sheet-index 0
 # Sample data from a sheet
 excel-cli inspect sample path/to/your/file.xlsx --sheet Orders --rows 10
 
+# Inspect columns with auto-detected headers
+excel-cli inspect columns path/to/your/file.xlsx --sheet Orders --header-row auto
+
+# Inspect table-like regions in a sheet
+excel-cli inspect tables path/to/your/file.xlsx --sheet Orders
+
 # Read a single cell
 excel-cli read cell path/to/your/file.xlsx --sheet Orders --cell B2
 
@@ -119,6 +125,22 @@ Headless success responses follow a stable envelope:
   "data": { ... },
   "warnings": []
 }
+```
+
+### Structure Inspection
+
+`inspect columns` profiles each column in a sheet so you can choose stable field names for later commands. The response data includes `columns`, where each column has `index`, original `name`, generated `safe_name`, `is_duplicate`, best-effort `inferred_type`, `non_null_ratio`, `formula_ratio`, and `sample_values`. The response metadata includes `header_row_mode`, `resolved_header_row`, `column_count`, and `data_row_count`.
+
+```bash
+excel-cli inspect columns path/to/your/file.xlsx --sheet Orders --header-row auto
+excel-cli inspect columns path/to/your/file.xlsx --sheet Orders --header-row 2 --format text
+```
+
+`inspect tables` detects contiguous table-like regions in a sheet. The response data includes `data.candidates`; each candidate includes `range`, `header_row`, `column_count`, `row_count`, and `confidence`. The response metadata includes `candidate_count`.
+
+```bash
+excel-cli inspect tables path/to/your/file.xlsx --sheet Orders
+excel-cli inspect tables path/to/your/file.xlsx --sheet Orders --format text
 ```
 
 Headless error responses follow a stable envelope:

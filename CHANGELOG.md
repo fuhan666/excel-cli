@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-21
+
+### Added
+
+- `inspect columns <file> --sheet <name>` to profile column headers, generated safe names, duplicate headers, inferred types, non-null ratios, formula ratios, and sample values.
+- `inspect tables <file> --sheet <name>` to detect table-like regions with ranges, header rows, dimensions, and confidence scores.
+- Regression coverage for structure inspection cases including duplicate headers, blank headers, preamble sections, late headers, multi-table sheets, mixed-type columns, formula columns, and non-ASCII column names.
+- Release branch CI triggers for `release/**` branches.
+
 ## [1.0.0] - 2026-04-20
 
 ### Added
@@ -165,7 +174,8 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/fuhan666/excel-cli/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/fuhan666/excel-cli/releases/tag/v1.0.0
 [0.5.2]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.2
 [0.5.1]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.1
