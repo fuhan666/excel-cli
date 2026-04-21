@@ -8,8 +8,10 @@ An Excel CLI for AI, scripting, and terminal users. Inspect and read headlessly 
 - Create, switch, and delete sheets in multi-sheet workbooks
 - Edit cell contents directly in the terminal
 - Export data to JSON format
+- Select, filter, paginate, and stream read results for automation
 - Delete rows and columns
 - Search functionality with highlighting
+- Read-only query preview in the TUI
 - Command mode for advanced operations
 
 ## Installation & Uninstallation
@@ -83,6 +85,16 @@ excel-cli read rows path/to/your/file.xlsx --sheet Orders
 # Read rows with explicit header row (1-based)
 excel-cli read rows path/to/your/file.xlsx --sheet Orders --header-row 1
 
+# Read selected columns as records
+excel-cli read records path/to/your/file.xlsx --sheet Orders --select order_id,total,status
+
+# Filter, paginate, and stream records as JSON Lines
+excel-cli read records path/to/your/file.xlsx --sheet Orders \
+  --filter status:eq:open \
+  --filter total:gte:100 \
+  --limit 50 \
+  --output-shape jsonl
+
 # Open interactive TUI browser
 excel-cli ui path/to/your/file.xlsx
 ```
@@ -97,6 +109,50 @@ All headless commands (`inspect`, `read`, `check`) default to JSON output. Use `
 - Success returns exit code `0`
 - Failure returns a non-zero exit code (see Exit Codes below)
 - Empty cells output `null` in JSON mode and empty string in text mode
+
+### Reading Rows and Records
+
+`read rows` returns positional arrays by default. Use `--output-shape records` to return objects keyed by the resolved header row, or use `read records` when record-shaped output is the default.
+
+```bash
+excel-cli read rows report.xlsx --sheet Orders --output-shape rows
+excel-cli read rows report.xlsx --sheet Orders --output-shape records
+excel-cli read records report.xlsx --sheet Orders
+```
+
+`--select` keeps only named columns. Names come from the resolved header row, with duplicate or blank headers made stable in the same way as `inspect columns`.
+
+```bash
+excel-cli read records report.xlsx --sheet Orders --select order_id,customer,total
+```
+
+`--filter field:op:value` filters rows by column name. Repeat `--filter` to combine conditions with AND semantics. Supported operators are `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `contains`, `regex`, `isnull`, and `notnull`.
+
+```bash
+excel-cli read records report.xlsx --sheet Orders --filter status:eq:open
+excel-cli read records report.xlsx --sheet Orders --filter total:gte:100
+excel-cli read records report.xlsx --sheet Orders --filter customer:contains:Inc
+excel-cli read records report.xlsx --sheet Orders --filter order_id:regex:^INV-[0-9]+$
+excel-cli read records report.xlsx --sheet Orders --filter optional_note:isnull:
+```
+
+`--limit` and `--offset` apply after filtering. `--non-empty` removes rows where every cell is empty. No-match filters are successful queries: they return an empty `rows` or `records` array with exit code `0`.
+
+```bash
+excel-cli read records report.xlsx --sheet Orders \
+  --filter status:eq:open \
+  --offset 25 \
+  --limit 25 \
+  --non-empty
+```
+
+`--output-shape jsonl` writes newline-delimited JSON records directly to stdout instead of the standard envelope. It uses the same selection, filtering, pagination, and header resolution rules as record output.
+
+```bash
+excel-cli read records report.xlsx --sheet Orders --output-shape jsonl
+```
+
+Invalid selected columns, unknown filter columns, unsupported operators, malformed filters, invalid numeric comparisons, and invalid regular expressions return structured `invalid_query` errors with exit code `6`.
 
 ### Exit Codes
 
@@ -316,6 +372,7 @@ The JSON files are saved in the same directory as the original Excel file.
 
 - `:nohlsearch` or `:noh` - Disable search highlighting
 - `:help` - Show available commands
+- `:preview` or `:pv` - Show a read-only preview of the current sheet target and sample rows
 
 ## File Saving Logic
 

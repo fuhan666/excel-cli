@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-21
+
+### Added
+
+- `read rows` column selection with `--select <col1,col2>`.
+- `read rows` and `read records` filtering with repeated `--filter field:op:value` conditions combined with AND semantics.
+- Filter operators for equality, inequality, numeric comparisons, string contains, regular expressions, null checks, and non-null checks.
+- Pagination controls with `--limit` and `--offset`.
+- `--non-empty` to drop all-empty rows from read results.
+- `read records <file>` for header-keyed records by default.
+- `--output-shape rows|records|jsonl` on row and record reads.
+- JSON Lines output for stream-friendly record processing.
+- Read-only TUI query preview with `:preview` and `:pv`.
+- Regression coverage for filtering, output shapes, invalid query errors, no-match results, help text, and query preview behavior.
+- CI formatting enforcement with `cargo fmt --check`.
+
+### Changed
+
+- Enriched read metadata now reports applied filters, selected columns, returned row count, truncation, and output shape.
+- Package version updated to `1.2.0`.
+
 ## [1.1.0] - 2026-04-21
 
 ### Added
@@ -174,7 +195,8 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/fuhan666/excel-cli/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/fuhan666/excel-cli/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/fuhan666/excel-cli/releases/tag/v1.0.0
 [0.5.2]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.2

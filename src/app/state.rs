@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tui_textarea::TextArea;
 
 use crate::actions::UndoHistory;
+use crate::app::QueryPreview;
 use crate::app::VimState;
 use crate::excel::Workbook;
 
@@ -23,6 +24,7 @@ pub enum InputMode {
     SearchForward,
     SearchBackward,
     Help,
+    Preview,
     LazyLoading,
     CommandInLazyLoading,
 }
@@ -56,6 +58,7 @@ pub struct AppState<'a> {
     pub help_text: String,
     pub help_scroll: usize,
     pub help_visible_lines: usize,
+    pub query_preview: Option<QueryPreview>,
     pub undo_history: UndoHistory,
     pub vim_state: Option<VimState>,
 }
@@ -153,6 +156,7 @@ impl AppState<'_> {
             help_text: String::new(),
             help_scroll: 0,
             help_visible_lines: 20,
+            query_preview: None,
             undo_history: UndoHistory::new(),
             vim_state: None,
         })
@@ -219,6 +223,11 @@ impl AppState<'_> {
     }
 
     pub fn cancel_input(&mut self) {
+        if let InputMode::Preview = self.input_mode {
+            self.close_query_preview();
+            return;
+        }
+
         // If in help mode, just close the help window
         if let InputMode::Help = self.input_mode {
             self.input_mode = InputMode::Normal;

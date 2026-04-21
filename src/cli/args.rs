@@ -191,6 +191,79 @@ pub enum ReadCommands {
         #[arg(long, default_value = "auto")]
         header_row: String,
 
+        /// Select columns by stable column name, comma-separated
+        #[arg(long)]
+        select: Option<String>,
+
+        /// Filter rows using field:op:value; operators: eq|ne|gt|gte|lt|lte|contains|regex|isnull|notnull; repeat for AND semantics
+        #[arg(long = "filter")]
+        filters: Vec<String>,
+
+        /// Maximum number of rows to return
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Number of rows to skip after filtering
+        #[arg(long)]
+        offset: Option<usize>,
+
+        /// Drop rows where every cell in the row is empty
+        #[arg(long)]
+        non_empty: bool,
+
+        /// Output shape for row data
+        #[arg(long, value_enum, default_value = "rows")]
+        output_shape: OutputShape,
+
+        /// Output format
+        #[arg(long, value_enum, default_value = "json")]
+        format: OutputFormat,
+    },
+    /// Read records from a sheet using a resolved header row
+    Records {
+        /// Excel file path
+        file: PathBuf,
+
+        /// Sheet name (exact match)
+        #[arg(long, group = "sheet_target")]
+        sheet: Option<String>,
+
+        /// Sheet index (0-based)
+        #[arg(long, group = "sheet_target")]
+        sheet_index: Option<usize>,
+
+        /// Range to read (A1 notation)
+        #[arg(long)]
+        range: Option<String>,
+
+        /// Header row: auto or 1-based index
+        #[arg(long, default_value = "auto")]
+        header_row: String,
+
+        /// Select columns by stable column name, comma-separated
+        #[arg(long)]
+        select: Option<String>,
+
+        /// Filter rows using field:op:value; operators: eq|ne|gt|gte|lt|lte|contains|regex|isnull|notnull; repeat for AND semantics
+        #[arg(long = "filter")]
+        filters: Vec<String>,
+
+        /// Maximum number of rows to return
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Number of rows to skip after filtering
+        #[arg(long)]
+        offset: Option<usize>,
+
+        /// Drop rows where every cell in the row is empty
+        #[arg(long)]
+        non_empty: bool,
+
+        /// Output shape for row data; records by default
+        #[arg(long, value_enum, default_value = "records")]
+        output_shape: OutputShape,
+
         /// Output format
         #[arg(long, value_enum, default_value = "json")]
         format: OutputFormat,
@@ -209,6 +282,24 @@ impl OutputFormat {
         match self {
             OutputFormat::Json => "json",
             OutputFormat::Text => "text",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, clap::ValueEnum, PartialEq, Eq)]
+pub enum OutputShape {
+    #[default]
+    Rows,
+    Records,
+    Jsonl,
+}
+
+impl OutputShape {
+    pub fn as_str(&self) -> &str {
+        match self {
+            OutputShape::Rows => "rows",
+            OutputShape::Records => "records",
+            OutputShape::Jsonl => "jsonl",
         }
     }
 }

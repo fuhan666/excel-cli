@@ -1,6 +1,6 @@
 [package]
 name = "excel-cli"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 description = "Excel CLI for AI, scripting, and terminal users. Headless JSON API for automation, plus a Vim-like TUI for interactive browsing and editing."
 license = "MIT"
@@ -23,6 +23,7 @@ indexmap = { version = "2.0", features = ["serde"] }
 tui-textarea = "0.4.0"
 quick-xml = "0.37.5"
 zip = "2.5.0"
+regex = "1"
 
 [profile.release]
 opt-level = 3
