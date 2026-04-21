@@ -1,10 +1,11 @@
 use anyhow::Context;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 use crate::cli::args::{resolve_sheet_target, InspectCommands};
 use crate::cli::envelope;
 use crate::cli::error::AppError;
-use crate::excel::open_workbook;
+use crate::excel::{open_workbook, Cell, CellType, Sheet};
 use crate::utils::{index_to_col_name, parse_range};
 
 pub fn handle(cmd: InspectCommands) -> Result<Value, AppError> {
@@ -25,6 +26,17 @@ pub fn handle(cmd: InspectCommands) -> Result<Value, AppError> {
             header_row,
             format: _,
         } => inspect_sample(file, sheet, sheet_index, range, rows, header_row),
+        InspectCommands::Columns {
+            file,
+            sheet,
+            header_row,
+            format: _,
+        } => inspect_columns(file, sheet, header_row),
+        InspectCommands::Tables {
+            file,
+            sheet,
+            format: _,
+        } => inspect_tables(file, sheet),
     }
 }
 
@@ -39,8 +51,7 @@ fn inspect_workbook(file: std::path::PathBuf) -> Result<Value, AppError> {
     let format_str = file_format(&file);
     let path_str = file.to_string_lossy().to_string();
 
-    let workbook = open_workbook(&file, false)
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let workbook = open_workbook(&file, false).map_err(crate::cli::error::anyhow_to_app_error)?;
 
     let sheets: Vec<Value> = workbook
         .get_sheet_names()
@@ -85,8 +96,8 @@ fn inspect_sheet(
     let format_str = file_format(&file);
     let path_str = file.to_string_lossy().to_string();
 
-    let mut workbook = open_workbook(&file, false)
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let mut workbook =
+        open_workbook(&file, false).map_err(crate::cli::error::anyhow_to_app_error)?;
 
     let index = resolve_sheet_target(&workbook, &sheet, &sheet_index)?;
     let sheet_name = workbook.get_sheet_names()[index].clone();
@@ -149,8 +160,8 @@ fn inspect_sample(
     let format_str = file_format(&file);
     let path_str = file.to_string_lossy().to_string();
 
-    let mut workbook = open_workbook(&file, false)
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let mut workbook =
+        open_workbook(&file, false).map_err(crate::cli::error::anyhow_to_app_error)?;
 
     let index = resolve_sheet_target(&workbook, &sheet, &sheet_index)?;
     let sheet_name = workbook.get_sheet_names()[index].clone();
@@ -164,16 +175,13 @@ fn inspect_sample(
         .with_context(|| format!("Sheet '{}' not found", sheet_name))
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let used_range = workbook
-        .get_used_range(index)
-        .unwrap_or_default();
+    let used_range = workbook.get_used_range(index).unwrap_or_default();
 
     // Determine the sample range
     let ((mut start_row, mut start_col), (mut end_row, mut end_col)) = if let Some(ref r) = range {
-        parse_range(r)
-            .ok_or_else(|| AppError::InvalidQuery {
-                message: format!("Invalid range format: {}", r),
-            })?
+        parse_range(r).ok_or_else(|| AppError::InvalidQuery {
+            message: format!("Invalid range format: {}", r),
+        })?
     } else if !used_range.is_empty() {
         parse_range(&used_range).unwrap_or(((1, 1), (1, 1)))
     } else {
@@ -305,4 +313,559 @@ fn inspect_sample(
         data,
         vec![],
     ))
+}
+
+fn inspect_columns(
+    file: std::path::PathBuf,
+    sheet: String,
+    header_row: String,
+) -> Result<Value, AppError> {
+    let format_str = file_format(&file);
+    let path_str = file.to_string_lossy().to_string();
+
+    let mut workbook =
+        open_workbook(&file, false).map_err(crate::cli::error::anyhow_to_app_error)?;
+
+    let index = workbook
+        .resolve_sheet_by_name(&sheet)
+        .map_err(|e| AppError::TargetNotFound {
+            message: e.to_string(),
+        })?;
+    let sheet_name = workbook.get_sheet_names()[index].clone();
+
+    workbook
+        .ensure_sheet_loaded(index, &sheet_name)
+        .map_err(crate::cli::error::anyhow_to_app_error)?;
+
+    let resolved_header = resolve_columns_header_row(&workbook, index, &header_row)?;
+    let sheet_obj = workbook
+        .get_sheet_by_index(index)
+        .with_context(|| format!("Sheet '{}' not found", sheet_name))
+        .map_err(crate::cli::error::anyhow_to_app_error)?;
+
+    let header_names = column_header_names(sheet_obj, resolved_header);
+    let duplicate_flags = duplicate_header_flags(&header_names);
+    let safe_names = stable_safe_names(&header_names);
+    let data_start_row = resolved_header.map_or(1, |row| row.saturating_add(1));
+    let data_row_count = if sheet_obj.max_rows >= data_start_row {
+        sheet_obj.max_rows - data_start_row + 1
+    } else {
+        0
+    };
+
+    let columns: Vec<Value> = (1..=sheet_obj.max_cols)
+        .map(|col| {
+            let stats = analyze_column(sheet_obj, col, data_start_row, data_row_count);
+            json!({
+                "index": col,
+                "name": header_names.get(col - 1).cloned().unwrap_or_default(),
+                "safe_name": safe_names.get(col - 1).cloned().unwrap_or_else(|| {
+                    format!("col_{}", index_to_col_name(col))
+                }),
+                "is_duplicate": duplicate_flags.get(col - 1).copied().unwrap_or(false),
+                "inferred_type": stats.inferred_type,
+                "non_null_ratio": ratio(stats.non_null_count, data_row_count),
+                "formula_ratio": ratio(stats.formula_count, data_row_count),
+                "sample_values": stats.sample_values,
+            })
+        })
+        .collect();
+
+    let mut warnings = Vec::new();
+    if header_row == "auto" && resolved_header.is_none() {
+        warnings.push(json!({
+            "code": "header_not_detected",
+            "message": "No header row was detected; column names are synthetic.",
+        }));
+    }
+
+    Ok(envelope::success_envelope(
+        "inspect.columns",
+        &path_str,
+        &format_str,
+        envelope::target_sheet(&sheet_name, index),
+        json!({
+            "header_row_mode": header_row,
+            "resolved_header_row": resolved_header,
+            "column_count": sheet_obj.max_cols,
+            "data_row_count": data_row_count,
+        }),
+        json!({
+            "columns": columns,
+        }),
+        warnings,
+    ))
+}
+
+fn inspect_tables(file: std::path::PathBuf, sheet: String) -> Result<Value, AppError> {
+    let format_str = file_format(&file);
+    let path_str = file.to_string_lossy().to_string();
+
+    let mut workbook =
+        open_workbook(&file, false).map_err(crate::cli::error::anyhow_to_app_error)?;
+
+    let sheet_target = Some(sheet);
+    let index = resolve_sheet_target(&workbook, &sheet_target, &None)?;
+    let sheet_name = workbook.get_sheet_names()[index].clone();
+
+    workbook
+        .ensure_sheet_loaded(index, &sheet_name)
+        .map_err(crate::cli::error::anyhow_to_app_error)?;
+
+    let sheet_obj = workbook
+        .get_sheet_by_index(index)
+        .with_context(|| format!("Sheet '{}' not found", sheet_name))
+        .map_err(crate::cli::error::anyhow_to_app_error)?;
+
+    let candidates = detect_table_candidates(sheet_obj);
+    let candidate_count = candidates.len();
+
+    Ok(envelope::success_envelope(
+        "inspect.tables",
+        &path_str,
+        &format_str,
+        envelope::target_sheet(&sheet_name, index),
+        json!({
+            "candidate_count": candidate_count,
+        }),
+        json!({
+            "candidates": candidates,
+        }),
+        vec![],
+    ))
+}
+
+fn resolve_columns_header_row(
+    workbook: &crate::excel::Workbook,
+    sheet_index: usize,
+    header_row: &str,
+) -> Result<Option<usize>, AppError> {
+    if header_row == "auto" {
+        let (_, recommended) = workbook
+            .find_header_candidates(sheet_index)
+            .map_err(crate::cli::error::anyhow_to_app_error)?;
+        return Ok(recommended);
+    }
+
+    let row = header_row
+        .parse::<usize>()
+        .map_err(|_| AppError::InvalidQuery {
+            message: format!("Invalid header row: {}", header_row),
+        })?;
+
+    let sheet =
+        workbook
+            .get_sheet_by_index(sheet_index)
+            .ok_or_else(|| AppError::TargetNotFound {
+                message: "Sheet index out of range".to_string(),
+            })?;
+
+    if row < 1 || row > sheet.max_rows {
+        return Err(AppError::InvalidQuery {
+            message: format!(
+                "Header row {} is outside the used row range 1..={}",
+                row, sheet.max_rows
+            ),
+        });
+    }
+
+    Ok(Some(row))
+}
+
+fn column_header_names(sheet: &Sheet, resolved_header: Option<usize>) -> Vec<String> {
+    (1..=sheet.max_cols)
+        .map(|col| {
+            resolved_header
+                .and_then(|row| cell_at(sheet, row, col))
+                .map(|cell| cell.value.clone())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+fn duplicate_header_flags(headers: &[String]) -> Vec<bool> {
+    let mut counts = HashMap::new();
+    for header in headers {
+        let normalized = header.trim();
+        if !normalized.is_empty() {
+            *counts.entry(normalized.to_string()).or_insert(0usize) += 1;
+        }
+    }
+
+    headers
+        .iter()
+        .map(|header| {
+            let normalized = header.trim();
+            !normalized.is_empty() && counts.get(normalized).copied().unwrap_or(0) > 1
+        })
+        .collect()
+}
+
+fn stable_safe_names(headers: &[String]) -> Vec<String> {
+    let mut counts = HashMap::new();
+
+    headers
+        .iter()
+        .enumerate()
+        .map(|(offset, header)| {
+            let col = offset + 1;
+            let base = slugify_header(header, col);
+            let count = counts.entry(base.clone()).or_insert(0usize);
+            *count += 1;
+            if *count == 1 {
+                base
+            } else {
+                format!("{base}_{count}")
+            }
+        })
+        .collect()
+}
+
+fn slugify_header(header: &str, col: usize) -> String {
+    let mut slug = String::new();
+    let mut last_was_separator = false;
+
+    for ch in header.trim().chars() {
+        if ch.is_alphanumeric() {
+            for lower in ch.to_lowercase() {
+                slug.push(lower);
+            }
+            last_was_separator = false;
+        } else if !slug.is_empty() && !last_was_separator {
+            slug.push('_');
+            last_was_separator = true;
+        }
+    }
+
+    while slug.ends_with('_') {
+        slug.pop();
+    }
+
+    if slug.is_empty() {
+        format!("col_{}", index_to_col_name(col))
+    } else {
+        slug
+    }
+}
+
+struct ColumnStats {
+    inferred_type: &'static str,
+    non_null_count: usize,
+    formula_count: usize,
+    sample_values: Vec<Value>,
+}
+
+fn analyze_column(
+    sheet: &Sheet,
+    col: usize,
+    data_start_row: usize,
+    data_row_count: usize,
+) -> ColumnStats {
+    let mut inferred_type = None;
+    let mut is_mixed = false;
+    let mut non_null_count = 0usize;
+    let mut formula_count = 0usize;
+    let mut sample_values = Vec::new();
+
+    if data_row_count > 0 {
+        for row in data_start_row..data_start_row + data_row_count {
+            if let Some(cell) = cell_at(sheet, row, col) {
+                if cell.is_formula || cell.formula.is_some() {
+                    formula_count += 1;
+                }
+
+                if is_non_null(cell) {
+                    non_null_count += 1;
+
+                    if sample_values.len() < 5 {
+                        sample_values.push(crate::json_export::process_cell_value(cell));
+                    }
+
+                    if let Some(cell_type) = inferred_kind(cell) {
+                        match inferred_type {
+                            None => inferred_type = Some(cell_type),
+                            Some(existing) if existing == cell_type => {}
+                            Some(_) => is_mixed = true,
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    ColumnStats {
+        inferred_type: if is_mixed {
+            "mixed"
+        } else {
+            inferred_type.unwrap_or("string")
+        },
+        non_null_count,
+        formula_count,
+        sample_values,
+    }
+}
+
+fn cell_at(sheet: &Sheet, row: usize, col: usize) -> Option<&Cell> {
+    sheet.data.get(row).and_then(|row_data| row_data.get(col))
+}
+
+fn is_non_null(cell: &Cell) -> bool {
+    !cell.value.is_empty()
+}
+
+fn inferred_kind(cell: &Cell) -> Option<&'static str> {
+    match cell.cell_type {
+        CellType::Text => Some("string"),
+        CellType::Number => Some("number"),
+        CellType::Date => Some("date"),
+        CellType::Boolean => Some("boolean"),
+        CellType::Empty => None,
+    }
+}
+
+fn ratio(numerator: usize, denominator: usize) -> f64 {
+    if denominator == 0 {
+        0.0
+    } else {
+        numerator as f64 / denominator as f64
+    }
+}
+
+#[derive(Clone)]
+struct TableCandidate {
+    start_row: usize,
+    start_col: usize,
+    end_row: usize,
+    end_col: usize,
+    confidence: f64,
+}
+
+fn detect_table_candidates(sheet: &Sheet) -> Vec<Value> {
+    if sheet.max_rows == 0 || sheet.max_cols == 0 {
+        return Vec::new();
+    }
+
+    let mut candidates = Vec::new();
+
+    for row in 1..=sheet.max_rows {
+        let spans = non_empty_spans(sheet, row);
+        for (start_col, end_col) in spans {
+            let column_count = end_col - start_col + 1;
+            if column_count < 2 {
+                continue;
+            }
+
+            if !is_header_like(sheet, row, start_col, end_col) {
+                continue;
+            }
+
+            if row > 1 && previous_row_blocks_header_candidate(sheet, row, start_col, end_col) {
+                continue;
+            }
+
+            let Some(end_row) = extend_candidate(sheet, row, start_col, end_col) else {
+                continue;
+            };
+
+            let confidence = score_candidate(sheet, row, start_col, end_row, end_col);
+            if confidence < 0.5 {
+                continue;
+            }
+
+            candidates.push(TableCandidate {
+                start_row: row,
+                start_col,
+                end_row,
+                end_col,
+                confidence,
+            });
+        }
+    }
+
+    candidates.sort_by_key(|candidate| (candidate.start_row, candidate.start_col));
+    let candidates = remove_duplicate_candidates(candidates);
+
+    candidates
+        .into_iter()
+        .map(|candidate| {
+            let range = format!(
+                "{}{}:{}{}",
+                index_to_col_name(candidate.start_col),
+                candidate.start_row,
+                index_to_col_name(candidate.end_col),
+                candidate.end_row
+            );
+            json!({
+                "range": range,
+                "header_row": candidate.start_row,
+                "column_count": candidate.end_col - candidate.start_col + 1,
+                "row_count": candidate.end_row - candidate.start_row + 1,
+                "confidence": candidate.confidence,
+            })
+        })
+        .collect()
+}
+
+fn non_empty_spans(sheet: &Sheet, row: usize) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut current_start = None;
+
+    for col in 1..=sheet.max_cols {
+        if cell_has_value(sheet, row, col) {
+            current_start.get_or_insert(col);
+        } else if let Some(start) = current_start.take() {
+            spans.push((start, col - 1));
+        }
+    }
+
+    if let Some(start) = current_start {
+        spans.push((start, sheet.max_cols));
+    }
+
+    spans
+}
+
+fn is_header_like(sheet: &Sheet, row: usize, start_col: usize, end_col: usize) -> bool {
+    let width = end_col - start_col + 1;
+    let non_empty = non_empty_count(sheet, row, start_col, end_col);
+    if non_empty < 2 {
+        return false;
+    }
+
+    let fill_ratio = non_empty as f64 / width as f64;
+    let text_ratio = text_count(sheet, row, start_col, end_col) as f64 / non_empty as f64;
+    fill_ratio >= 0.8 && text_ratio >= 0.5
+}
+
+fn extend_candidate(
+    sheet: &Sheet,
+    header_row: usize,
+    start_col: usize,
+    end_col: usize,
+) -> Option<usize> {
+    let mut end_row = header_row;
+    let mut has_data_row = false;
+
+    for row in (header_row + 1)..=sheet.max_rows {
+        if row_has_any_value(sheet, row, start_col, end_col) {
+            end_row = row;
+            has_data_row = true;
+        } else {
+            break;
+        }
+    }
+
+    has_data_row.then_some(end_row)
+}
+
+fn score_candidate(
+    sheet: &Sheet,
+    header_row: usize,
+    start_col: usize,
+    end_row: usize,
+    end_col: usize,
+) -> f64 {
+    let width = end_col - start_col + 1;
+    let header_non_empty = non_empty_count(sheet, header_row, start_col, end_col);
+    let header_fill = header_non_empty as f64 / width as f64;
+    let header_text =
+        text_count(sheet, header_row, start_col, end_col) as f64 / header_non_empty.max(1) as f64;
+
+    let data_rows = end_row.saturating_sub(header_row);
+    let data_fill = if data_rows == 0 {
+        0.0
+    } else {
+        let filled_cells: usize = ((header_row + 1)..=end_row)
+            .map(|row| non_empty_count(sheet, row, start_col, end_col))
+            .sum();
+        filled_cells as f64 / (data_rows * width) as f64
+    };
+
+    let height_score = (data_rows as f64 / 3.0).min(1.0);
+    let before_boundary =
+        header_row == 1 || !row_has_any_value(sheet, header_row - 1, start_col, end_col);
+    let after_boundary =
+        end_row == sheet.max_rows || !row_has_any_value(sheet, end_row + 1, start_col, end_col);
+    let boundary_score = match (before_boundary, after_boundary) {
+        (true, true) => 1.0,
+        (true, false) | (false, true) => 0.5,
+        (false, false) => 0.0,
+    };
+
+    let confidence = header_fill * 0.25
+        + header_text * 0.25
+        + data_fill * 0.25
+        + height_score * 0.15
+        + boundary_score * 0.10;
+
+    (confidence.clamp(0.0, 1.0) * 100.0).round() / 100.0
+}
+
+fn remove_duplicate_candidates(candidates: Vec<TableCandidate>) -> Vec<TableCandidate> {
+    let mut kept: Vec<TableCandidate> = Vec::new();
+
+    'candidate: for candidate in candidates {
+        for existing in &kept {
+            if same_table_region(existing, &candidate) {
+                continue 'candidate;
+            }
+        }
+        kept.push(candidate);
+    }
+
+    kept
+}
+
+fn same_table_region(left: &TableCandidate, right: &TableCandidate) -> bool {
+    left.start_row == right.start_row
+        && left.start_col == right.start_col
+        && left.end_row == right.end_row
+        && left.end_col == right.end_col
+}
+
+fn previous_row_blocks_header_candidate(
+    sheet: &Sheet,
+    row: usize,
+    start_col: usize,
+    end_col: usize,
+) -> bool {
+    let width = end_col - start_col + 1;
+    let previous_non_empty = non_empty_count(sheet, row - 1, start_col, end_col);
+    previous_non_empty >= 2 && previous_non_empty as f64 / width as f64 >= 0.5
+}
+
+fn row_has_any_value(sheet: &Sheet, row: usize, start_col: usize, end_col: usize) -> bool {
+    (start_col..=end_col).any(|col| cell_has_value(sheet, row, col))
+}
+
+fn non_empty_count(sheet: &Sheet, row: usize, start_col: usize, end_col: usize) -> usize {
+    (start_col..=end_col)
+        .filter(|&col| cell_has_value(sheet, row, col))
+        .count()
+}
+
+fn text_count(sheet: &Sheet, row: usize, start_col: usize, end_col: usize) -> usize {
+    (start_col..=end_col)
+        .filter(|&col| {
+            cell_has_value(sheet, row, col)
+                && matches!(table_cell_type(sheet, row, col), Some(CellType::Text))
+        })
+        .count()
+}
+
+fn cell_has_value(sheet: &Sheet, row: usize, col: usize) -> bool {
+    sheet
+        .data
+        .get(row)
+        .and_then(|row_data| row_data.get(col))
+        .map(|cell| !cell.value.trim().is_empty() || cell.formula.is_some())
+        .unwrap_or(false)
+}
+
+fn table_cell_type(sheet: &Sheet, row: usize, col: usize) -> Option<CellType> {
+    sheet
+        .data
+        .get(row)
+        .and_then(|row_data| row_data.get(col))
+        .map(|cell| cell.cell_type.clone())
 }

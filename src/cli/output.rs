@@ -36,6 +36,8 @@ fn write_text(value: &Value) -> Result<(), AppError> {
         "inspect.workbook" => write_text_workbook(value)?,
         "inspect.sheet" => write_text_sheet(value)?,
         "inspect.sample" => write_text_sample(value)?,
+        "inspect.columns" => write_text_columns(value)?,
+        "inspect.tables" => write_text_tables(value)?,
         "read.cell" => write_text_cell(value)?,
         "read.range" => write_text_range(value)?,
         "read.rows" => write_text_rows(value)?,
@@ -102,12 +104,63 @@ fn write_text_sample(value: &Value) -> Result<(), AppError> {
     } else if let Some(records) = data["records"].as_array() {
         for record in records {
             if let Some(obj) = record.as_object() {
-                let parts: Vec<String> = obj
-                    .iter()
-                    .map(|(k, v)| format!("{}={}", k, v))
-                    .collect();
+                let parts: Vec<String> = obj.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
                 println!("{}", parts.join("\t"));
             }
+        }
+    }
+    Ok(())
+}
+
+fn write_text_columns(value: &Value) -> Result<(), AppError> {
+    println!("index\tname\tsafe_name\tis_duplicate\tinferred_type\tnon_null_ratio\tformula_ratio");
+
+    if let Some(columns) = value["data"]["columns"].as_array() {
+        for column in columns {
+            let index = column["index"].as_u64().unwrap_or(0);
+            let name = column["name"].as_str().unwrap_or("");
+            let safe_name = column["safe_name"].as_str().unwrap_or("");
+            let is_duplicate = column["is_duplicate"].as_bool().unwrap_or(false);
+            let inferred_type = column["inferred_type"].as_str().unwrap_or("");
+            let non_null_ratio = format_ratio(column["non_null_ratio"].as_f64().unwrap_or(0.0));
+            let formula_ratio = format_ratio(column["formula_ratio"].as_f64().unwrap_or(0.0));
+
+            println!(
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                index, name, safe_name, is_duplicate, inferred_type, non_null_ratio, formula_ratio
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn format_ratio(value: f64) -> String {
+    let rounded = (value * 1000.0).round() / 1000.0;
+    if (rounded.fract()).abs() < f64::EPSILON {
+        format!("{rounded:.0}")
+    } else {
+        let formatted = format!("{rounded:.3}");
+        formatted
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+    }
+}
+
+fn write_text_tables(value: &Value) -> Result<(), AppError> {
+    let data = &value["data"];
+    if let Some(candidates) = data["candidates"].as_array() {
+        for candidate in candidates {
+            let range = candidate["range"].as_str().unwrap_or("");
+            let header_row = candidate["header_row"].as_u64().unwrap_or(0);
+            let column_count = candidate["column_count"].as_u64().unwrap_or(0);
+            let row_count = candidate["row_count"].as_u64().unwrap_or(0);
+            let confidence = candidate["confidence"].as_f64().unwrap_or(0.0);
+            println!(
+                "{}\theader_row={}\tcolumns={}\trows={}\tconfidence={:.2}",
+                range, header_row, column_count, row_count, confidence
+            );
         }
     }
     Ok(())
@@ -161,10 +214,7 @@ fn write_text_rows(value: &Value) -> Result<(), AppError> {
     } else if let Some(records) = data["records"].as_array() {
         for record in records {
             if let Some(obj) = record.as_object() {
-                let parts: Vec<String> = obj
-                    .iter()
-                    .map(|(k, v)| format!("{}={}", k, v))
-                    .collect();
+                let parts: Vec<String> = obj.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
                 println!("{}", parts.join("\t"));
             }
         }

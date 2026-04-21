@@ -244,6 +244,7 @@ fn create_sheet_from_range(
     }
 
     if let Some(formulas) = formula_range {
+        let (start_row, start_col) = formulas.start().unwrap_or((0, 0));
         for (row_idx, col_idx, formula) in formulas.used_cells() {
             if formula.is_empty() {
                 continue;
@@ -255,9 +256,13 @@ fn create_sheet_from_range(
                 format!("={formula}")
             };
 
-            let cell = &mut data[row_idx + 1][col_idx + 1];
-            cell.is_formula = true;
-            cell.formula = Some(normalized);
+            let row = start_row as usize + row_idx + 1;
+            let col = start_col as usize + col_idx + 1;
+            if row < data.len() && col < data[row].len() {
+                let cell = &mut data[row][col];
+                cell.is_formula = true;
+                cell.formula = Some(normalized);
+            }
         }
     }
 

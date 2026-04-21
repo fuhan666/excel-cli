@@ -94,6 +94,36 @@ pub enum InspectCommands {
         #[arg(long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
+    /// Inspect column headers and inferred column metadata
+    Columns {
+        /// Excel file path
+        file: PathBuf,
+
+        /// Sheet name (exact match)
+        #[arg(long)]
+        sheet: String,
+
+        /// Header row: auto or 1-based index
+        #[arg(long, default_value = "auto")]
+        header_row: String,
+
+        /// Output format
+        #[arg(long, value_enum, default_value = "json")]
+        format: OutputFormat,
+    },
+    /// Detect table-like regions in a sheet
+    Tables {
+        /// Excel file path
+        file: PathBuf,
+
+        /// Sheet name (exact match)
+        #[arg(long)]
+        sheet: String,
+
+        /// Output format
+        #[arg(long, value_enum, default_value = "json")]
+        format: OutputFormat,
+    },
 }
 
 #[derive(Subcommand)]
