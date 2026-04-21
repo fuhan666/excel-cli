@@ -83,6 +83,43 @@ fn create_read_contract_workbook(path: &std::path::Path) {
     workbook.save(path).unwrap();
 }
 
+fn create_read_rows_extensions_workbook(path: &std::path::Path) {
+    use rust_xlsxwriter::Workbook as XlsxWorkbook;
+
+    let mut workbook = XlsxWorkbook::new();
+
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("FilterRows").unwrap();
+    sheet.write_string(0, 0, "name").unwrap();
+    sheet.write_string(0, 1, "amount").unwrap();
+    sheet.write_string(0, 2, "status").unwrap();
+    sheet.write_string(0, 3, "note").unwrap();
+    sheet.write_string(0, 4, "optional").unwrap();
+
+    sheet.write_string(1, 0, "Alice").unwrap();
+    sheet.write_number(1, 1, 10.0).unwrap();
+    sheet.write_string(1, 2, "open").unwrap();
+    sheet.write_string(1, 3, "alpha").unwrap();
+
+    sheet.write_string(2, 0, "Bob").unwrap();
+    sheet.write_number(2, 1, 25.0).unwrap();
+    sheet.write_string(2, 2, "closed").unwrap();
+    sheet.write_string(2, 3, "beta").unwrap();
+    sheet.write_string(2, 4, "x").unwrap();
+
+    sheet.write_string(3, 0, "Carol").unwrap();
+    sheet.write_number(3, 1, 40.0).unwrap();
+    sheet.write_string(3, 2, "open").unwrap();
+    sheet.write_string(3, 3, "carol:tag").unwrap();
+
+    sheet.write_string(5, 0, "Delta").unwrap();
+    sheet.write_number(5, 1, 55.0).unwrap();
+    sheet.write_string(5, 2, "open").unwrap();
+    sheet.write_string(5, 3, "delta-special").unwrap();
+
+    workbook.save(path).unwrap();
+}
+
 fn create_columns_contract_workbook(path: &std::path::Path) {
     use rust_xlsxwriter::Workbook as XlsxWorkbook;
 
@@ -761,6 +798,188 @@ fn test_read_rows_explicit_header_row_respects_selected_range() {
     let records = json["data"]["records"].as_array().unwrap();
     assert_eq!(records.len(), 2);
     assert!(records[0].get("Quarterly export").is_none());
+}
+
+#[test]
+fn test_read_rows_select_filters_pagination_and_meta() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_rows_extensions.xlsx");
+    create_read_rows_extensions_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("rows")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("FilterRows")
+        .arg("--range")
+        .arg("A1:E6")
+        .arg("--select")
+        .arg("name,amount")
+        .arg("--filter")
+        .arg("status:eq:open")
+        .arg("--filter")
+        .arg("amount:gte:40")
+        .arg("--limit")
+        .arg("1")
+        .arg("--offset")
+        .arg("0")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    assert_eq!(json["data"]["mode"], "records");
+    assert_eq!(
+        json["meta"]["applied_filters"],
+        serde_json::json!(["status:eq:open", "amount:gte:40"])
+    );
+    assert_eq!(
+        json["meta"]["selected_columns"],
+        serde_json::json!(["name", "amount"])
+    );
+    assert_eq!(json["meta"]["row_count"], 1);
+    assert_eq!(json["meta"]["truncated"], true);
+
+    let records = json["data"]["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0],
+        serde_json::json!({"name": "Carol", "amount": 40})
+    );
+}
+
+#[test]
+fn test_read_rows_filter_operators_and_non_empty() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_rows_filter_ops.xlsx");
+    create_read_rows_extensions_workbook(&file_path);
+
+    let cases = [
+        ("name:ne:Alice", vec!["Bob", "Carol", "Delta"]),
+        ("amount:gt:25", vec!["Carol", "Delta"]),
+        ("amount:lt:40", vec!["Alice", "Bob"]),
+        ("amount:lte:25", vec!["Alice", "Bob"]),
+        ("note:contains:special", vec!["Delta"]),
+        ("name:regex:^(Alice|Carol)$", vec!["Alice", "Carol"]),
+        ("optional:isnull:", vec!["Alice", "Carol", "Delta"]),
+        ("optional:notnull:", vec!["Bob"]),
+    ];
+
+    for (filter, expected_names) in cases {
+        let output = Command::new(excel_cli_bin())
+            .arg("read")
+            .arg("rows")
+            .arg(&file_path)
+            .arg("--sheet")
+            .arg("FilterRows")
+            .arg("--range")
+            .arg("A1:E6")
+            .arg("--select")
+            .arg("name")
+            .arg("--filter")
+            .arg(filter)
+            .arg("--non-empty")
+            .output()
+            .expect("Failed to execute excel-cli");
+
+        let json = assert_json_success(&output);
+        let actual_names: Vec<&str> = json["data"]["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|record| record["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(actual_names, expected_names, "filter {filter}");
+        assert_eq!(json["meta"]["row_count"], expected_names.len());
+        assert_eq!(json["meta"]["truncated"], false);
+    }
+}
+
+#[test]
+fn test_read_rows_no_match_and_raw_column_selection() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_rows_raw_select.xlsx");
+    create_read_rows_extensions_workbook(&file_path);
+
+    let no_match = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("rows")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("FilterRows")
+        .arg("--range")
+        .arg("A1:E6")
+        .arg("--filter")
+        .arg("name:eq:Missing")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&no_match);
+    assert!(json["data"]["records"].as_array().unwrap().is_empty());
+    assert_eq!(json["meta"]["row_count"], 0);
+    assert_eq!(json["meta"]["truncated"], false);
+
+    let raw = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("rows")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("FilterRows")
+        .arg("--range")
+        .arg("A2:E6")
+        .arg("--header-row")
+        .arg("999")
+        .arg("--select")
+        .arg("col_A,col_C")
+        .arg("--filter")
+        .arg("col_B:gte:40")
+        .arg("--non-empty")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&raw);
+    assert_eq!(json["data"]["mode"], "rows");
+    assert_eq!(
+        json["meta"]["selected_columns"],
+        serde_json::json!(["col_A", "col_C"])
+    );
+    assert_eq!(json["meta"]["row_count"], 2);
+    assert_eq!(
+        json["data"]["rows"],
+        serde_json::json!([["Carol", "open"], ["Delta", "open"]])
+    );
+}
+
+#[test]
+fn test_read_rows_invalid_select_and_filters_are_structured_errors() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_rows_invalid_filters.xlsx");
+    create_read_rows_extensions_workbook(&file_path);
+
+    let cases = [
+        vec!["--select", "missing"],
+        vec!["--filter", "missing:eq:value"],
+        vec!["--filter", "name:starts:value"],
+        vec!["--filter", "name:eq"],
+        vec!["--filter", "name:regex:["],
+        vec!["--filter", "amount:gt:not-a-number"],
+    ];
+
+    for args in cases {
+        let output = Command::new(excel_cli_bin())
+            .arg("read")
+            .arg("rows")
+            .arg(&file_path)
+            .arg("--sheet")
+            .arg("FilterRows")
+            .arg("--range")
+            .arg("A1:E6")
+            .args(args)
+            .output()
+            .expect("Failed to execute excel-cli");
+
+        assert_json_error(&output, 6);
+    }
 }
 
 #[test]

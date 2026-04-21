@@ -191,6 +191,26 @@ pub enum ReadCommands {
         #[arg(long, default_value = "auto")]
         header_row: String,
 
+        /// Select columns by stable column name, comma-separated
+        #[arg(long)]
+        select: Option<String>,
+
+        /// Filter rows using field:op:value; repeat for AND semantics
+        #[arg(long = "filter")]
+        filters: Vec<String>,
+
+        /// Maximum number of rows to return
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Number of rows to skip after filtering
+        #[arg(long)]
+        offset: Option<usize>,
+
+        /// Drop rows where every cell in the row is empty
+        #[arg(long)]
+        non_empty: bool,
+
         /// Output format
         #[arg(long, value_enum, default_value = "json")]
         format: OutputFormat,

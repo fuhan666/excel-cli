@@ -1,5 +1,6 @@
 use anyhow::Context;
 use quick_xml::events::Event;
+use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs::File;
@@ -35,8 +36,24 @@ pub fn handle(cmd: ReadCommands) -> Result<Value, AppError> {
             sheet_index,
             range,
             header_row,
+            select,
+            filters,
+            limit,
+            offset,
+            non_empty,
             format: _,
-        } => read_rows(file, sheet, sheet_index, range, header_row),
+        } => read_rows(
+            file,
+            sheet,
+            sheet_index,
+            range,
+            header_row,
+            select,
+            filters,
+            limit,
+            offset,
+            non_empty,
+        ),
     }
 }
 
@@ -140,6 +157,214 @@ fn stable_record_keys(headers: &[String], start_col: usize) -> Vec<String> {
             }
         })
         .collect()
+}
+
+#[derive(Clone, Copy)]
+enum FilterOp {
+    Eq,
+    Ne,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    Contains,
+    Regex,
+    IsNull,
+    NotNull,
+}
+
+struct FilterSpec {
+    raw: String,
+    col_idx: usize,
+    op: FilterOp,
+    value: String,
+    numeric_value: Option<f64>,
+    regex: Option<Regex>,
+}
+
+fn invalid_query(message: impl Into<String>) -> AppError {
+    AppError::InvalidQuery {
+        message: message.into(),
+    }
+}
+
+fn parse_selected_columns(
+    select: Option<String>,
+    columns: &[String],
+) -> Result<Vec<usize>, AppError> {
+    let Some(select) = select else {
+        return Ok((0..columns.len()).collect());
+    };
+
+    let mut selected = Vec::new();
+    for field in select.split(',').map(str::trim) {
+        if field.is_empty() {
+            return Err(invalid_query("Selected column names cannot be empty"));
+        }
+        let col_idx = columns
+            .iter()
+            .position(|column| column == field)
+            .ok_or_else(|| invalid_query(format!("Unknown selected column: {field}")))?;
+        selected.push(col_idx);
+    }
+
+    Ok(selected)
+}
+
+fn parse_filters(filters: Vec<String>, columns: &[String]) -> Result<Vec<FilterSpec>, AppError> {
+    filters
+        .into_iter()
+        .map(|raw| {
+            let mut parts = raw.splitn(3, ':');
+            let field = parts.next().unwrap_or_default().trim();
+            let op = parts.next().unwrap_or_default().trim();
+            let value = parts.next().ok_or_else(|| {
+                invalid_query(format!("Invalid filter '{raw}'; expected field:op:value"))
+            })?;
+            let value = value.to_string();
+
+            if field.is_empty() {
+                return Err(invalid_query(format!(
+                    "Invalid filter '{raw}'; field is empty"
+                )));
+            }
+
+            let col_idx = columns
+                .iter()
+                .position(|column| column == field)
+                .ok_or_else(|| invalid_query(format!("Unknown filter column: {field}")))?;
+
+            let op = match op {
+                "eq" => FilterOp::Eq,
+                "ne" => FilterOp::Ne,
+                "gt" => FilterOp::Gt,
+                "gte" => FilterOp::Gte,
+                "lt" => FilterOp::Lt,
+                "lte" => FilterOp::Lte,
+                "contains" => FilterOp::Contains,
+                "regex" => FilterOp::Regex,
+                "isnull" => FilterOp::IsNull,
+                "notnull" => FilterOp::NotNull,
+                "" => {
+                    return Err(invalid_query(format!(
+                        "Invalid filter '{raw}'; operator is empty"
+                    )))
+                }
+                _ => return Err(invalid_query(format!("Unknown filter operator: {op}"))),
+            };
+
+            let numeric_value = if matches!(
+                op,
+                FilterOp::Gt | FilterOp::Gte | FilterOp::Lt | FilterOp::Lte
+            ) {
+                Some(value.trim().parse::<f64>().map_err(|_| {
+                    invalid_query(format!("Numeric filter value is invalid in '{raw}'"))
+                })?)
+            } else {
+                None
+            };
+
+            let regex = if matches!(op, FilterOp::Regex) {
+                Some(
+                    Regex::new(&value)
+                        .map_err(|err| invalid_query(format!("Invalid regex filter: {err}")))?,
+                )
+            } else {
+                None
+            };
+
+            Ok(FilterSpec {
+                raw,
+                col_idx,
+                op,
+                value,
+                numeric_value,
+                regex,
+            })
+        })
+        .collect()
+}
+
+fn value_as_filter_text(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(value) => value.clone(),
+        Value::Number(value) => value.to_string(),
+        Value::Bool(value) => value.to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn value_as_number(value: &Value) -> Option<f64> {
+    match value {
+        Value::Number(number) => number.as_f64(),
+        Value::String(value) => value.trim().parse::<f64>().ok(),
+        _ => None,
+    }
+}
+
+fn is_empty_cell(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::String(value) => value.trim().is_empty(),
+        _ => false,
+    }
+}
+
+fn compare_numeric<F>(cell: &Value, filter_value: f64, compare: F) -> bool
+where
+    F: Fn(f64, f64) -> bool,
+{
+    let Some(left) = value_as_number(cell) else {
+        return false;
+    };
+    compare(left, filter_value)
+}
+
+fn filter_matches(row: &[Value], filter: &FilterSpec) -> bool {
+    let Some(cell) = row.get(filter.col_idx) else {
+        return false;
+    };
+
+    match filter.op {
+        FilterOp::Eq => {
+            if let (Some(left), Ok(right)) =
+                (value_as_number(cell), filter.value.trim().parse::<f64>())
+            {
+                (left - right).abs() < f64::EPSILON
+            } else {
+                value_as_filter_text(cell) == filter.value
+            }
+        }
+        FilterOp::Ne => {
+            if let (Some(left), Ok(right)) =
+                (value_as_number(cell), filter.value.trim().parse::<f64>())
+            {
+                (left - right).abs() >= f64::EPSILON
+            } else {
+                value_as_filter_text(cell) != filter.value
+            }
+        }
+        FilterOp::Gt => {
+            compare_numeric(cell, filter.numeric_value.unwrap_or_default(), |a, b| a > b)
+        }
+        FilterOp::Gte => compare_numeric(cell, filter.numeric_value.unwrap_or_default(), |a, b| {
+            a >= b
+        }),
+        FilterOp::Lt => {
+            compare_numeric(cell, filter.numeric_value.unwrap_or_default(), |a, b| a < b)
+        }
+        FilterOp::Lte => compare_numeric(cell, filter.numeric_value.unwrap_or_default(), |a, b| {
+            a <= b
+        }),
+        FilterOp::Contains => value_as_filter_text(cell).contains(&filter.value),
+        FilterOp::Regex => filter
+            .regex
+            .as_ref()
+            .is_some_and(|regex| regex.is_match(&value_as_filter_text(cell))),
+        FilterOp::IsNull => is_empty_cell(cell),
+        FilterOp::NotNull => !is_empty_cell(cell),
+    }
 }
 
 fn read_zip_entry<R: Read + Seek>(archive: &mut ZipArchive<R>, entry_name: &str) -> Option<String> {
@@ -371,6 +596,11 @@ fn read_rows(
     sheet_index: Option<usize>,
     range: Option<String>,
     header_row: String,
+    select: Option<String>,
+    filters: Vec<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+    non_empty: bool,
 ) -> Result<Value, AppError> {
     let format_str = file_format(&file);
     let path_str = file.to_string_lossy().to_string();
@@ -439,80 +669,146 @@ fn read_rows(
         end_row
     );
 
-    let data = if let Some(header_row_idx) = resolved_header {
-        // Build records with headers
+    let (mode, columns, row_values) = if let Some(header_row_idx) = resolved_header {
         let mut headers = Vec::new();
-        if header_row_idx < sheet_obj.data.len() {
-            for col in start_col..=end_col {
-                let val = if col < sheet_obj.data[header_row_idx].len() {
-                    sheet_obj.data[header_row_idx][col].value.clone()
-                } else {
-                    String::new()
-                };
-                headers.push(val);
-            }
+        for col in start_col..=end_col {
+            let val = if header_row_idx < sheet_obj.data.len()
+                && col < sheet_obj.data[header_row_idx].len()
+            {
+                sheet_obj.data[header_row_idx][col].value.clone()
+            } else {
+                String::new()
+            };
+            headers.push(val);
         }
-        let record_keys = stable_record_keys(&headers, start_col);
+        let columns = stable_record_keys(&headers, start_col);
 
-        let mut records = Vec::new();
+        let mut row_values = Vec::new();
         let data_start_row = start_row.max(header_row_idx.saturating_add(1));
         for row in data_start_row..=end_row {
             if row >= sheet_obj.data.len() {
                 break;
             }
-            let mut record = serde_json::Map::new();
-            for (col_idx, col) in (start_col..=end_col).enumerate() {
-                let key = record_keys
-                    .get(col_idx)
-                    .cloned()
-                    .unwrap_or_else(|| format!("col_{}", index_to_col_name(col)));
-                let value = if col < sheet_obj.data[row].len() {
-                    crate::json_export::process_cell_value(&sheet_obj.data[row][col])
-                } else {
-                    Value::Null
-                };
-                record.insert(key, value);
-            }
-            records.push(Value::Object(record));
-        }
-
-        json!({
-            "resolved_header_row": header_row_idx,
-            "mode": "records",
-            "records": records,
-        })
-    } else {
-        // Raw rows
-        let mut row_values = Vec::new();
-        for row in start_row..=end_row {
-            if row >= sheet_obj.data.len() {
-                break;
-            }
-            let mut cols = Vec::new();
+            let mut values = Vec::new();
             for col in start_col..=end_col {
                 let value = if col < sheet_obj.data[row].len() {
                     crate::json_export::process_cell_value(&sheet_obj.data[row][col])
                 } else {
                     Value::Null
                 };
-                cols.push(value);
+                values.push(value);
             }
-            row_values.push(Value::Array(cols));
+            row_values.push(values);
         }
+
+        ("records", columns, row_values)
+    } else {
+        let columns: Vec<String> = (start_col..=end_col)
+            .map(|col| format!("col_{}", index_to_col_name(col)))
+            .collect();
+        let mut row_values = Vec::new();
+        for row in start_row..=end_row {
+            if row >= sheet_obj.data.len() {
+                break;
+            }
+            let mut values = Vec::new();
+            for col in start_col..=end_col {
+                let value = if col < sheet_obj.data[row].len() {
+                    crate::json_export::process_cell_value(&sheet_obj.data[row][col])
+                } else {
+                    Value::Null
+                };
+                values.push(value);
+            }
+            row_values.push(values);
+        }
+
+        ("rows", columns, row_values)
+    };
+
+    let selected_indices = parse_selected_columns(select, &columns)?;
+    let parsed_filters = parse_filters(filters, &columns)?;
+    let applied_filters: Vec<String> = parsed_filters
+        .iter()
+        .map(|filter| filter.raw.clone())
+        .collect();
+    let selected_columns: Vec<String> = selected_indices
+        .iter()
+        .map(|idx| columns[*idx].clone())
+        .collect();
+
+    let mut filtered_rows: Vec<Vec<Value>> = row_values;
+    if non_empty {
+        filtered_rows.retain(|row| row.iter().any(|cell| !is_empty_cell(cell)));
+    }
+    filtered_rows.retain(|row| {
+        parsed_filters
+            .iter()
+            .all(|filter| filter_matches(row, filter))
+    });
+
+    let offset = offset.unwrap_or(0);
+    let rows_after_offset: Vec<Vec<Value>> = filtered_rows.into_iter().skip(offset).collect();
+    let truncated = limit.is_some_and(|size| rows_after_offset.len() > size);
+    let returned_rows: Vec<Vec<Value>> = if let Some(size) = limit {
+        rows_after_offset.into_iter().take(size).collect()
+    } else {
+        rows_after_offset
+    };
+
+    let row_count = returned_rows.len();
+
+    let data = if mode == "records" {
+        let records: Vec<Value> = returned_rows
+            .into_iter()
+            .map(|row| {
+                let mut record = serde_json::Map::new();
+                for idx in &selected_indices {
+                    let value = row.get(*idx).cloned().unwrap_or(Value::Null);
+                    record.insert(columns[*idx].clone(), value);
+                }
+                Value::Object(record)
+            })
+            .collect();
+
+        json!({
+            "resolved_header_row": resolved_header.unwrap(),
+            "mode": "records",
+            "records": records,
+        })
+    } else {
+        let rows: Vec<Value> = returned_rows
+            .into_iter()
+            .map(|row| {
+                Value::Array(
+                    selected_indices
+                        .iter()
+                        .map(|idx| row.get(*idx).cloned().unwrap_or(Value::Null))
+                        .collect(),
+                )
+            })
+            .collect();
 
         json!({
             "resolved_header_row": Value::Null,
             "mode": "rows",
-            "rows": row_values,
+            "rows": rows,
         })
     };
+
+    let meta = json!({
+        "applied_filters": applied_filters,
+        "selected_columns": selected_columns,
+        "row_count": row_count,
+        "truncated": truncated,
+    });
 
     Ok(envelope::success_envelope(
         "read.rows",
         &path_str,
         &format_str,
         envelope::target_range(&sheet_name, index, &range_str),
-        json!({}),
+        meta,
         data,
         vec![],
     ))
