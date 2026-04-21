@@ -8,8 +8,10 @@
 - 在多工作表工作簿中创建、切换和删除工作表
 - 直接在终端中编辑单元格内容
 - 将数据导出为 JSON 格式
+- 选择、筛选、分页和流式读取结果，支持自动化场景
 - 删除行和列
 - 搜索功能并支持高亮显示
+- TUI 中只读查询预览
 - 命令模式支持高级操作
 
 ## 安装与卸载
@@ -83,6 +85,16 @@ excel-cli read rows path/to/your/file.xlsx --sheet Orders
 # 读取行并指定表头行（从 1 开始计数）
 excel-cli read rows path/to/your/file.xlsx --sheet Orders --header-row 1
 
+# 读取指定列作为记录
+excel-cli read records path/to/your/file.xlsx --sheet Orders --select order_id,total,status
+
+# 筛选、分页并以 JSON Lines 流式输出记录
+excel-cli read records path/to/your/file.xlsx --sheet Orders \
+  --filter status:eq:open \
+  --filter total:gte:100 \
+  --limit 50 \
+  --output-shape jsonl
+
 # 打开交互式 TUI 浏览器
 excel-cli ui path/to/your/file.xlsx
 ```
@@ -97,6 +109,50 @@ excel-cli ui path/to/your/file.xlsx
 - 成功返回退出码 `0`
 - 失败返回非零退出码（见下方退出码说明）
 - 空单元格在 JSON 模式下输出 `null`，在文本模式下输出空字符串
+
+### 读取行与记录
+
+`read rows` 默认返回位置数组。使用 `--output-shape records` 可以返回以解析后的表头为键的对象，或者直接使用 `read records`，此时记录形式输出为默认。
+
+```bash
+excel-cli read rows report.xlsx --sheet Orders --output-shape rows
+excel-cli read rows report.xlsx --sheet Orders --output-shape records
+excel-cli read records report.xlsx --sheet Orders
+```
+
+`--select` 保留指定的列，列名来自解析后的表头行，重复或空白的表头会按与 `inspect columns` 相同的方式处理为稳定名称。
+
+```bash
+excel-cli read records report.xlsx --sheet Orders --select order_id,customer,total
+```
+
+`--filter 字段:操作符:值` 按列名筛选行。重复 `--filter` 会以 AND 逻辑组合条件。支持的操作符有 `eq`、`ne`、`gt`、`gte`、`lt`、`lte`、`contains`、`regex`、`isnull` 和 `notnull`。
+
+```bash
+excel-cli read records report.xlsx --sheet Orders --filter status:eq:open
+excel-cli read records report.xlsx --sheet Orders --filter total:gte:100
+excel-cli read records report.xlsx --sheet Orders --filter customer:contains:Inc
+excel-cli read records report.xlsx --sheet Orders --filter order_id:regex:^INV-[0-9]+$
+excel-cli read records report.xlsx --sheet Orders --filter optional_note:isnull:
+```
+
+`--limit` 和 `--offset` 在筛选后生效。`--non-empty` 会移除所有单元格为空的行。未匹配的筛选仍是成功的查询：返回空的 `rows` 或 `records` 数组，退出码为 `0`。
+
+```bash
+excel-cli read records report.xlsx --sheet Orders \
+  --filter status:eq:open \
+  --offset 25 \
+  --limit 25 \
+  --non-empty
+```
+
+`--output-shape jsonl` 将换行分隔的 JSON 记录直接输出到 stdout，而不是标准的信封格式。它使用与记录输出相同的选择、筛选、分页和表头解析规则。
+
+```bash
+excel-cli read records report.xlsx --sheet Orders --output-shape jsonl
+```
+
+无效的选择列、未知的筛选列、不支持的操作符、格式错误的筛选条件、无效的数值比较和无效的正则表达式会返回结构化的 `invalid_query` 错误，退出码为 `6`。
 
 ### 退出码
 
@@ -317,6 +373,7 @@ JSON 文件保存在与原始 Excel 文件相同的目录中。
 
 - `:nohlsearch` 或 `:noh` - 关闭搜索高亮
 - `:help` - 显示可用命令
+- `:preview` 或 `:pv` - 显示当前工作表目标和样本行的只读预览
 
 ## 文件保存逻辑
 
