@@ -30,6 +30,7 @@ fn top_level_help_prints_to_stdout_and_exits_zero() {
     );
     assert!(stdout.contains("inspect"), "unexpected stdout: {stdout}");
     assert!(stdout.contains("read"), "unexpected stdout: {stdout}");
+    assert!(stdout.contains("check"), "unexpected stdout: {stdout}");
     assert!(stdout.contains("ui"), "unexpected stdout: {stdout}");
 }
 
@@ -106,6 +107,14 @@ fn check_help_documents_v13_contract_flags() {
         "--sheet <SHEET>",
         "--rules <RULES>",
         "--severity-threshold <SEVERITY_THRESHOLD>",
+        "blank_headers",
+        "duplicate_headers",
+        "blank_rows",
+        "blank_columns",
+        "null_ratio",
+        "duplicate_values",
+        "type_drift",
+        "formula_presence",
     ] {
         assert!(
             stdout.contains(expected),
@@ -133,5 +142,5 @@ fn version_prints_to_stdout_and_exits_zero() {
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.trim(), "excel-cli 1.2.0");
+    assert_eq!(stdout.trim(), "excel-cli 1.3.0");
 }

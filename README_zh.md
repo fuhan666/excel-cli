@@ -9,9 +9,11 @@
 - 直接在终端中编辑单元格内容
 - 将数据导出为 JSON 格式
 - 选择、筛选、分页和流式读取结果，支持自动化场景
+- 对整个工作簿或单个工作表运行质量检查，并输出稳定的 JSON findings
 - 删除行和列
 - 搜索功能并支持高亮显示
 - TUI 中只读查询预览
+- 在 TUI 中查看质量检查 findings
 - 命令模式支持高级操作
 
 ## 安装与卸载
@@ -95,6 +97,15 @@ excel-cli read records path/to/your/file.xlsx --sheet Orders \
   --limit 50 \
   --output-shape jsonl
 
+# 使用完整 v1.3.0 规则集检查工作簿质量
+excel-cli check path/to/your/file.xlsx
+
+# 仅检查一个工作表，并选择指定规则
+excel-cli check path/to/your/file.xlsx --sheet Orders --rules duplicate_values,type_drift
+
+# 只返回 warning 和 error 级别的 findings
+excel-cli check path/to/your/file.xlsx --severity-threshold warning
+
 # 打开交互式 TUI 浏览器
 excel-cli ui path/to/your/file.xlsx
 ```
@@ -153,6 +164,28 @@ excel-cli read records report.xlsx --sheet Orders --output-shape jsonl
 ```
 
 无效的选择列、未知的筛选列、不支持的操作符、格式错误的筛选条件、无效的数值比较和无效的正则表达式会返回结构化的 `invalid_query` 错误，退出码为 `6`。
+
+### 质量检查
+
+`check` 会对整个工作簿或单个工作表运行固定的 v1.3.0 质量规则集，并返回与其他无界面命令一致的稳定 JSON 信封结构。默认会扫描所有工作表，返回 `info`、`warning`、`error` 三种级别的 findings；当过滤后的 findings 非空时退出码为 `1`，过滤后为空时退出码为 `0`。
+
+支持的规则：
+- `blank_headers`：标记检测到的表头行中的空白表头单元格
+- `duplicate_headers`：标记标准化后重复的表头名称
+- `blank_rows`：标记已使用区域中的整空白行
+- `blank_columns`：标记已使用区域中的整空白列
+- `null_ratio`：根据内置阈值标记空值比例过高的列
+- `duplicate_values`：标记候选标识列中的重复值
+- `type_drift`：标记同一列中偏离主类型的数据
+- `formula_presence`：报告检查区域中仍然包含公式的工作表
+
+使用 `--sheet <name>` 可以只检查单个工作表，`--rules <以逗号分隔的规则 ID>` 可以按注册表顺序运行子集规则，`--severity-threshold <info|warning|error>` 可以过滤返回的 findings。`data.summary` 只统计最终返回的 findings，而 `data.stats.finding_count_before_threshold` 会保留阈值过滤前的总数，`data.stats.rules_run` 则记录规范化后的规则顺序。
+
+```bash
+excel-cli check report.xlsx
+excel-cli check report.xlsx --sheet 客户 --rules blank_headers,duplicate_headers
+excel-cli check report.xlsx --rules null_ratio,duplicate_values,type_drift --severity-threshold warning
+```
 
 ### 退出码
 

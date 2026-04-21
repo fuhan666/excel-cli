@@ -3,7 +3,12 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "excel-cli")]
-#[command(author, version, about = "Excel CLI - single-file read-only inspector", long_about = None)]
+#[command(
+    author,
+    version,
+    about = "Excel CLI for AI, scripting, and terminal users",
+    long_about = None
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -31,10 +36,18 @@ pub enum Commands {
         sheet: Option<String>,
 
         /// Check rules to run, comma-separated
+        ///
+        /// Supported rules: blank_headers, duplicate_headers, blank_rows,
+        /// blank_columns, null_ratio, duplicate_values, type_drift,
+        /// formula_presence
         #[arg(long)]
         rules: Option<String>,
 
         /// Minimum finding severity to return
+        ///
+        /// Findings below this threshold stay out of the response, while
+        /// data.stats.finding_count_before_threshold preserves the pre-filter
+        /// total.
         #[arg(long, value_enum, default_value = "info")]
         severity_threshold: SeverityThreshold,
     },

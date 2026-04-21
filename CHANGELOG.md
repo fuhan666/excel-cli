@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-22
+
+### Added
+
+- `check <file>` workbook and sheet quality scans with a stable JSON summary, stats, and findings contract.
+- Fixed v1.3.0 rule registry covering `blank_headers`, `duplicate_headers`, `blank_rows`, `blank_columns`, `null_ratio`, `duplicate_values`, `type_drift`, and `formula_presence`.
+- TUI findings panel support for browsing quality-check results without leaving the terminal.
+- Regression coverage for rule positives and negatives, workbook and sheet targeting, threshold filtering, finding order, and exit-code behavior.
+
+### Changed
+
+- `check --help`, `README.md`, and `README_zh.md` now document the v1.3.0 quality-check surface and rule IDs.
+- Package version updated to `1.3.0`.
+
 ## [1.2.0] - 2026-04-21
 
 ### Added
@@ -195,7 +209,8 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/fuhan666/excel-cli/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/fuhan666/excel-cli/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/fuhan666/excel-cli/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/fuhan666/excel-cli/releases/tag/v1.0.0
