@@ -1,13 +1,13 @@
 [package]
 name = "excel-cli"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
-description = "A single-file read-only Excel CLI for AI and scripting. Inspect, read, and browse Excel files with a stable JSON API."
+description = "Excel CLI for AI, scripting, and terminal users. Headless JSON API for automation, plus a Vim-like TUI for interactive browsing and editing."
 license = "MIT"
 repository = "https://github.com/fuhan666/excel-cli"
-keywords = ["Excel", "Excel-export", "Excel-json", "calamine", "ratatui"]
-categories = ["command-line-utilities", "development-tools", "data-structures", "parsing"]
-exclude = [".tests", "/.github", "AGENTS.md", "CHANGELOG.md", ".gitignore"]
+keywords = ["excel", "cli", "ai", "tui", "spreadsheet"]
+categories = ["command-line-interface", "command-line-utilities", "development-tools", "parsing"]
+exclude = ["/.tests", "/.github", "AGENTS.md", "CHANGELOG.md", ".gitignore"]
 
 [dependencies]
 ratatui = "0.24.0"

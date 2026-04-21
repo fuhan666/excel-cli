@@ -1,6 +1,6 @@
 # Excel-CLI
 
-面向 AI 和脚本场景的 Excel CLI。通过稳定的 JSON API 检查、读取和浏览 Excel 文件。
+面向 AI、脚本和终端用户的 Excel 命令行工具。提供 JSON API 供自动化场景调用，同时内置交互式 TUI，支持类 Vim 快捷键浏览和编辑表格。
 
 ## 功能特性
 

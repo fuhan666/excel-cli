@@ -1,6 +1,6 @@
 # Excel-CLI
 
-An Excel CLI for AI and scripting. Inspect, read, and browse Excel files with a stable JSON API.
+An Excel CLI for AI, scripting, and terminal users. Inspect and read headlessly via a stable JSON API, or browse and edit interactively with a Vim-like TUI.
 
 ## Features
 
