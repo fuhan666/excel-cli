@@ -37,6 +37,7 @@ fn write_text(value: &Value) -> Result<(), AppError> {
         "inspect.sheet" => write_text_sheet(value)?,
         "inspect.sample" => write_text_sample(value)?,
         "inspect.columns" => write_text_columns(value)?,
+        "inspect.tables" => write_text_tables(value)?,
         "read.cell" => write_text_cell(value)?,
         "read.range" => write_text_range(value)?,
         "read.rows" => write_text_rows(value)?,
@@ -145,6 +146,24 @@ fn format_ratio(value: f64) -> String {
             .trim_end_matches('.')
             .to_string()
     }
+}
+
+fn write_text_tables(value: &Value) -> Result<(), AppError> {
+    let data = &value["data"];
+    if let Some(candidates) = data["candidates"].as_array() {
+        for candidate in candidates {
+            let range = candidate["range"].as_str().unwrap_or("");
+            let header_row = candidate["header_row"].as_u64().unwrap_or(0);
+            let column_count = candidate["column_count"].as_u64().unwrap_or(0);
+            let row_count = candidate["row_count"].as_u64().unwrap_or(0);
+            let confidence = candidate["confidence"].as_f64().unwrap_or(0.0);
+            println!(
+                "{}\theader_row={}\tcolumns={}\trows={}\tconfidence={:.2}",
+                range, header_row, column_count, row_count, confidence
+            );
+        }
+    }
+    Ok(())
 }
 
 fn write_text_cell(value: &Value) -> Result<(), AppError> {

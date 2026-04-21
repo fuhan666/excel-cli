@@ -111,6 +111,19 @@ pub enum InspectCommands {
         #[arg(long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
+    /// Detect table-like regions in a sheet
+    Tables {
+        /// Excel file path
+        file: PathBuf,
+
+        /// Sheet name (exact match)
+        #[arg(long)]
+        sheet: String,
+
+        /// Output format
+        #[arg(long, value_enum, default_value = "json")]
+        format: OutputFormat,
+    },
 }
 
 #[derive(Subcommand)]

@@ -124,6 +124,70 @@ fn create_columns_contract_workbook(path: &std::path::Path) {
     workbook.save(path).unwrap();
 }
 
+fn create_table_detection_workbook(path: &std::path::Path) {
+    use rust_xlsxwriter::Workbook as XlsxWorkbook;
+
+    let mut workbook = XlsxWorkbook::new();
+
+    let single = workbook.add_worksheet();
+    single.set_name("SingleTable").unwrap();
+    single.write_string(0, 0, "order_id").unwrap();
+    single.write_string(0, 1, "customer").unwrap();
+    single.write_string(0, 2, "amount").unwrap();
+    single.write_string(1, 0, "1001").unwrap();
+    single.write_string(1, 1, "Alice").unwrap();
+    single.write_number(1, 2, 125.0).unwrap();
+    single.write_string(2, 0, "1002").unwrap();
+    single.write_string(2, 1, "Bob").unwrap();
+    single.write_number(2, 2, 250.0).unwrap();
+    single.write_string(3, 0, "1003").unwrap();
+    single.write_string(3, 1, "Carol").unwrap();
+    single.write_number(3, 2, 375.0).unwrap();
+
+    let multiple = workbook.add_worksheet();
+    multiple.set_name("MultipleTables").unwrap();
+    multiple.write_string(0, 0, "region").unwrap();
+    multiple.write_string(0, 1, "sales").unwrap();
+    multiple.write_string(1, 0, "East").unwrap();
+    multiple.write_number(1, 1, 10.0).unwrap();
+    multiple.write_string(2, 0, "West").unwrap();
+    multiple.write_number(2, 1, 12.0).unwrap();
+    multiple.write_string(0, 4, "sku").unwrap();
+    multiple.write_string(0, 5, "qty").unwrap();
+    multiple.write_string(0, 6, "status").unwrap();
+    multiple.write_string(1, 4, "A-1").unwrap();
+    multiple.write_number(1, 5, 5.0).unwrap();
+    multiple.write_string(1, 6, "open").unwrap();
+    multiple.write_string(2, 4, "B-2").unwrap();
+    multiple.write_number(2, 5, 7.0).unwrap();
+    multiple.write_string(2, 6, "closed").unwrap();
+    multiple.write_string(3, 4, "C-3").unwrap();
+    multiple.write_number(3, 5, 9.0).unwrap();
+    multiple.write_string(3, 6, "open").unwrap();
+
+    let preamble = workbook.add_worksheet();
+    preamble.set_name("Preamble").unwrap();
+    preamble.write_string(0, 0, "Quarterly export").unwrap();
+    preamble
+        .write_string(1, 0, "Generated for finance")
+        .unwrap();
+    preamble.write_string(3, 0, "Prepared by ops").unwrap();
+    preamble.write_string(4, 0, "invoice_id").unwrap();
+    preamble.write_string(4, 1, "customer").unwrap();
+    preamble.write_string(4, 2, "total").unwrap();
+    preamble.write_string(5, 0, "I-001").unwrap();
+    preamble.write_string(5, 1, "Delta").unwrap();
+    preamble.write_number(5, 2, 99.0).unwrap();
+    preamble.write_string(6, 0, "I-002").unwrap();
+    preamble.write_string(6, 1, "Echo").unwrap();
+    preamble.write_number(6, 2, 149.0).unwrap();
+
+    let empty = workbook.add_worksheet();
+    empty.set_name("EmptyTables").unwrap();
+
+    workbook.save(path).unwrap();
+}
+
 fn assert_json_success(output: &std::process::Output) -> serde_json::Value {
     assert!(
         output.status.success(),
@@ -846,6 +910,149 @@ fn test_inspect_columns_invalid_header_row() {
         .output()
         .expect("Failed to execute excel-cli");
     assert_json_error(&out_of_range, 6);
+}
+
+#[test]
+fn test_inspect_tables_single_table() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_inspect_tables_single.xlsx");
+    create_table_detection_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("tables")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("SingleTable")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    assert_eq!(json["command"], "inspect.tables");
+    assert_eq!(json["target"]["sheet"], "SingleTable");
+    assert_eq!(json["data"]["candidates"].as_array().unwrap().len(), 1);
+    assert_eq!(json["meta"]["candidate_count"], 1);
+
+    let candidate = &json["data"]["candidates"][0];
+    assert_eq!(candidate["range"], "A1:C4");
+    assert_eq!(candidate["header_row"], 1);
+    assert_eq!(candidate["column_count"], 3);
+    assert_eq!(candidate["row_count"], 4);
+    let confidence = candidate["confidence"].as_f64().unwrap();
+    assert!((0.7..=1.0).contains(&confidence));
+}
+
+#[test]
+fn test_inspect_tables_multiple_tables() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_inspect_tables_multiple.xlsx");
+    create_table_detection_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("tables")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("MultipleTables")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    let candidates = json["data"]["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 2);
+    assert!(json["data"].get("selected").is_none());
+    assert!(json["data"].get("recommended").is_none());
+
+    assert_eq!(candidates[0]["range"], "A1:B3");
+    assert_eq!(candidates[0]["header_row"], 1);
+    assert_eq!(candidates[0]["column_count"], 2);
+    assert_eq!(candidates[0]["row_count"], 3);
+    assert!((0.7..=1.0).contains(&candidates[0]["confidence"].as_f64().unwrap()));
+
+    assert_eq!(candidates[1]["range"], "E1:G4");
+    assert_eq!(candidates[1]["header_row"], 1);
+    assert_eq!(candidates[1]["column_count"], 3);
+    assert_eq!(candidates[1]["row_count"], 4);
+    assert!((0.7..=1.0).contains(&candidates[1]["confidence"].as_f64().unwrap()));
+}
+
+#[test]
+fn test_inspect_tables_preamble_late_header() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_inspect_tables_preamble.xlsx");
+    create_table_detection_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("tables")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("Preamble")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    let candidates = json["data"]["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 1);
+
+    let candidate = &candidates[0];
+    assert_eq!(candidate["range"], "A5:C7");
+    assert_eq!(candidate["header_row"], 5);
+    assert_eq!(candidate["column_count"], 3);
+    assert_eq!(candidate["row_count"], 3);
+    assert!((0.7..=1.0).contains(&candidate["confidence"].as_f64().unwrap()));
+}
+
+#[test]
+fn test_inspect_tables_empty_sheet() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_inspect_tables_empty.xlsx");
+    create_table_detection_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("tables")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("EmptyTables")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    assert_eq!(json["command"], "inspect.tables");
+    assert_eq!(json["target"]["sheet"], "EmptyTables");
+    assert_eq!(json["meta"]["candidate_count"], 0);
+    assert!(json["data"]["candidates"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn test_inspect_tables_text() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_inspect_tables_text.xlsx");
+    create_table_detection_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("tables")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("SingleTable")
+        .arg("--format")
+        .arg("text")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    assert!(output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "Expected empty stderr on success. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("A1:C4\theader_row=1"));
+    assert!(stdout.contains("columns=3"));
+    assert!(stdout.contains("rows=4"));
+    assert!(stdout.contains("confidence="));
 }
 
 #[test]

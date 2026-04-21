@@ -11,6 +11,7 @@ pub fn dispatch(cli: Cli) -> Result<(Value, crate::cli::args::OutputFormat), App
                 crate::cli::args::InspectCommands::Sheet { format, .. } => format.clone(),
                 crate::cli::args::InspectCommands::Sample { format, .. } => format.clone(),
                 crate::cli::args::InspectCommands::Columns { format, .. } => format.clone(),
+                crate::cli::args::InspectCommands::Tables { format, .. } => format.clone(),
             };
             let value = crate::cli::inspect::handle(subcommand)?;
             Ok((value, format))
