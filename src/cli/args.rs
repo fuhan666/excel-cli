@@ -195,7 +195,7 @@ pub enum ReadCommands {
         #[arg(long)]
         select: Option<String>,
 
-        /// Filter rows using field:op:value; repeat for AND semantics
+        /// Filter rows using field:op:value; operators: eq|ne|gt|gte|lt|lte|contains|regex|isnull|notnull; repeat for AND semantics
         #[arg(long = "filter")]
         filters: Vec<String>,
 
@@ -244,7 +244,7 @@ pub enum ReadCommands {
         #[arg(long)]
         select: Option<String>,
 
-        /// Filter rows using field:op:value; repeat for AND semantics
+        /// Filter rows using field:op:value; operators: eq|ne|gt|gte|lt|lte|contains|regex|isnull|notnull; repeat for AND semantics
         #[arg(long = "filter")]
         filters: Vec<String>,
 
@@ -260,7 +260,7 @@ pub enum ReadCommands {
         #[arg(long)]
         non_empty: bool,
 
-        /// Output shape for row data
+        /// Output shape for row data; records by default
         #[arg(long, value_enum, default_value = "records")]
         output_shape: OutputShape,
 

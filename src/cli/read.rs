@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
 use crate::cli::args::{resolve_sheet_target, OutputFormat, OutputShape, ReadCommands};
@@ -46,18 +46,20 @@ pub fn handle(cmd: ReadCommands) -> Result<Value, AppError> {
         } => read_rows(
             "read.rows",
             false,
-            file,
-            sheet,
-            sheet_index,
-            range,
-            header_row,
-            select,
-            filters,
-            limit,
-            offset,
-            non_empty,
-            output_shape,
-            format,
+            RowReadRequest {
+                file,
+                sheet,
+                sheet_index,
+                range,
+                header_row,
+                select,
+                filters,
+                limit,
+                offset,
+                non_empty,
+                output_shape,
+                format,
+            },
         ),
         ReadCommands::Records {
             file,
@@ -75,18 +77,20 @@ pub fn handle(cmd: ReadCommands) -> Result<Value, AppError> {
         } => read_rows(
             "read.records",
             true,
-            file,
-            sheet,
-            sheet_index,
-            range,
-            header_row,
-            select,
-            filters,
-            limit,
-            offset,
-            non_empty,
-            output_shape,
-            format,
+            RowReadRequest {
+                file,
+                sheet,
+                sheet_index,
+                range,
+                header_row,
+                select,
+                filters,
+                limit,
+                offset,
+                non_empty,
+                output_shape,
+                format,
+            },
         ),
     }
 }
@@ -214,6 +218,21 @@ struct FilterSpec {
     value: String,
     numeric_value: Option<f64>,
     regex: Option<Regex>,
+}
+
+struct RowReadRequest {
+    file: PathBuf,
+    sheet: Option<String>,
+    sheet_index: Option<usize>,
+    range: Option<String>,
+    header_row: String,
+    select: Option<String>,
+    filters: Vec<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+    non_empty: bool,
+    output_shape: OutputShape,
+    format: OutputFormat,
 }
 
 fn invalid_query(message: impl Into<String>) -> AppError {
@@ -627,19 +646,23 @@ fn read_range(
 fn read_rows(
     command: &'static str,
     command_requires_header: bool,
-    file: std::path::PathBuf,
-    sheet: Option<String>,
-    sheet_index: Option<usize>,
-    range: Option<String>,
-    header_row: String,
-    select: Option<String>,
-    filters: Vec<String>,
-    limit: Option<usize>,
-    offset: Option<usize>,
-    non_empty: bool,
-    output_shape: OutputShape,
-    format: OutputFormat,
+    request: RowReadRequest,
 ) -> Result<Value, AppError> {
+    let RowReadRequest {
+        file,
+        sheet,
+        sheet_index,
+        range,
+        header_row,
+        select,
+        filters,
+        limit,
+        offset,
+        non_empty,
+        output_shape,
+        format,
+    } = request;
+
     if output_shape == OutputShape::Jsonl && matches!(format, OutputFormat::Text) {
         return Err(AppError::InvalidArgs {
             message: "--output-shape jsonl cannot be combined with --format text".to_string(),
