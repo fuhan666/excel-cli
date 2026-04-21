@@ -98,6 +98,27 @@ fn read_records_help_documents_default_record_shape() {
 }
 
 #[test]
+fn check_help_documents_v13_contract_flags() {
+    let stdout = assert_successful_help(&["check", "--help"]);
+
+    for expected in [
+        "Usage: excel-cli check [OPTIONS] <FILE>",
+        "--sheet <SHEET>",
+        "--rules <RULES>",
+        "--severity-threshold <SEVERITY_THRESHOLD>",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "expected {expected:?} in stdout: {stdout}"
+        );
+    }
+    assert!(
+        !stdout.contains("--rule <RULE>"),
+        "legacy --rule flag should not be documented: {stdout}"
+    );
+}
+
+#[test]
 fn version_prints_to_stdout_and_exits_zero() {
     let output = Command::new(excel_cli_bin())
         .arg("--version")

@@ -273,60 +273,6 @@ fn handle_editing_mode(app_state: &mut AppState, key: KeyEvent) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use std::path::PathBuf;
-
-    use super::handle_key_event;
-    use crate::app::{AppState, InputMode};
-    use crate::excel::{Cell, Sheet, Workbook};
-
-    fn app_with_preview() -> AppState<'static> {
-        let mut data = vec![vec![Cell::empty(); 2]; 2];
-        data[1][1] = Cell::new("Ada".to_string(), false);
-        let sheet = Sheet {
-            name: "Data".to_string(),
-            data,
-            max_rows: 1,
-            max_cols: 1,
-            is_loaded: true,
-        };
-        let mut app = AppState::new(
-            Workbook::from_sheets_for_test(vec![sheet]),
-            PathBuf::from("test.xlsx"),
-        )
-        .unwrap();
-        app.show_query_preview();
-        app
-    }
-
-    #[test]
-    fn escape_closes_preview_without_quitting() {
-        let mut app = app_with_preview();
-
-        handle_key_event(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()));
-
-        assert!(matches!(app.input_mode, InputMode::Normal));
-        assert!(app.query_preview.is_none());
-        assert!(!app.should_quit);
-    }
-
-    #[test]
-    fn q_closes_preview_without_quitting() {
-        let mut app = app_with_preview();
-
-        handle_key_event(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()),
-        );
-
-        assert!(matches!(app.input_mode, InputMode::Normal));
-        assert!(app.query_preview.is_none());
-        assert!(!app.should_quit);
-    }
-}
-
 fn handle_search_mode(app_state: &mut AppState, key_code: KeyCode) {
     match key_code {
         KeyCode::Enter => app_state.execute_search(),
@@ -451,5 +397,59 @@ fn handle_help_mode(app_state: &mut AppState, key_code: KeyCode) {
             app_state.help_scroll = max_scroll;
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::path::PathBuf;
+
+    use super::handle_key_event;
+    use crate::app::{AppState, InputMode};
+    use crate::excel::{Cell, Sheet, Workbook};
+
+    fn app_with_preview() -> AppState<'static> {
+        let mut data = vec![vec![Cell::empty(); 2]; 2];
+        data[1][1] = Cell::new("Ada".to_string(), false);
+        let sheet = Sheet {
+            name: "Data".to_string(),
+            data,
+            max_rows: 1,
+            max_cols: 1,
+            is_loaded: true,
+        };
+        let mut app = AppState::new(
+            Workbook::from_sheets_for_test(vec![sheet]),
+            PathBuf::from("test.xlsx"),
+        )
+        .unwrap();
+        app.show_query_preview();
+        app
+    }
+
+    #[test]
+    fn escape_closes_preview_without_quitting() {
+        let mut app = app_with_preview();
+
+        handle_key_event(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()));
+
+        assert!(matches!(app.input_mode, InputMode::Normal));
+        assert!(app.query_preview.is_none());
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn q_closes_preview_without_quitting() {
+        let mut app = app_with_preview();
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()),
+        );
+
+        assert!(matches!(app.input_mode, InputMode::Normal));
+        assert!(app.query_preview.is_none());
+        assert!(!app.should_quit);
     }
 }

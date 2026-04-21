@@ -1562,44 +1562,6 @@ fn test_inspect_tables_text() {
 }
 
 #[test]
-fn test_check_namespace_only() {
-    let temp_dir = std::env::temp_dir();
-    let file_path = temp_dir.join("excel_cli_test_check.xlsx");
-    create_test_workbook(&file_path);
-
-    let output = Command::new(excel_cli_bin())
-        .arg("check")
-        .arg(&file_path)
-        .arg("--rule")
-        .arg("missing_values")
-        .output()
-        .expect("Failed to execute excel-cli");
-
-    assert_json_error(&output, 6); // EXIT_INVALID_QUERY
-    let err_json: serde_json::Value =
-        serde_json::from_slice(&output.stderr).expect("Valid JSON error");
-    assert_eq!(err_json["error"]["code"], "check_not_implemented");
-}
-
-#[test]
-fn test_check_help_without_rule() {
-    let temp_dir = std::env::temp_dir();
-    let file_path = temp_dir.join("excel_cli_test_check_no_rule.xlsx");
-    create_test_workbook(&file_path);
-
-    let output = Command::new(excel_cli_bin())
-        .arg("check")
-        .arg(&file_path)
-        .output()
-        .expect("Failed to execute excel-cli");
-
-    assert_json_error(&output, 6); // EXIT_INVALID_QUERY
-    let err_json: serde_json::Value =
-        serde_json::from_slice(&output.stderr).expect("Valid JSON error");
-    assert_eq!(err_json["error"]["code"], "check_not_implemented");
-}
-
-#[test]
 fn test_bare_file_path_is_error() {
     let temp_dir = std::env::temp_dir();
     let file_path = temp_dir.join("excel_cli_test_bare.xlsx");

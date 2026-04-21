@@ -21,14 +21,22 @@ pub enum Commands {
         #[command(subcommand)]
         subcommand: ReadCommands,
     },
-    /// Check data quality (namespace reserved for v1.3.0)
+    /// Check workbook or sheet data quality
     Check {
         /// Excel file path
         file: PathBuf,
 
-        /// Check rule to run
+        /// Sheet name (exact match)
         #[arg(long)]
-        rule: Option<String>,
+        sheet: Option<String>,
+
+        /// Check rules to run, comma-separated
+        #[arg(long)]
+        rules: Option<String>,
+
+        /// Minimum finding severity to return
+        #[arg(long, value_enum, default_value = "info")]
+        severity_threshold: SeverityThreshold,
     },
     /// Open interactive TUI browser
     Ui {
@@ -300,6 +308,24 @@ impl OutputShape {
             OutputShape::Rows => "rows",
             OutputShape::Records => "records",
             OutputShape::Jsonl => "jsonl",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, clap::ValueEnum, PartialEq, Eq)]
+pub enum SeverityThreshold {
+    #[default]
+    Info,
+    Warning,
+    Error,
+}
+
+impl SeverityThreshold {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SeverityThreshold::Info => "info",
+            SeverityThreshold::Warning => "warning",
+            SeverityThreshold::Error => "error",
         }
     }
 }
