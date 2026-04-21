@@ -83,6 +83,47 @@ fn create_read_contract_workbook(path: &std::path::Path) {
     workbook.save(path).unwrap();
 }
 
+fn create_columns_contract_workbook(path: &std::path::Path) {
+    use rust_xlsxwriter::Workbook as XlsxWorkbook;
+
+    let mut workbook = XlsxWorkbook::new();
+
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("ColumnCases").unwrap();
+    sheet.write_string(0, 0, "customer").unwrap();
+    sheet.write_string(0, 1, "customer").unwrap();
+    sheet.write_string(0, 2, "").unwrap();
+    sheet.write_string(0, 3, "数量").unwrap();
+    sheet.write_string(0, 4, "mixed").unwrap();
+    sheet.write_string(0, 5, "active").unwrap();
+    sheet.write_string(0, 6, "total_formula").unwrap();
+    sheet.write_string(1, 0, "Alice").unwrap();
+    sheet.write_string(1, 1, "VIP").unwrap();
+    sheet.write_string(1, 2, "needs safe name").unwrap();
+    sheet.write_number(1, 3, 3.0).unwrap();
+    sheet.write_number(1, 4, 10.0).unwrap();
+    sheet.write_boolean(1, 5, true).unwrap();
+    sheet.write_formula(1, 6, "=D2*2").unwrap();
+    sheet.set_formula_result(1, 6, "6");
+    sheet.write_string(2, 0, "Bob").unwrap();
+    sheet.write_string(2, 1, "Standard").unwrap();
+    sheet.write_number(2, 3, 4.0).unwrap();
+    sheet.write_string(2, 4, "later").unwrap();
+    sheet.write_boolean(2, 5, false).unwrap();
+    sheet.write_formula(2, 6, "=D3*2").unwrap();
+    sheet.set_formula_result(2, 6, "8");
+
+    let offset = workbook.add_worksheet();
+    offset.set_name("OffsetHeader").unwrap();
+    offset.write_string(0, 0, "Quarterly export").unwrap();
+    offset.write_string(1, 0, "item").unwrap();
+    offset.write_string(1, 1, "amount").unwrap();
+    offset.write_string(2, 0, "Widget").unwrap();
+    offset.write_number(2, 1, 12.0).unwrap();
+
+    workbook.save(path).unwrap();
+}
+
 fn assert_json_success(output: &std::process::Output) -> serde_json::Value {
     assert!(
         output.status.success(),
@@ -680,6 +721,131 @@ fn test_inspect_sample_json() {
     assert_eq!(json["target"]["sheet"], "Orders");
     assert!(json["data"]["sample_mode"].is_string());
     assert!(json["data"]["rows"].is_array() || json["data"]["records"].is_array());
+}
+
+#[test]
+fn test_inspect_columns_json_contract() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_inspect_columns_contract.xlsx");
+    create_columns_contract_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("columns")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("ColumnCases")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    assert_eq!(json["schema_version"], "1.0");
+    assert_eq!(json["command"], "inspect.columns");
+    assert_eq!(json["file"]["format"], "xlsx");
+    assert_eq!(json["target"]["sheet"], "ColumnCases");
+    assert_eq!(json["target"]["sheet_index"], 0);
+    assert_eq!(json["meta"]["header_row_mode"], "auto");
+    assert_eq!(json["meta"]["resolved_header_row"], 1);
+    assert_eq!(json["meta"]["column_count"], 7);
+    assert_eq!(json["meta"]["data_row_count"], 2);
+    assert!(json["warnings"].as_array().unwrap().is_empty());
+
+    let columns = json["data"]["columns"].as_array().unwrap();
+    assert_eq!(columns.len(), 7);
+    assert_eq!(columns[0]["index"], 1);
+    assert_eq!(columns[0]["name"], "customer");
+    assert_eq!(columns[0]["safe_name"], "customer");
+    assert_eq!(columns[0]["is_duplicate"], true);
+    assert_eq!(columns[0]["inferred_type"], "string");
+    assert_eq!(columns[0]["non_null_ratio"], 1.0);
+    assert_eq!(columns[0]["formula_ratio"], 0.0);
+    assert_eq!(
+        columns[0]["sample_values"],
+        serde_json::json!(["Alice", "Bob"])
+    );
+
+    assert_eq!(columns[1]["name"], "customer");
+    assert_eq!(columns[1]["safe_name"], "customer_2");
+    assert_eq!(columns[1]["is_duplicate"], true);
+
+    assert_eq!(columns[2]["name"], "");
+    assert_eq!(columns[2]["safe_name"], "col_C");
+    assert_eq!(columns[2]["is_duplicate"], false);
+    assert_eq!(columns[2]["non_null_ratio"], 0.5);
+
+    assert_eq!(columns[3]["name"], "数量");
+    assert_eq!(columns[3]["safe_name"], "数量");
+    assert_eq!(columns[3]["inferred_type"], "number");
+    assert_eq!(columns[3]["sample_values"], serde_json::json!([3, 4]));
+
+    assert_eq!(columns[4]["inferred_type"], "mixed");
+    assert_eq!(columns[5]["inferred_type"], "boolean");
+    assert_eq!(columns[6]["inferred_type"], "number");
+    assert_eq!(columns[6]["formula_ratio"], 1.0);
+    assert_eq!(columns[6]["sample_values"], serde_json::json!([6, 8]));
+}
+
+#[test]
+fn test_inspect_columns_explicit_header_row_and_text() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_inspect_columns_text.xlsx");
+    create_columns_contract_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("columns")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("OffsetHeader")
+        .arg("--header-row")
+        .arg("2")
+        .arg("--format")
+        .arg("text")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    assert!(
+        output.status.success(),
+        "Expected success. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.trim_start().starts_with('{'));
+    assert!(stdout.contains("index\tname\tsafe_name"));
+    assert!(stdout.contains("1\titem\titem\tfalse\tstring\t1\t0"));
+    assert!(stdout.contains("2\tamount\tamount\tfalse\tnumber\t1\t0"));
+}
+
+#[test]
+fn test_inspect_columns_invalid_header_row() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_inspect_columns_bad_header.xlsx");
+    create_columns_contract_workbook(&file_path);
+
+    let non_numeric = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("columns")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("ColumnCases")
+        .arg("--header-row")
+        .arg("nope")
+        .output()
+        .expect("Failed to execute excel-cli");
+    assert_json_error(&non_numeric, 6);
+
+    let out_of_range = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("columns")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("ColumnCases")
+        .arg("--header-row")
+        .arg("999")
+        .output()
+        .expect("Failed to execute excel-cli");
+    assert_json_error(&out_of_range, 6);
 }
 
 #[test]

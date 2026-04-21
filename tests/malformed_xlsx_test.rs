@@ -31,7 +31,11 @@ fn malformed_xlsx_inspect_workbook_returns_controlled_error() {
         "Expected failure for malformed workbook, got success"
     );
     let actual = output.status.code().unwrap_or(-1);
-    assert_eq!(actual, 4, "Expected exit code 4 (parse_error), got {}", actual);
+    assert_eq!(
+        actual, 4,
+        "Expected exit code 4 (parse_error), got {}",
+        actual
+    );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -65,7 +69,11 @@ fn malformed_xlsx_read_cell_returns_controlled_error() {
         "Expected failure for malformed workbook in read mode, got success"
     );
     let actual = output.status.code().unwrap_or(-1);
-    assert_eq!(actual, 4, "Expected exit code 4 (parse_error), got {}", actual);
+    assert_eq!(
+        actual, 4,
+        "Expected exit code 4 (parse_error), got {}",
+        actual
+    );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(

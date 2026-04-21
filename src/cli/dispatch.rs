@@ -10,6 +10,7 @@ pub fn dispatch(cli: Cli) -> Result<(Value, crate::cli::args::OutputFormat), App
                 crate::cli::args::InspectCommands::Workbook { format, .. } => format.clone(),
                 crate::cli::args::InspectCommands::Sheet { format, .. } => format.clone(),
                 crate::cli::args::InspectCommands::Sample { format, .. } => format.clone(),
+                crate::cli::args::InspectCommands::Columns { format, .. } => format.clone(),
             };
             let value = crate::cli::inspect::handle(subcommand)?;
             Ok((value, format))
@@ -33,8 +34,7 @@ pub fn dispatch(cli: Cli) -> Result<(Value, crate::cli::args::OutputFormat), App
                 .map_err(crate::cli::error::anyhow_to_app_error)?;
             let app_state = crate::app::AppState::new(workbook, file)
                 .map_err(crate::cli::error::anyhow_to_app_error)?;
-            crate::ui::run_app(app_state)
-                .map_err(crate::cli::error::anyhow_to_app_error)?;
+            crate::ui::run_app(app_state).map_err(crate::cli::error::anyhow_to_app_error)?;
             Ok((
                 crate::cli::envelope::success_envelope(
                     "ui",

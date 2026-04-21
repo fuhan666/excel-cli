@@ -8,9 +8,13 @@ pub fn handle(file: std::path::PathBuf, rule: Option<String>) -> Result<Value, A
 
     // v1.0.0: check is namespace-only. Any attempt to run a rule is rejected.
     let message = if let Some(r) = rule {
-        format!("Check rule '{}' is not implemented in v1.0.0. Quality checks are planned for v1.3.0.", r)
+        format!(
+            "Check rule '{}' is not implemented in v1.0.0. Quality checks are planned for v1.3.0.",
+            r
+        )
     } else {
-        "Check command requires a --rule argument. Quality checks are planned for v1.3.0.".to_string()
+        "Check command requires a --rule argument. Quality checks are planned for v1.3.0."
+            .to_string()
     };
 
     Err(AppError::CheckNotImplemented { message })
