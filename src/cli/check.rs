@@ -334,8 +334,7 @@ fn find_blank_rows(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> {
 
     (1..=context.sheet.max_rows)
         .filter(|row| {
-            (1..=context.sheet.max_cols)
-                .all(|col| is_blank_cell(cell_at(context.sheet, *row, col)))
+            (1..=context.sheet.max_cols).all(|col| is_blank_cell(cell_at(context.sheet, *row, col)))
         })
         .map(|row| {
             let end_col = index_to_col_name(context.sheet.max_cols);
@@ -365,8 +364,7 @@ fn find_blank_columns(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> {
 
     (1..=context.sheet.max_cols)
         .filter(|col| {
-            (1..=context.sheet.max_rows)
-                .all(|row| is_blank_cell(cell_at(context.sheet, row, *col)))
+            (1..=context.sheet.max_rows).all(|row| is_blank_cell(cell_at(context.sheet, row, *col)))
         })
         .map(|col| {
             let column_label = index_to_col_name(col);
@@ -378,7 +376,10 @@ fn find_blank_columns(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> {
                 row: None,
                 column: Some(col),
                 range: Some(range),
-                message: format!("Blank column {column_label} in used range {}.", context.used_range),
+                message: format!(
+                    "Blank column {column_label} in used range {}.",
+                    context.used_range
+                ),
                 details: json!({
                     "used_range": context.used_range,
                     "column_label": column_label,
