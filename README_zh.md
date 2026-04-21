@@ -65,6 +65,12 @@ excel-cli inspect sheet path/to/your/file.xlsx --sheet-index 0
 # 从工作表中采样数据
 excel-cli inspect sample path/to/your/file.xlsx --sheet Orders --rows 10
 
+# 检查列信息（自动检测表头）
+excel-cli inspect columns path/to/your/file.xlsx --sheet Orders --header-row auto
+
+# 检查表格区域
+excel-cli inspect tables path/to/your/file.xlsx --sheet Orders
+
 # 读取单个单元格
 excel-cli read cell path/to/your/file.xlsx --sheet Orders --cell B2
 
@@ -119,6 +125,22 @@ excel-cli ui path/to/your/file.xlsx
   "data": { ... },
   "warnings": []
 }
+```
+
+### 结构检查
+
+`inspect columns` 分析工作表中的每一列，帮助你为后续命令选择稳定的字段名。响应数据包含 `columns`，每列包含 `index`、原始 `name`、生成的 `safe_name`、`is_duplicate`、尽力推断的 `inferred_type`、`non_null_ratio`、`formula_ratio` 和 `sample_values`。响应元数据包含 `header_row_mode`、`resolved_header_row`、`column_count` 和 `data_row_count`。
+
+```bash
+excel-cli inspect columns path/to/your/file.xlsx --sheet Orders --header-row auto
+excel-cli inspect columns path/to/your/file.xlsx --sheet Orders --header-row 2 --format text
+```
+
+`inspect tables` 检测工作表中的连续表格区域。响应数据包含 `data.candidates`；每个候选区域包含 `range`、`header_row`、`column_count`、`row_count` 和 `confidence`。响应元数据包含 `candidate_count`。
+
+```bash
+excel-cli inspect tables path/to/your/file.xlsx --sheet Orders
+excel-cli inspect tables path/to/your/file.xlsx --sheet Orders --format text
 ```
 
 无界面错误响应遵循稳定的信封结构：
