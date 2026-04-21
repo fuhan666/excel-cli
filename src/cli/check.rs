@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use crate::cli::args::SeverityThreshold;
 use crate::cli::envelope;
 use crate::cli::error::{AppError, EXIT_CHECK_FINDINGS, EXIT_SUCCESS};
-use crate::excel::{open_workbook, Workbook};
+use crate::excel::{open_workbook, Cell, Sheet, Workbook};
+use crate::utils::{cell_reference, index_to_col_name};
 
 const RULES: [CheckRuleId; 8] = [
     CheckRuleId::BlankHeaders,
@@ -43,7 +44,7 @@ pub fn handle(
     }
 
     let sheet_names = workbook.get_sheet_names();
-    let mut findings = run_rules(&selected_rules, &checked_sheet_indices);
+    let mut findings = run_rules(&workbook, &selected_rules, &checked_sheet_indices)?;
     let finding_count_before_threshold = findings.len();
     findings.retain(|finding| finding.severity >= threshold);
     sort_findings(&mut findings, &sheet_names);
@@ -150,8 +151,215 @@ fn resolve_checked_sheets(
     }
 }
 
-fn run_rules(_rules: &[CheckRuleId], _sheet_indices: &[usize]) -> Vec<CheckFinding> {
-    Vec::new()
+fn run_rules(
+    workbook: &Workbook,
+    rules: &[CheckRuleId],
+    sheet_indices: &[usize],
+) -> Result<Vec<CheckFinding>, AppError> {
+    let mut findings = Vec::new();
+
+    for sheet_index in sheet_indices {
+        let sheet =
+            workbook
+                .get_sheet_by_index(*sheet_index)
+                .ok_or_else(|| AppError::TargetNotFound {
+                    message: format!("Sheet index {} not found", sheet_index),
+                })?;
+        let used_range = workbook
+            .get_used_range(*sheet_index)
+            .map_err(crate::cli::error::anyhow_to_app_error)?;
+        let (_, header_row) = workbook
+            .find_header_candidates(*sheet_index)
+            .map_err(crate::cli::error::anyhow_to_app_error)?;
+
+        for rule in rules {
+            match rule {
+                CheckRuleId::BlankHeaders => {
+                    findings.extend(find_blank_headers(sheet, header_row));
+                }
+                CheckRuleId::DuplicateHeaders => {
+                    findings.extend(find_duplicate_headers(sheet, header_row));
+                }
+                CheckRuleId::BlankRows => {
+                    findings.extend(find_blank_rows(sheet, &used_range));
+                }
+                CheckRuleId::BlankColumns => {
+                    findings.extend(find_blank_columns(sheet, &used_range));
+                }
+                CheckRuleId::NullRatio
+                | CheckRuleId::DuplicateValues
+                | CheckRuleId::TypeDrift
+                | CheckRuleId::FormulaPresence => {}
+            }
+        }
+    }
+
+    Ok(findings)
+}
+
+fn find_blank_headers(sheet: &Sheet, header_row: Option<usize>) -> Vec<CheckFinding> {
+    let Some(header_row) = header_row else {
+        return Vec::new();
+    };
+
+    (1..=sheet.max_cols)
+        .filter(|col| is_blank_cell(cell_at(sheet, header_row, *col)))
+        .map(|col| {
+            let column_label = index_to_col_name(col);
+            let range = cell_reference((header_row, col));
+            CheckFinding {
+                rule_id: CheckRuleId::BlankHeaders,
+                severity: Severity::Warning,
+                sheet: sheet.name.clone(),
+                row: Some(header_row),
+                column: Some(col),
+                range: Some(range.clone()),
+                message: format!("Blank header at {range}."),
+                details: json!({
+                    "header_row": header_row,
+                    "column_label": column_label,
+                    "reason": "blank_header",
+                }),
+            }
+        })
+        .collect()
+}
+
+fn find_duplicate_headers(sheet: &Sheet, header_row: Option<usize>) -> Vec<CheckFinding> {
+    let Some(header_row) = header_row else {
+        return Vec::new();
+    };
+
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut first_locations: HashMap<String, (usize, String)> = HashMap::new();
+    let headers: Vec<_> = (1..=sheet.max_cols)
+        .map(|col| {
+            let header = header_value(sheet, header_row, col);
+            if !header.is_empty() {
+                *counts.entry(header.clone()).or_insert(0) += 1;
+                first_locations
+                    .entry(header.clone())
+                    .or_insert_with(|| (col, cell_reference((header_row, col))));
+            }
+            header
+        })
+        .collect();
+
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut findings = Vec::new();
+    for (offset, header) in headers.into_iter().enumerate() {
+        if header.is_empty() {
+            continue;
+        }
+
+        let occurrence = seen.entry(header.clone()).or_insert(0);
+        *occurrence += 1;
+        if *occurrence == 1 {
+            continue;
+        }
+
+        let col = offset + 1;
+        let range = cell_reference((header_row, col));
+        let (first_column, first_range) = first_locations
+            .get(&header)
+            .cloned()
+            .unwrap_or_else(|| (col, range.clone()));
+        findings.push(CheckFinding {
+            rule_id: CheckRuleId::DuplicateHeaders,
+            severity: Severity::Warning,
+            sheet: sheet.name.clone(),
+            row: Some(header_row),
+            column: Some(col),
+            range: Some(range.clone()),
+            message: format!("Duplicate header '{header}' at {range}."),
+            details: json!({
+                "header": header,
+                "normalized_header": header,
+                "first_column": first_column,
+                "first_range": first_range,
+                "duplicate_count": counts.get(&header).copied().unwrap_or(0),
+            }),
+        });
+    }
+
+    findings
+}
+
+fn find_blank_rows(sheet: &Sheet, used_range: &str) -> Vec<CheckFinding> {
+    if used_range.is_empty() || sheet.max_rows == 0 || sheet.max_cols == 0 {
+        return Vec::new();
+    }
+
+    (1..=sheet.max_rows)
+        .filter(|row| (1..=sheet.max_cols).all(|col| is_blank_cell(cell_at(sheet, *row, col))))
+        .map(|row| {
+            let end_col = index_to_col_name(sheet.max_cols);
+            let range = format!("A{row}:{end_col}{row}");
+            CheckFinding {
+                rule_id: CheckRuleId::BlankRows,
+                severity: Severity::Warning,
+                sheet: sheet.name.clone(),
+                row: Some(row),
+                column: None,
+                range: Some(range),
+                message: format!("Blank row {row} in used range {used_range}."),
+                details: json!({
+                    "used_range": used_range,
+                    "max_columns": sheet.max_cols,
+                    "reason": "blank_row",
+                }),
+            }
+        })
+        .collect()
+}
+
+fn find_blank_columns(sheet: &Sheet, used_range: &str) -> Vec<CheckFinding> {
+    if used_range.is_empty() || sheet.max_rows == 0 || sheet.max_cols == 0 {
+        return Vec::new();
+    }
+
+    (1..=sheet.max_cols)
+        .filter(|col| (1..=sheet.max_rows).all(|row| is_blank_cell(cell_at(sheet, row, *col))))
+        .map(|col| {
+            let column_label = index_to_col_name(col);
+            let range = format!("{column_label}1:{column_label}{}", sheet.max_rows);
+            CheckFinding {
+                rule_id: CheckRuleId::BlankColumns,
+                severity: Severity::Warning,
+                sheet: sheet.name.clone(),
+                row: None,
+                column: Some(col),
+                range: Some(range),
+                message: format!("Blank column {column_label} in used range {used_range}."),
+                details: json!({
+                    "used_range": used_range,
+                    "column_label": column_label,
+                    "max_rows": sheet.max_rows,
+                    "reason": "blank_column",
+                }),
+            }
+        })
+        .collect()
+}
+
+fn header_value(sheet: &Sheet, row: usize, col: usize) -> String {
+    cell_at(sheet, row, col)
+        .filter(|cell| !cell_has_formula(cell))
+        .map(|cell| cell.value.trim().to_string())
+        .unwrap_or_default()
+}
+
+fn cell_at(sheet: &Sheet, row: usize, col: usize) -> Option<&Cell> {
+    sheet.data.get(row).and_then(|row_data| row_data.get(col))
+}
+
+fn is_blank_cell(cell: Option<&Cell>) -> bool {
+    cell.map(|cell| !cell_has_formula(cell) && cell.value.trim().is_empty())
+        .unwrap_or(true)
+}
+
+fn cell_has_formula(cell: &Cell) -> bool {
+    cell.is_formula || cell.formula.is_some()
 }
 
 fn summarize_findings(findings: &[CheckFinding]) -> Value {
