@@ -5,6 +5,10 @@ use crate::cli::error::AppError;
 
 /// Write a success value to stdout.
 pub fn write_success(value: &Value, format: &OutputFormat) -> Result<(), AppError> {
+    if value["meta"]["output_shape"].as_str() == Some("jsonl") {
+        return write_jsonl_records(value);
+    }
+
     match format {
         OutputFormat::Json => {
             let s = serde_json::to_string_pretty(value).map_err(|e| AppError::InternalError {
@@ -16,6 +20,23 @@ pub fn write_success(value: &Value, format: &OutputFormat) -> Result<(), AppErro
             write_text(value)?;
         }
     }
+    Ok(())
+}
+
+fn write_jsonl_records(value: &Value) -> Result<(), AppError> {
+    let Some(records) = value["data"]["records"].as_array() else {
+        return Err(AppError::InternalError {
+            message: "JSONL output requires record data".to_string(),
+        });
+    };
+
+    for record in records {
+        let s = serde_json::to_string(record).map_err(|e| AppError::InternalError {
+            message: format!("JSON serialization failed: {}", e),
+        })?;
+        println!("{}", s);
+    }
+
     Ok(())
 }
 

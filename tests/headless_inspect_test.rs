@@ -272,6 +272,34 @@ fn assert_json_error(output: &std::process::Output, expected_exit_code: i32) {
     );
 }
 
+fn assert_jsonl_success(output: &std::process::Output) -> Vec<serde_json::Value> {
+    assert!(
+        output.status.success(),
+        "Expected success. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "Expected empty stderr on success. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.trim_start().starts_with('['),
+        "JSONL output must not be an array: {stdout}"
+    );
+    assert!(
+        !stdout.trim_start().starts_with("{\n  \"schema_version\""),
+        "JSONL output must not be an envelope: {stdout}"
+    );
+
+    stdout
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("Expected valid JSONL record"))
+        .collect()
+}
+
 #[test]
 fn test_inspect_workbook_json() {
     let temp_dir = std::env::temp_dir();
@@ -683,12 +711,14 @@ fn test_read_rows_json() {
         .arg(&file_path)
         .arg("--sheet")
         .arg("Orders")
+        .arg("--output-shape")
+        .arg("records")
         .output()
         .expect("Failed to execute excel-cli");
 
     let json = assert_json_success(&output);
     assert_eq!(json["command"], "read.rows");
-    // Should return records mode because header row 1 is detected
+    // Explicit records shape should use detected header row 1.
     assert_eq!(json["data"]["mode"], "records");
     let records = json["data"]["records"].as_array().unwrap();
     assert_eq!(records.len(), 1);
@@ -710,6 +740,8 @@ fn test_read_rows_with_header_row() {
         .arg("Orders")
         .arg("--header-row")
         .arg("1")
+        .arg("--output-shape")
+        .arg("records")
         .output()
         .expect("Failed to execute excel-cli");
 
@@ -758,6 +790,8 @@ fn test_read_rows_auto_skips_preamble_and_keeps_unique_keys() {
         .arg("RowCases")
         .arg("--range")
         .arg("A1:D4")
+        .arg("--output-shape")
+        .arg("records")
         .output()
         .expect("Failed to execute excel-cli");
 
@@ -789,6 +823,8 @@ fn test_read_rows_explicit_header_row_respects_selected_range() {
         .arg("A1:D4")
         .arg("--header-row")
         .arg("2")
+        .arg("--output-shape")
+        .arg("records")
         .output()
         .expect("Failed to execute excel-cli");
 
@@ -824,6 +860,8 @@ fn test_read_rows_select_filters_pagination_and_meta() {
         .arg("1")
         .arg("--offset")
         .arg("0")
+        .arg("--output-shape")
+        .arg("records")
         .output()
         .expect("Failed to execute excel-cli");
 
@@ -846,6 +884,251 @@ fn test_read_rows_select_filters_pagination_and_meta() {
         records[0],
         serde_json::json!({"name": "Carol", "amount": 40})
     );
+}
+
+#[test]
+fn test_read_rows_output_shape_rows_returns_positional_rows() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_rows_output_shape_rows.xlsx");
+    create_read_rows_extensions_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("rows")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("FilterRows")
+        .arg("--range")
+        .arg("A1:C4")
+        .arg("--select")
+        .arg("name,status")
+        .arg("--filter")
+        .arg("status:eq:open")
+        .arg("--output-shape")
+        .arg("rows")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    assert_eq!(json["command"], "read.rows");
+    assert_eq!(json["meta"]["output_shape"], "rows");
+    assert_eq!(json["data"]["mode"], "rows");
+    assert!(json["data"].get("records").is_none());
+    assert_eq!(
+        json["data"]["rows"],
+        serde_json::json!([["Alice", "open"], ["Carol", "open"]])
+    );
+}
+
+#[test]
+fn test_read_records_defaults_to_records_shape() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_records_default.xlsx");
+    create_read_rows_extensions_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("records")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("FilterRows")
+        .arg("--range")
+        .arg("A1:C4")
+        .arg("--select")
+        .arg("name,amount")
+        .arg("--filter")
+        .arg("status:eq:open")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let json = assert_json_success(&output);
+    assert_eq!(json["command"], "read.records");
+    assert_eq!(json["meta"]["output_shape"], "records");
+    assert_eq!(json["data"]["mode"], "records");
+    assert!(json["data"].get("rows").is_none());
+    assert_eq!(
+        json["data"]["records"],
+        serde_json::json!([
+            {"name": "Alice", "amount": 10},
+            {"name": "Carol", "amount": 40}
+        ])
+    );
+}
+
+#[test]
+fn test_output_shape_jsonl_writes_newline_delimited_records() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_records_jsonl.xlsx");
+    create_read_rows_extensions_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("records")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("FilterRows")
+        .arg("--range")
+        .arg("A1:E6")
+        .arg("--select")
+        .arg("name,amount")
+        .arg("--filter")
+        .arg("status:eq:open")
+        .arg("--limit")
+        .arg("2")
+        .arg("--output-shape")
+        .arg("jsonl")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    let records = assert_jsonl_success(&output);
+    assert_eq!(
+        records,
+        vec![
+            serde_json::json!({"name": "Alice", "amount": 10}),
+            serde_json::json!({"name": "Carol", "amount": 40}),
+        ]
+    );
+}
+
+#[test]
+fn test_output_shape_does_not_change_selection_filter_or_pagination() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_output_shape_invariance.xlsx");
+    create_read_rows_extensions_workbook(&file_path);
+
+    let mut base_args = vec![
+        "read",
+        "rows",
+        file_path.to_str().unwrap(),
+        "--sheet",
+        "FilterRows",
+        "--range",
+        "A1:E6",
+        "--select",
+        "name,amount",
+        "--filter",
+        "status:eq:open",
+        "--offset",
+        "1",
+        "--limit",
+        "2",
+    ];
+
+    let rows_output = Command::new(excel_cli_bin())
+        .args(&base_args)
+        .arg("--output-shape")
+        .arg("rows")
+        .output()
+        .expect("Failed to execute excel-cli");
+    let rows_json = assert_json_success(&rows_output);
+
+    base_args[1] = "records";
+    let records_output = Command::new(excel_cli_bin())
+        .args(&base_args)
+        .arg("--output-shape")
+        .arg("records")
+        .output()
+        .expect("Failed to execute excel-cli");
+    let records_json = assert_json_success(&records_output);
+
+    let jsonl_output = Command::new(excel_cli_bin())
+        .args(&base_args)
+        .arg("--output-shape")
+        .arg("jsonl")
+        .output()
+        .expect("Failed to execute excel-cli");
+    let jsonl_records = assert_jsonl_success(&jsonl_output);
+
+    assert_eq!(rows_json["meta"]["row_count"], 2);
+    assert_eq!(rows_json["meta"]["truncated"], false);
+    assert_eq!(
+        rows_json["meta"]["selected_columns"],
+        serde_json::json!(["name", "amount"])
+    );
+    assert_eq!(
+        records_json["meta"]["row_count"],
+        rows_json["meta"]["row_count"]
+    );
+    assert_eq!(
+        records_json["meta"]["selected_columns"],
+        rows_json["meta"]["selected_columns"]
+    );
+    assert_eq!(
+        rows_json["data"]["rows"],
+        serde_json::json!([["Carol", 40], ["Delta", 55]])
+    );
+    assert_eq!(
+        records_json["data"]["records"],
+        serde_json::json!([
+            {"name": "Carol", "amount": 40},
+            {"name": "Delta", "amount": 55}
+        ])
+    );
+    assert_eq!(
+        serde_json::Value::Array(jsonl_records),
+        records_json["data"]["records"]
+    );
+}
+
+#[test]
+fn test_read_records_requires_resolved_header() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_records_header_error.xlsx");
+    create_read_rows_extensions_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("records")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("FilterRows")
+        .arg("--range")
+        .arg("A2:E6")
+        .arg("--header-row")
+        .arg("999")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    assert_json_error(&output, 6);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("rows")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("FilterRows")
+        .arg("--range")
+        .arg("A2:E6")
+        .arg("--header-row")
+        .arg("999")
+        .arg("--output-shape")
+        .arg("jsonl")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    assert_json_error(&output, 6);
+}
+
+#[test]
+fn test_output_shape_jsonl_rejects_text_format() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_records_jsonl_text.xlsx");
+    create_read_rows_extensions_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("records")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("FilterRows")
+        .arg("--output-shape")
+        .arg("jsonl")
+        .arg("--format")
+        .arg("text")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    assert_json_error(&output, 2);
 }
 
 #[test]
@@ -879,6 +1162,8 @@ fn test_read_rows_filter_operators_and_non_empty() {
             .arg("--filter")
             .arg(filter)
             .arg("--non-empty")
+            .arg("--output-shape")
+            .arg("records")
             .output()
             .expect("Failed to execute excel-cli");
 
@@ -911,6 +1196,8 @@ fn test_read_rows_no_match_and_raw_column_selection() {
         .arg("A1:E6")
         .arg("--filter")
         .arg("name:eq:Missing")
+        .arg("--output-shape")
+        .arg("records")
         .output()
         .expect("Failed to execute excel-cli");
 

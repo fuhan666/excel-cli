@@ -8,7 +8,7 @@ use std::io::{Read, Seek};
 use std::path::Path;
 use zip::ZipArchive;
 
-use crate::cli::args::{resolve_sheet_target, ReadCommands};
+use crate::cli::args::{resolve_sheet_target, OutputFormat, OutputShape, ReadCommands};
 use crate::cli::envelope;
 use crate::cli::error::AppError;
 use crate::excel::{open_workbook, CellType};
@@ -41,8 +41,11 @@ pub fn handle(cmd: ReadCommands) -> Result<Value, AppError> {
             limit,
             offset,
             non_empty,
-            format: _,
+            output_shape,
+            format,
         } => read_rows(
+            "read.rows",
+            false,
             file,
             sheet,
             sheet_index,
@@ -53,6 +56,37 @@ pub fn handle(cmd: ReadCommands) -> Result<Value, AppError> {
             limit,
             offset,
             non_empty,
+            output_shape,
+            format,
+        ),
+        ReadCommands::Records {
+            file,
+            sheet,
+            sheet_index,
+            range,
+            header_row,
+            select,
+            filters,
+            limit,
+            offset,
+            non_empty,
+            output_shape,
+            format,
+        } => read_rows(
+            "read.records",
+            true,
+            file,
+            sheet,
+            sheet_index,
+            range,
+            header_row,
+            select,
+            filters,
+            limit,
+            offset,
+            non_empty,
+            output_shape,
+            format,
         ),
     }
 }
@@ -591,6 +625,8 @@ fn read_range(
 }
 
 fn read_rows(
+    command: &'static str,
+    command_requires_header: bool,
     file: std::path::PathBuf,
     sheet: Option<String>,
     sheet_index: Option<usize>,
@@ -601,7 +637,15 @@ fn read_rows(
     limit: Option<usize>,
     offset: Option<usize>,
     non_empty: bool,
+    output_shape: OutputShape,
+    format: OutputFormat,
 ) -> Result<Value, AppError> {
+    if output_shape == OutputShape::Jsonl && matches!(format, OutputFormat::Text) {
+        return Err(AppError::InvalidArgs {
+            message: "--output-shape jsonl cannot be combined with --format text".to_string(),
+        });
+    }
+
     let format_str = file_format(&file);
     let path_str = file.to_string_lossy().to_string();
 
@@ -669,7 +713,16 @@ fn read_rows(
         end_row
     );
 
-    let (mode, columns, row_values) = if let Some(header_row_idx) = resolved_header {
+    if resolved_header.is_none()
+        && (command_requires_header
+            || matches!(output_shape, OutputShape::Records | OutputShape::Jsonl))
+    {
+        return Err(invalid_query(
+            "A resolved header row is required for records or jsonl output",
+        ));
+    }
+
+    let (has_header, columns, row_values) = if let Some(header_row_idx) = resolved_header {
         let mut headers = Vec::new();
         for col in start_col..=end_col {
             let val = if header_row_idx < sheet_obj.data.len()
@@ -701,7 +754,7 @@ fn read_rows(
             row_values.push(values);
         }
 
-        ("records", columns, row_values)
+        (true, columns, row_values)
     } else {
         let columns: Vec<String> = (start_col..=end_col)
             .map(|col| format!("col_{}", index_to_col_name(col)))
@@ -723,7 +776,7 @@ fn read_rows(
             row_values.push(values);
         }
 
-        ("rows", columns, row_values)
+        (false, columns, row_values)
     };
 
     let selected_indices = parse_selected_columns(select, &columns)?;
@@ -758,39 +811,43 @@ fn read_rows(
 
     let row_count = returned_rows.len();
 
-    let data = if mode == "records" {
-        let records: Vec<Value> = returned_rows
-            .into_iter()
-            .map(|row| {
-                let mut record = serde_json::Map::new();
-                for idx in &selected_indices {
-                    let value = row.get(*idx).cloned().unwrap_or(Value::Null);
-                    record.insert(columns[*idx].clone(), value);
-                }
-                Value::Object(record)
-            })
-            .collect();
+    let records: Vec<Value> = returned_rows
+        .iter()
+        .map(|row| {
+            let mut record = serde_json::Map::new();
+            for idx in &selected_indices {
+                let value = row.get(*idx).cloned().unwrap_or(Value::Null);
+                record.insert(columns[*idx].clone(), value);
+            }
+            Value::Object(record)
+        })
+        .collect();
 
+    let rows: Vec<Value> = returned_rows
+        .into_iter()
+        .map(|row| {
+            Value::Array(
+                selected_indices
+                    .iter()
+                    .map(|idx| row.get(*idx).cloned().unwrap_or(Value::Null))
+                    .collect(),
+            )
+        })
+        .collect();
+
+    let data = if matches!(output_shape, OutputShape::Records | OutputShape::Jsonl) {
         json!({
             "resolved_header_row": resolved_header.unwrap(),
-            "mode": "records",
+            "mode": output_shape.as_str(),
             "records": records,
         })
     } else {
-        let rows: Vec<Value> = returned_rows
-            .into_iter()
-            .map(|row| {
-                Value::Array(
-                    selected_indices
-                        .iter()
-                        .map(|idx| row.get(*idx).cloned().unwrap_or(Value::Null))
-                        .collect(),
-                )
-            })
-            .collect();
-
         json!({
-            "resolved_header_row": Value::Null,
+            "resolved_header_row": if has_header {
+                resolved_header.map(Value::from).unwrap_or(Value::Null)
+            } else {
+                Value::Null
+            },
             "mode": "rows",
             "rows": rows,
         })
@@ -801,10 +858,11 @@ fn read_rows(
         "selected_columns": selected_columns,
         "row_count": row_count,
         "truncated": truncated,
+        "output_shape": output_shape.as_str(),
     });
 
     Ok(envelope::success_envelope(
-        "read.rows",
+        command,
         &path_str,
         &format_str,
         envelope::target_range(&sheet_name, index, &range_str),

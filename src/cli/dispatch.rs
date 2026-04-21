@@ -21,6 +21,7 @@ pub fn dispatch(cli: Cli) -> Result<(Value, crate::cli::args::OutputFormat), App
                 crate::cli::args::ReadCommands::Cell { format, .. } => format.clone(),
                 crate::cli::args::ReadCommands::Range { format, .. } => format.clone(),
                 crate::cli::args::ReadCommands::Rows { format, .. } => format.clone(),
+                crate::cli::args::ReadCommands::Records { format, .. } => format.clone(),
             };
             let value = crate::cli::read::handle(subcommand)?;
             Ok((value, format))
