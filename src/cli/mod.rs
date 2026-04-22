@@ -6,3 +6,4 @@ pub mod error;
 pub mod inspect;
 pub mod output;
 pub mod read;
+pub mod sheet_query;

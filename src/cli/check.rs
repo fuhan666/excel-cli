@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::cli::args::SeverityThreshold;
 use crate::cli::envelope;
 use crate::cli::error::{AppError, EXIT_CHECK_FINDINGS, EXIT_SUCCESS};
+use crate::cli::sheet_query::{cell_at, cell_has_formula, cell_is_present, header_value};
 use crate::excel::{open_workbook, Cell, CellType, Sheet, Workbook};
 use crate::utils::{cell_reference, index_to_col_name};
 
@@ -688,29 +689,9 @@ fn check_formula_presence(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> 
     }]
 }
 
-fn cell_at(sheet: &Sheet, row: usize, col: usize) -> Option<&Cell> {
-    sheet.data.get(row).and_then(|row_data| row_data.get(col))
-}
-
-fn header_value(sheet: &Sheet, row: usize, col: usize) -> String {
-    cell_at(sheet, row, col)
-        .filter(|cell| !cell_has_formula(cell))
-        .map(|cell| cell.value.trim().to_string())
-        .unwrap_or_default()
-}
-
 fn is_blank_cell(cell: Option<&Cell>) -> bool {
     cell.map(|cell| !cell_has_formula(cell) && cell.value.trim().is_empty())
         .unwrap_or(true)
-}
-
-fn cell_has_formula(cell: &Cell) -> bool {
-    cell.is_formula || cell.formula.is_some()
-}
-
-fn cell_is_present(cell: Option<&Cell>) -> bool {
-    cell.map(|cell| !cell.value.trim().is_empty() || cell_has_formula(cell))
-        .unwrap_or(false)
 }
 
 fn data_column_has_value(context: &SheetCheckContext<'_>, col: usize) -> bool {
