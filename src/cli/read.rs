@@ -11,7 +11,7 @@ use zip::ZipArchive;
 use crate::cli::args::{resolve_sheet_target, OutputFormat, OutputShape, ReadCommands};
 use crate::cli::envelope;
 use crate::cli::error::AppError;
-use crate::excel::{open_workbook, CellType};
+use crate::excel::{open_workbook, CellType, Sheet};
 use crate::utils::{index_to_col_name, parse_cell_reference, parse_range};
 
 pub fn handle(cmd: ReadCommands) -> Result<Value, AppError> {
@@ -235,10 +235,133 @@ struct RowReadRequest {
     format: OutputFormat,
 }
 
+#[derive(Clone, Copy)]
+struct RowBounds {
+    start_row: usize,
+    end_row: usize,
+    start_col: usize,
+    end_col: usize,
+}
+
+struct RowOutput {
+    values: Vec<Value>,
+    row_count: usize,
+    truncated: bool,
+}
+
+#[derive(Clone, Copy)]
+struct RowOutputFormat<'a> {
+    selected_indices: &'a [usize],
+    columns: &'a [String],
+    output_shape: OutputShape,
+}
+
+struct RowCollectRequest<'a> {
+    sheet: &'a Sheet,
+    bounds: RowBounds,
+    output_format: RowOutputFormat<'a>,
+    filters: &'a [FilterSpec],
+    non_empty: bool,
+    offset: usize,
+    limit: Option<usize>,
+}
+
 fn invalid_query(message: impl Into<String>) -> AppError {
     AppError::InvalidQuery {
         message: message.into(),
     }
+}
+
+fn sheet_row_values(sheet: &Sheet, row: usize, bounds: RowBounds) -> Option<Vec<Value>> {
+    if row >= sheet.data.len() {
+        return None;
+    }
+
+    let values = (bounds.start_col..=bounds.end_col)
+        .map(|col| {
+            if col < sheet.data[row].len() {
+                crate::json_export::process_cell_value(&sheet.data[row][col])
+            } else {
+                Value::Null
+            }
+        })
+        .collect();
+
+    Some(values)
+}
+
+fn row_passes_filters(row: &[Value], filters: &[FilterSpec], non_empty: bool) -> bool {
+    if non_empty && row.iter().all(is_empty_cell) {
+        return false;
+    }
+
+    filters.iter().all(|filter| filter_matches(row, filter))
+}
+
+fn output_row(row: &[Value], output_format: RowOutputFormat<'_>) -> Value {
+    if matches!(
+        output_format.output_shape,
+        OutputShape::Records | OutputShape::Jsonl
+    ) {
+        let mut record = serde_json::Map::new();
+        for idx in output_format.selected_indices {
+            let value = row.get(*idx).cloned().unwrap_or(Value::Null);
+            record.insert(output_format.columns[*idx].clone(), value);
+        }
+        return Value::Object(record);
+    }
+
+    Value::Array(
+        output_format
+            .selected_indices
+            .iter()
+            .map(|idx| row.get(*idx).cloned().unwrap_or(Value::Null))
+            .collect(),
+    )
+}
+
+fn collect_row_output(request: RowCollectRequest<'_>) -> RowOutput {
+    let mut values = Vec::new();
+    let mut skipped = 0usize;
+    let mut truncated = false;
+
+    for row_idx in request.bounds.start_row..=request.bounds.end_row {
+        let Some(row) = sheet_row_values(request.sheet, row_idx, request.bounds) else {
+            break;
+        };
+        if !row_passes_filters(&row, request.filters, request.non_empty) {
+            continue;
+        }
+        if skipped < request.offset {
+            skipped += 1;
+            continue;
+        }
+        if request.limit.is_some_and(|size| values.len() >= size) {
+            truncated = true;
+            break;
+        }
+
+        values.push(output_row(&row, request.output_format));
+    }
+
+    let row_count = values.len();
+    RowOutput {
+        values,
+        row_count,
+        truncated,
+    }
+}
+
+fn read_header_values(sheet: &Sheet, header_row_idx: usize, bounds: RowBounds) -> Vec<String> {
+    (bounds.start_col..=bounds.end_col)
+        .map(|col| {
+            if header_row_idx < sheet.data.len() && col < sheet.data[header_row_idx].len() {
+                sheet.data[header_row_idx][col].value.clone()
+            } else {
+                String::new()
+            }
+        })
+        .collect()
 }
 
 fn parse_selected_columns(
@@ -735,6 +858,12 @@ fn read_rows(
         index_to_col_name(end_col),
         end_row
     );
+    let requested_bounds = RowBounds {
+        start_row,
+        end_row,
+        start_col,
+        end_col,
+    };
 
     if resolved_header.is_none()
         && (command_requires_header
@@ -745,61 +874,16 @@ fn read_rows(
         ));
     }
 
-    let (has_header, columns, row_values) = if let Some(header_row_idx) = resolved_header {
-        let mut headers = Vec::new();
-        for col in start_col..=end_col {
-            let val = if header_row_idx < sheet_obj.data.len()
-                && col < sheet_obj.data[header_row_idx].len()
-            {
-                sheet_obj.data[header_row_idx][col].value.clone()
-            } else {
-                String::new()
-            };
-            headers.push(val);
-        }
+    let (has_header, columns, data_start_row) = if let Some(header_row_idx) = resolved_header {
+        let headers = read_header_values(sheet_obj, header_row_idx, requested_bounds);
         let columns = stable_record_keys(&headers, start_col);
-
-        let mut row_values = Vec::new();
         let data_start_row = start_row.max(header_row_idx.saturating_add(1));
-        for row in data_start_row..=end_row {
-            if row >= sheet_obj.data.len() {
-                break;
-            }
-            let mut values = Vec::new();
-            for col in start_col..=end_col {
-                let value = if col < sheet_obj.data[row].len() {
-                    crate::json_export::process_cell_value(&sheet_obj.data[row][col])
-                } else {
-                    Value::Null
-                };
-                values.push(value);
-            }
-            row_values.push(values);
-        }
-
-        (true, columns, row_values)
+        (true, columns, data_start_row)
     } else {
         let columns: Vec<String> = (start_col..=end_col)
             .map(|col| format!("col_{}", index_to_col_name(col)))
             .collect();
-        let mut row_values = Vec::new();
-        for row in start_row..=end_row {
-            if row >= sheet_obj.data.len() {
-                break;
-            }
-            let mut values = Vec::new();
-            for col in start_col..=end_col {
-                let value = if col < sheet_obj.data[row].len() {
-                    crate::json_export::process_cell_value(&sheet_obj.data[row][col])
-                } else {
-                    Value::Null
-                };
-                values.push(value);
-            }
-            row_values.push(values);
-        }
-
-        (false, columns, row_values)
+        (false, columns, start_row)
     };
 
     let selected_indices = parse_selected_columns(select, &columns)?;
@@ -813,56 +897,33 @@ fn read_rows(
         .map(|idx| columns[*idx].clone())
         .collect();
 
-    let mut filtered_rows: Vec<Vec<Value>> = row_values;
-    if non_empty {
-        filtered_rows.retain(|row| row.iter().any(|cell| !is_empty_cell(cell)));
-    }
-    filtered_rows.retain(|row| {
-        parsed_filters
-            .iter()
-            .all(|filter| filter_matches(row, filter))
+    let row_output = collect_row_output(RowCollectRequest {
+        sheet: sheet_obj,
+        bounds: RowBounds {
+            start_row: data_start_row,
+            end_row,
+            start_col,
+            end_col,
+        },
+        output_format: RowOutputFormat {
+            selected_indices: &selected_indices,
+            columns: &columns,
+            output_shape,
+        },
+        filters: &parsed_filters,
+        non_empty,
+        offset: offset.unwrap_or(0),
+        limit,
     });
 
-    let offset = offset.unwrap_or(0);
-    let rows_after_offset: Vec<Vec<Value>> = filtered_rows.into_iter().skip(offset).collect();
-    let truncated = limit.is_some_and(|size| rows_after_offset.len() > size);
-    let returned_rows: Vec<Vec<Value>> = if let Some(size) = limit {
-        rows_after_offset.into_iter().take(size).collect()
-    } else {
-        rows_after_offset
-    };
-
-    let row_count = returned_rows.len();
-
-    let records: Vec<Value> = returned_rows
-        .iter()
-        .map(|row| {
-            let mut record = serde_json::Map::new();
-            for idx in &selected_indices {
-                let value = row.get(*idx).cloned().unwrap_or(Value::Null);
-                record.insert(columns[*idx].clone(), value);
-            }
-            Value::Object(record)
-        })
-        .collect();
-
-    let rows: Vec<Value> = returned_rows
-        .into_iter()
-        .map(|row| {
-            Value::Array(
-                selected_indices
-                    .iter()
-                    .map(|idx| row.get(*idx).cloned().unwrap_or(Value::Null))
-                    .collect(),
-            )
-        })
-        .collect();
+    let row_count = row_output.row_count;
+    let truncated = row_output.truncated;
 
     let data = if matches!(output_shape, OutputShape::Records | OutputShape::Jsonl) {
         json!({
             "resolved_header_row": resolved_header.unwrap(),
             "mode": output_shape.as_str(),
-            "records": records,
+            "records": row_output.values,
         })
     } else {
         json!({
@@ -872,7 +933,7 @@ fn read_rows(
                 Value::Null
             },
             "mode": "rows",
-            "rows": rows,
+            "rows": row_output.values,
         })
     };
 

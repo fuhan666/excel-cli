@@ -1,6 +1,5 @@
 use super::{ActionType, Command};
 use crate::excel::Sheet;
-use anyhow::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SheetOperation {
@@ -18,14 +17,6 @@ pub struct SheetAction {
 }
 
 impl Command for SheetAction {
-    fn execute(&self) -> Result<()> {
-        unimplemented!("Requires an ActionExecutor implementation")
-    }
-
-    fn undo(&self) -> Result<()> {
-        unimplemented!("Requires an ActionExecutor implementation")
-    }
-
     fn action_type(&self) -> ActionType {
         match self.operation {
             SheetOperation::Create => ActionType::CreateSheet,

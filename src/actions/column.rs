@@ -1,6 +1,5 @@
 use super::{ActionType, Command};
 use crate::excel::Cell;
-use anyhow::Result;
 
 #[derive(Clone)]
 pub struct ColumnAction {
@@ -12,14 +11,6 @@ pub struct ColumnAction {
 }
 
 impl Command for ColumnAction {
-    fn execute(&self) -> Result<()> {
-        unimplemented!("Requires an ActionExecutor implementation")
-    }
-
-    fn undo(&self) -> Result<()> {
-        unimplemented!("Requires an ActionExecutor implementation")
-    }
-
     fn action_type(&self) -> ActionType {
         ActionType::DeleteColumn
     }
@@ -36,14 +27,6 @@ pub struct MultiColumnAction {
 }
 
 impl Command for MultiColumnAction {
-    fn execute(&self) -> Result<()> {
-        unimplemented!("Requires an ActionExecutor implementation")
-    }
-
-    fn undo(&self) -> Result<()> {
-        unimplemented!("Requires an ActionExecutor implementation")
-    }
-
     fn action_type(&self) -> ActionType {
         ActionType::DeleteMultiColumns
     }

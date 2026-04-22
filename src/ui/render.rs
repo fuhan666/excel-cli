@@ -22,39 +22,12 @@ use crate::app::VimMode;
 use crate::app::LEFT_HELP_SECTIONS;
 use crate::app::RIGHT_HELP_SECTIONS;
 use crate::ui::handlers::handle_key_event;
+use crate::ui::theme;
 use crate::utils::cell_reference;
 use crate::utils::index_to_col_name;
 
 const HELP_ENTRY_INDENT: u16 = 2;
 const HELP_ENTRY_GAP: u16 = 1;
-
-mod theme {
-    use ratatui::style::{Color, Style};
-
-    pub const BACKGROUND: Color = Color::Rgb(11, 16, 32);
-    pub const SURFACE: Color = Color::Rgb(17, 24, 39);
-    pub const SURFACE_MUTED: Color = Color::Rgb(31, 41, 55);
-    pub const GRID: Color = Color::Rgb(55, 65, 81);
-    pub const TEXT: Color = Color::Rgb(229, 231, 235);
-    pub const TEXT_SECONDARY: Color = Color::Rgb(156, 163, 175);
-    pub const TEXT_DISABLED: Color = Color::Rgb(107, 114, 128);
-    pub const ACCENT: Color = Color::Rgb(56, 189, 248);
-    pub const SEARCH: Color = Color::Rgb(250, 204, 21);
-    pub const WARNING: Color = Color::Rgb(245, 158, 11);
-    pub const SUCCESS: Color = Color::Rgb(34, 197, 94);
-
-    pub fn base() -> Style {
-        Style::default().bg(BACKGROUND).fg(TEXT)
-    }
-
-    pub fn surface() -> Style {
-        Style::default().bg(SURFACE).fg(TEXT)
-    }
-
-    pub fn muted() -> Style {
-        Style::default().bg(SURFACE_MUTED).fg(TEXT_SECONDARY)
-    }
-}
 
 pub fn run_app(mut app_state: AppState) -> Result<()> {
     // Setup terminal
@@ -868,8 +841,8 @@ fn draw_help_popup(f: &mut Frame, app_state: &mut AppState, area: Rect) {
 }
 
 fn help_popup_area(area: Rect) -> Rect {
-    let popup_width = area.width.saturating_sub(4).min(112).max(48);
-    let popup_height = area.height.saturating_sub(2).min(32).max(12);
+    let popup_width = area.width.saturating_sub(4).clamp(48, 112);
+    let popup_height = area.height.saturating_sub(2).clamp(12, 32);
     let popup_x = area.x + area.width.saturating_sub(popup_width) / 2;
     let popup_y = area.y + area.height.saturating_sub(popup_height) / 2;
 
@@ -1282,11 +1255,7 @@ fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
         let is_current = sheet_idx == current_index;
 
         let style = if is_editing {
-            if is_current {
-                Style::default().bg(Color::Black).fg(theme::TEXT_DISABLED)
-            } else {
-                Style::default().bg(Color::Black).fg(theme::TEXT_DISABLED)
-            }
+            Style::default().bg(Color::Black).fg(theme::TEXT_DISABLED)
         } else if is_current {
             Style::default()
                 .bg(Color::Black)
@@ -1412,17 +1381,6 @@ mod tests {
         let buffer = terminal.backend().buffer();
         let width = buffer.area.width as usize;
         buffer.content[row * width + col + offset].fg
-    }
-
-    fn fg_before_needle(terminal: &Terminal<TestBackend>, needle: &str) -> Color {
-        let lines = rendered_lines(terminal);
-        let row = line_index(&lines, needle);
-        let col = lines[row]
-            .find(needle)
-            .unwrap_or_else(|| panic!("expected rendered output to contain {needle}"));
-        let buffer = terminal.backend().buffer();
-        let width = buffer.area.width as usize;
-        buffer.content[row * width + col.saturating_sub(1)].fg
     }
 
     fn fg_at(terminal: &Terminal<TestBackend>, row: usize, col: usize) -> Color {
