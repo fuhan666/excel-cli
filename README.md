@@ -97,7 +97,7 @@ excel-cli read records path/to/your/file.xlsx --sheet Orders \
   --limit 50 \
   --output-shape jsonl
 
-# Check workbook data quality with the full v1.3.0 rule set
+# Check workbook data quality with the full rule set
 excel-cli check path/to/your/file.xlsx
 
 # Check one sheet with selected rules
@@ -167,7 +167,7 @@ Invalid selected columns, unknown filter columns, unsupported operators, malform
 
 ### Quality Checks
 
-`check` runs the fixed v1.3.0 quality-rule registry against a whole workbook or a single sheet and emits the same stable JSON envelope as the other headless commands. By default it scans every sheet, returns `info`, `warning`, and `error` findings, exits `1` when the filtered result set is non-empty, and exits `0` when no findings remain after filtering.
+`check` runs the fixed quality-rule registry against a whole workbook or a single sheet and emits the same stable JSON envelope as the other headless commands. By default it scans every sheet, returns `info`, `warning`, and `error` findings, exits `1` when the filtered result set is non-empty, and exits `0` when no findings remain after filtering.
 
 Supported rules:
 - `blank_headers`: flag blank header cells inside the detected header row

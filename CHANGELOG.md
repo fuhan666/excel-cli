@@ -16,11 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TUI findings panel support for browsing quality-check results without leaving the terminal.
 - Regression coverage for rule positives and negatives, workbook and sheet targeting, threshold filtering, finding order, and exit-code behavior.
 
-### Changed
-
-- `check --help`, `README.md`, and `README_zh.md` now document the v1.3.0 quality-check surface and rule IDs.
-- Package version updated to `1.3.0`.
-
 ## [1.2.0] - 2026-04-21
 
 ### Added
@@ -35,12 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON Lines output for stream-friendly record processing.
 - Read-only TUI query preview with `:preview` and `:pv`.
 - Regression coverage for filtering, output shapes, invalid query errors, no-match results, help text, and query preview behavior.
-- CI formatting enforcement with `cargo fmt --check`.
 
 ### Changed
 
 - Enriched read metadata now reports applied filters, selected columns, returned row count, truncation, and output shape.
-- Package version updated to `1.2.0`.
 
 ## [1.1.0] - 2026-04-21
 
@@ -49,7 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `inspect columns <file> --sheet <name>` to profile column headers, generated safe names, duplicate headers, inferred types, non-null ratios, formula ratios, and sample values.
 - `inspect tables <file> --sheet <name>` to detect table-like regions with ranges, header rows, dimensions, and confidence scores.
 - Regression coverage for structure inspection cases including duplicate headers, blank headers, preamble sections, late headers, multi-table sheets, mixed-type columns, formula columns, and non-ASCII column names.
-- Release branch CI triggers for `release/**` branches.
 
 ## [1.0.0] - 2026-04-20
 
