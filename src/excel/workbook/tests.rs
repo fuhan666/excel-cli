@@ -1,8 +1,33 @@
-use super::Workbook;
+use std::path::{Path, PathBuf};
+
+use super::{open_workbook, Workbook};
 use crate::excel::Sheet;
 
 fn blank_sheet(name: &str) -> Sheet {
     Sheet::blank(name.to_string())
+}
+
+fn temp_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(name)
+}
+
+fn create_formula_workbook(path: &Path) {
+    use rust_xlsxwriter::Workbook as XlsxWorkbook;
+
+    let mut workbook = XlsxWorkbook::new();
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("TypedCells").unwrap();
+    sheet.write_string(0, 0, "text_value").unwrap();
+    sheet.write_string(0, 1, "number_value").unwrap();
+    sheet.write_string(0, 2, "date_value").unwrap();
+    sheet.write_string(0, 3, "boolean_value").unwrap();
+    sheet.write_string(0, 4, "formula_value").unwrap();
+    sheet.write_string(1, 0, "hello").unwrap();
+    sheet.write_number(1, 1, 42.5).unwrap();
+    sheet.write_boolean(1, 3, true).unwrap();
+    sheet.write_formula(1, 4, "=B2*2").unwrap();
+    sheet.set_formula_result(1, 4, "85");
+    workbook.save(path).unwrap();
 }
 
 #[test]
@@ -94,4 +119,20 @@ fn empty_sheet_has_no_used_range() {
     sheet.max_cols = 0;
     let workbook = Workbook::from_sheets_for_test(vec![sheet]);
     assert_eq!(workbook.get_used_range(0).unwrap(), "");
+}
+
+#[test]
+fn formula_for_cell_falls_back_to_xlsx_archive_metadata() {
+    let path = temp_path("excel_cli_workbook_formula_lookup.xlsx");
+    create_formula_workbook(&path);
+
+    let workbook = open_workbook(&path, true).unwrap();
+    let sheet_index = workbook.resolve_sheet_by_name("TypedCells").unwrap();
+
+    let sheet = workbook.get_sheet_by_index(sheet_index).unwrap();
+    assert!(!sheet.is_loaded);
+    assert_eq!(
+        workbook.formula_for_cell(sheet_index, "TypedCells", "E2"),
+        Some("=B2*2".to_string())
+    );
 }

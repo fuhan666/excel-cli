@@ -7,11 +7,13 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
 use crate::excel::{Cell, CellType, Sheet};
-use crate::utils::index_to_col_name;
+use crate::utils::{index_to_col_name, parse_cell_reference};
 
+mod formula_lookup;
 mod save;
 mod sheet_parse;
 
+use formula_lookup::lookup_formula_in_xlsx;
 use sheet_parse::create_sheet_from_range;
 
 pub enum CalamineWorkbook {
@@ -246,6 +248,24 @@ impl Workbook {
 
     pub fn get_sheet_by_name(&self, name: &str) -> Option<&Sheet> {
         self.sheets.iter().find(|s| s.name == name)
+    }
+
+    pub(crate) fn formula_for_cell(
+        &self,
+        sheet_index: usize,
+        sheet_name: &str,
+        cell_ref: &str,
+    ) -> Option<String> {
+        let (row, col) = parse_cell_reference(cell_ref)?;
+        let loaded_formula = self
+            .sheets
+            .get(sheet_index)
+            .and_then(|sheet| sheet.data.get(row))
+            .and_then(|cells| cells.get(col))
+            .and_then(|cell| cell.formula.clone());
+
+        loaded_formula
+            .or_else(|| lookup_formula_in_xlsx(Path::new(&self.file_path), sheet_name, cell_ref))
     }
 
     /// Resolve a sheet specifier (name or 0-based index) to a sheet index.
