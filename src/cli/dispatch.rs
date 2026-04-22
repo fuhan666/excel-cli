@@ -1,9 +1,9 @@
 use serde_json::Value;
 
-use crate::cli::args::{Cli, Commands};
-use crate::cli::error::AppError;
+use crate::cli::args::{Cli, Commands, OutputFormat};
+use crate::cli::error::{AppError, EXIT_SUCCESS};
 
-pub fn dispatch(cli: Cli) -> Result<(Value, crate::cli::args::OutputFormat), AppError> {
+pub fn dispatch(cli: Cli) -> Result<(Value, OutputFormat, i32), AppError> {
     match cli.command {
         Commands::Inspect { subcommand } => {
             let format = match &subcommand {
@@ -14,7 +14,7 @@ pub fn dispatch(cli: Cli) -> Result<(Value, crate::cli::args::OutputFormat), App
                 crate::cli::args::InspectCommands::Tables { format, .. } => format.clone(),
             };
             let value = crate::cli::inspect::handle(subcommand)?;
-            Ok((value, format))
+            Ok((value, format, EXIT_SUCCESS))
         }
         Commands::Read { subcommand } => {
             let format = match &subcommand {
@@ -24,12 +24,17 @@ pub fn dispatch(cli: Cli) -> Result<(Value, crate::cli::args::OutputFormat), App
                 crate::cli::args::ReadCommands::Records { format, .. } => format.clone(),
             };
             let value = crate::cli::read::handle(subcommand)?;
-            Ok((value, format))
+            Ok((value, format, EXIT_SUCCESS))
         }
-        Commands::Check { file, rule } => {
-            let value = crate::cli::check::handle(file, rule)?;
-            // check returns error always in v1.0.0, but we still need a format
-            Ok((value, crate::cli::args::OutputFormat::Json))
+        Commands::Check {
+            file,
+            sheet,
+            rules,
+            severity_threshold,
+        } => {
+            let (value, exit_code) =
+                crate::cli::check::handle(file, sheet, rules, severity_threshold)?;
+            Ok((value, OutputFormat::Json, exit_code))
         }
         Commands::Ui { file } => {
             let workbook = crate::excel::open_workbook(&file, false)
@@ -47,7 +52,8 @@ pub fn dispatch(cli: Cli) -> Result<(Value, crate::cli::args::OutputFormat), App
                     serde_json::json!({"status": "interactive"}),
                     vec![],
                 ),
-                crate::cli::args::OutputFormat::Json,
+                OutputFormat::Json,
+                EXIT_SUCCESS,
             ))
         }
     }

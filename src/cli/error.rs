@@ -20,7 +20,6 @@ pub enum AppError {
     TargetNotFound { message: String },
     InvalidQuery { message: String },
     InternalError { message: String },
-    CheckNotImplemented { message: String },
 }
 
 impl AppError {
@@ -32,7 +31,6 @@ impl AppError {
             AppError::TargetNotFound { .. } => "target_not_found",
             AppError::InvalidQuery { .. } => "invalid_query",
             AppError::InternalError { .. } => "internal_error",
-            AppError::CheckNotImplemented { .. } => "check_not_implemented",
         }
     }
 
@@ -44,7 +42,6 @@ impl AppError {
             AppError::TargetNotFound { .. } => EXIT_TARGET_NOT_FOUND,
             AppError::InvalidQuery { .. } => EXIT_INVALID_QUERY,
             AppError::InternalError { .. } => EXIT_INTERNAL_ERROR,
-            AppError::CheckNotImplemented { .. } => EXIT_INVALID_QUERY,
         }
     }
 
@@ -56,7 +53,6 @@ impl AppError {
             AppError::TargetNotFound { message } => message.clone(),
             AppError::InvalidQuery { message } => message.clone(),
             AppError::InternalError { message } => message.clone(),
-            AppError::CheckNotImplemented { message } => message.clone(),
         }
     }
 

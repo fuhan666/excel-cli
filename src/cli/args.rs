@@ -3,7 +3,12 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "excel-cli")]
-#[command(author, version, about = "Excel CLI - single-file read-only inspector", long_about = None)]
+#[command(
+    author,
+    version,
+    about = "Excel CLI for AI, scripting, and terminal users",
+    long_about = None
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -21,14 +26,30 @@ pub enum Commands {
         #[command(subcommand)]
         subcommand: ReadCommands,
     },
-    /// Check data quality (namespace reserved for v1.3.0)
+    /// Check workbook or sheet data quality
     Check {
         /// Excel file path
         file: PathBuf,
 
-        /// Check rule to run
+        /// Sheet name (exact match)
         #[arg(long)]
-        rule: Option<String>,
+        sheet: Option<String>,
+
+        /// Check rules to run, comma-separated
+        ///
+        /// Supported rules: blank_headers, duplicate_headers, blank_rows,
+        /// blank_columns, null_ratio, duplicate_values, type_drift,
+        /// formula_presence
+        #[arg(long)]
+        rules: Option<String>,
+
+        /// Minimum finding severity to return
+        ///
+        /// Findings below this threshold stay out of the response, while
+        /// data.stats.finding_count_before_threshold preserves the pre-filter
+        /// total.
+        #[arg(long, value_enum, default_value = "info")]
+        severity_threshold: SeverityThreshold,
     },
     /// Open interactive TUI browser
     Ui {
@@ -300,6 +321,24 @@ impl OutputShape {
             OutputShape::Rows => "rows",
             OutputShape::Records => "records",
             OutputShape::Jsonl => "jsonl",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, clap::ValueEnum, PartialEq, Eq)]
+pub enum SeverityThreshold {
+    #[default]
+    Info,
+    Warning,
+    Error,
+}
+
+impl SeverityThreshold {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SeverityThreshold::Info => "info",
+            SeverityThreshold::Warning => "warning",
+            SeverityThreshold::Error => "error",
         }
     }
 }

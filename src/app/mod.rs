@@ -1,4 +1,5 @@
 mod edit;
+mod findings;
 mod navigation;
 mod query_preview;
 mod search;

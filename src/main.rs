@@ -27,13 +27,13 @@ fn main() {
     let result = dispatch::dispatch(cli);
 
     match result {
-        Ok((value, format)) => {
+        Ok((value, format, exit_code)) => {
             if let Err(e) = output::write_success(&value, &format) {
                 let envelope = e.to_envelope("", "", "unknown");
                 output::write_error(&envelope);
                 std::process::exit(e.exit_code());
             }
-            std::process::exit(0);
+            std::process::exit(exit_code);
         }
         Err(e) => {
             // Try to extract file/command info for the error envelope

@@ -21,6 +21,7 @@ pub fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
         InputMode::SearchBackward => handle_search_mode(app_state, key.code),
         InputMode::Help => handle_help_mode(app_state, key.code),
         InputMode::Preview => handle_preview_mode(app_state, key.code),
+        InputMode::Findings => handle_findings_mode(app_state, key.code),
         InputMode::LazyLoading => handle_lazy_loading_mode(app_state, key.code),
     }
 }
@@ -203,6 +204,10 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
             app_state.g_pressed = false;
             app_state.start_command_mode();
         }
+        KeyCode::Char('f') => {
+            app_state.g_pressed = false;
+            app_state.show_findings();
+        }
         KeyCode::Char('/') => {
             app_state.g_pressed = false;
             app_state.start_search_forward();
@@ -259,6 +264,17 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
     }
 }
 
+fn handle_findings_mode(app_state: &mut AppState, key_code: KeyCode) {
+    match key_code {
+        KeyCode::Char('j') | KeyCode::Down => app_state.select_next_finding(),
+        KeyCode::Char('k') | KeyCode::Up => app_state.select_prev_finding(),
+        KeyCode::Enter => app_state.activate_selected_finding(),
+        KeyCode::Char('r') | KeyCode::Char('f') => app_state.refresh_findings(),
+        KeyCode::Esc | KeyCode::Char('q') => app_state.close_findings(),
+        _ => {}
+    }
+}
+
 fn handle_editing_mode(app_state: &mut AppState, key: KeyEvent) {
     // Convert KeyEvent to Input for tui-textarea
     let input = Input {
@@ -270,60 +286,6 @@ fn handle_editing_mode(app_state: &mut AppState, key: KeyEvent) {
 
     if let Err(e) = app_state.handle_vim_input(input) {
         app_state.add_notification(format!("Vim input error: {e}"));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use std::path::PathBuf;
-
-    use super::handle_key_event;
-    use crate::app::{AppState, InputMode};
-    use crate::excel::{Cell, Sheet, Workbook};
-
-    fn app_with_preview() -> AppState<'static> {
-        let mut data = vec![vec![Cell::empty(); 2]; 2];
-        data[1][1] = Cell::new("Ada".to_string(), false);
-        let sheet = Sheet {
-            name: "Data".to_string(),
-            data,
-            max_rows: 1,
-            max_cols: 1,
-            is_loaded: true,
-        };
-        let mut app = AppState::new(
-            Workbook::from_sheets_for_test(vec![sheet]),
-            PathBuf::from("test.xlsx"),
-        )
-        .unwrap();
-        app.show_query_preview();
-        app
-    }
-
-    #[test]
-    fn escape_closes_preview_without_quitting() {
-        let mut app = app_with_preview();
-
-        handle_key_event(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()));
-
-        assert!(matches!(app.input_mode, InputMode::Normal));
-        assert!(app.query_preview.is_none());
-        assert!(!app.should_quit);
-    }
-
-    #[test]
-    fn q_closes_preview_without_quitting() {
-        let mut app = app_with_preview();
-
-        handle_key_event(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()),
-        );
-
-        assert!(matches!(app.input_mode, InputMode::Normal));
-        assert!(app.query_preview.is_none());
-        assert!(!app.should_quit);
     }
 }
 
@@ -451,5 +413,92 @@ fn handle_help_mode(app_state: &mut AppState, key_code: KeyCode) {
             app_state.help_scroll = max_scroll;
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::path::PathBuf;
+
+    use super::handle_key_event;
+    use crate::app::{AppState, InputMode};
+    use crate::excel::{Cell, Sheet, Workbook};
+
+    fn app_with_preview() -> AppState<'static> {
+        let mut data = vec![vec![Cell::empty(); 3]; 3];
+        data[1][1] = Cell::new("Name".to_string(), false);
+        data[1][2] = Cell::new("Name".to_string(), false);
+        data[2][1] = Cell::new("Ada".to_string(), false);
+        data[2][2] = Cell::new("10".to_string(), false);
+        let sheet = Sheet {
+            name: "Data".to_string(),
+            data,
+            max_rows: 2,
+            max_cols: 2,
+            is_loaded: true,
+        };
+        let mut app = AppState::new(
+            Workbook::from_sheets_for_test(vec![sheet]),
+            PathBuf::from("test.xlsx"),
+        )
+        .unwrap();
+        app.show_query_preview();
+        app
+    }
+
+    #[test]
+    fn escape_closes_preview_without_quitting() {
+        let mut app = app_with_preview();
+
+        handle_key_event(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()));
+
+        assert!(matches!(app.input_mode, InputMode::Normal));
+        assert!(app.query_preview.is_none());
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn q_closes_preview_without_quitting() {
+        let mut app = app_with_preview();
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::empty()),
+        );
+
+        assert!(matches!(app.input_mode, InputMode::Normal));
+        assert!(app.query_preview.is_none());
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn f_opens_findings_panel_from_normal_mode() {
+        let mut app = app_with_preview();
+        app.close_query_preview();
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::empty()),
+        );
+
+        assert!(matches!(app.input_mode, InputMode::Findings));
+        assert!(!app.findings.items.is_empty());
+    }
+
+    #[test]
+    fn j_moves_selected_finding_in_findings_mode() {
+        let mut app = app_with_preview();
+        app.close_query_preview();
+        app.show_findings();
+
+        let initial = app.findings.selected;
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::empty()),
+        );
+
+        assert!(app.findings.selected >= initial);
     }
 }

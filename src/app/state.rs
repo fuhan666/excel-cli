@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tui_textarea::TextArea;
 
 use crate::actions::UndoHistory;
+use crate::app::findings::FindingsState;
 use crate::app::QueryPreview;
 use crate::app::VimState;
 use crate::excel::Workbook;
@@ -25,6 +26,7 @@ pub enum InputMode {
     SearchBackward,
     Help,
     Preview,
+    Findings,
     LazyLoading,
     CommandInLazyLoading,
 }
@@ -59,6 +61,7 @@ pub struct AppState<'a> {
     pub help_scroll: usize,
     pub help_visible_lines: usize,
     pub query_preview: Option<QueryPreview>,
+    pub(crate) findings: FindingsState,
     pub undo_history: UndoHistory,
     pub vim_state: Option<VimState>,
 }
@@ -157,6 +160,7 @@ impl AppState<'_> {
             help_scroll: 0,
             help_visible_lines: 20,
             query_preview: None,
+            findings: FindingsState::default(),
             undo_history: UndoHistory::new(),
             vim_state: None,
         })
@@ -223,23 +227,26 @@ impl AppState<'_> {
     }
 
     pub fn cancel_input(&mut self) {
-        if let InputMode::Preview = self.input_mode {
-            self.close_query_preview();
-            return;
-        }
-
-        // If in help mode, just close the help window
-        if let InputMode::Help = self.input_mode {
-            self.input_mode = InputMode::Normal;
-            return;
-        }
-
-        // If in CommandInLazyLoading mode, return to LazyLoading mode
-        if let InputMode::CommandInLazyLoading = self.input_mode {
-            self.input_mode = InputMode::LazyLoading;
-            self.input_buffer = String::new();
-            self.text_area = TextArea::default();
-            return;
+        match self.input_mode {
+            InputMode::Preview => {
+                self.close_query_preview();
+                return;
+            }
+            InputMode::Findings => {
+                self.close_findings();
+                return;
+            }
+            InputMode::Help => {
+                self.input_mode = InputMode::Normal;
+                return;
+            }
+            InputMode::CommandInLazyLoading => {
+                self.input_mode = InputMode::LazyLoading;
+                self.input_buffer = String::new();
+                self.text_area = TextArea::default();
+                return;
+            }
+            _ => {}
         }
 
         // Otherwise, cancel the current input
@@ -264,5 +271,93 @@ impl AppState<'_> {
     pub fn start_command_in_lazy_loading_mode(&mut self) {
         self.input_mode = InputMode::CommandInLazyLoading;
         self.input_buffer = String::new();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{AppState, InputMode};
+    use crate::cli::check::CheckRuleId;
+    use crate::excel::{Cell, Sheet, Workbook};
+
+    fn sheet_with_values(name: &str, values: &[&[&str]]) -> Sheet {
+        let max_rows = values.len();
+        let max_cols = values.iter().map(|row| row.len()).max().unwrap_or(0);
+        let mut data = vec![vec![Cell::empty(); max_cols + 1]; max_rows + 1];
+
+        for (row_idx, row) in values.iter().enumerate() {
+            for (col_idx, value) in row.iter().enumerate() {
+                data[row_idx + 1][col_idx + 1] = Cell::new((*value).to_string(), false);
+            }
+        }
+
+        Sheet {
+            name: name.to_string(),
+            data,
+            max_rows,
+            max_cols,
+            is_loaded: true,
+        }
+    }
+
+    #[test]
+    fn show_findings_refreshes_report_without_marking_workbook_modified() {
+        let workbook = Workbook::from_sheets_for_test(vec![sheet_with_values(
+            "Data",
+            &[&["Name", "Name"], &["Ada", ""], &["", ""]],
+        )]);
+        let mut app = AppState::new(workbook, PathBuf::from("quality.xlsx")).unwrap();
+
+        app.show_findings();
+
+        assert!(matches!(app.input_mode, InputMode::Findings));
+        assert!(!app.workbook.is_modified());
+        assert!(!app.findings.items.is_empty());
+        assert_eq!(app.findings.selected, 0);
+    }
+
+    #[test]
+    fn activate_selected_finding_switches_sheet_and_uses_range_fallback() {
+        let workbook = Workbook::from_sheets_for_test(vec![
+            sheet_with_values("Summary", &[&["Status"], &["ok"]]),
+            sheet_with_values("报告", &[&["Name", ""], &["Ada", ""]]),
+        ]);
+        let mut app = AppState::new(workbook, PathBuf::from("quality.xlsx")).unwrap();
+
+        app.show_findings();
+        app.findings.selected = app
+            .findings
+            .items
+            .iter()
+            .position(|finding| finding.rule_id == CheckRuleId::BlankColumns)
+            .expect("blank column finding should exist");
+        app.activate_selected_finding();
+
+        assert!(matches!(app.input_mode, InputMode::Findings));
+        assert_eq!(app.workbook.get_current_sheet_name(), "报告");
+        assert_eq!(app.selected_cell, (1, 2));
+    }
+
+    #[test]
+    fn activate_selected_finding_prefers_exact_row_and_column() {
+        let workbook = Workbook::from_sheets_for_test(vec![sheet_with_values(
+            "Data",
+            &[&["Name", "Score"], &["Ada", "10"], &["Ada", "11"]],
+        )]);
+        let mut app = AppState::new(workbook, PathBuf::from("quality.xlsx")).unwrap();
+
+        app.show_findings();
+        app.findings.selected = app
+            .findings
+            .items
+            .iter()
+            .position(|finding| finding.rule_id == CheckRuleId::DuplicateValues)
+            .expect("duplicate values finding should exist");
+        app.activate_selected_finding();
+
+        assert_eq!(app.workbook.get_current_sheet_name(), "Data");
+        assert_eq!(app.selected_cell, (2, 1));
     }
 }

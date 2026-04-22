@@ -9,9 +9,11 @@ An Excel CLI for AI, scripting, and terminal users. Inspect and read headlessly 
 - Edit cell contents directly in the terminal
 - Export data to JSON format
 - Select, filter, paginate, and stream read results for automation
+- Run workbook and sheet quality checks with stable JSON findings
 - Delete rows and columns
 - Search functionality with highlighting
 - Read-only query preview in the TUI
+- Review quality-check findings inside the TUI
 - Command mode for advanced operations
 
 ## Installation & Uninstallation
@@ -95,6 +97,15 @@ excel-cli read records path/to/your/file.xlsx --sheet Orders \
   --limit 50 \
   --output-shape jsonl
 
+# Check workbook data quality with the full rule set
+excel-cli check path/to/your/file.xlsx
+
+# Check one sheet with selected rules
+excel-cli check path/to/your/file.xlsx --sheet Orders --rules duplicate_values,type_drift
+
+# Return only warning and error findings
+excel-cli check path/to/your/file.xlsx --severity-threshold warning
+
 # Open interactive TUI browser
 excel-cli ui path/to/your/file.xlsx
 ```
@@ -153,6 +164,28 @@ excel-cli read records report.xlsx --sheet Orders --output-shape jsonl
 ```
 
 Invalid selected columns, unknown filter columns, unsupported operators, malformed filters, invalid numeric comparisons, and invalid regular expressions return structured `invalid_query` errors with exit code `6`.
+
+### Quality Checks
+
+`check` runs the fixed quality-rule registry against a whole workbook or a single sheet and emits the same stable JSON envelope as the other headless commands. By default it scans every sheet, returns `info`, `warning`, and `error` findings, exits `1` when the filtered result set is non-empty, and exits `0` when no findings remain after filtering.
+
+Supported rules:
+- `blank_headers`: flag blank header cells inside the detected header row
+- `duplicate_headers`: flag duplicate normalized header names
+- `blank_rows`: flag fully blank rows inside the used range
+- `blank_columns`: flag fully blank columns inside the used range
+- `null_ratio`: flag columns with blank-value ratios above the built-in thresholds
+- `duplicate_values`: flag repeated values in the candidate identifier column
+- `type_drift`: flag mixed dominant and drift data types in a column
+- `formula_presence`: report sheets that still contain formulas in the checked data region
+
+Use `--sheet <name>` to limit the scan to one sheet, `--rules <comma,separated,ids>` to run a subset in registry order, and `--severity-threshold <info|warning|error>` to filter returned findings. `data.summary` counts only the returned findings, while `data.stats.finding_count_before_threshold` preserves the total before threshold filtering and `data.stats.rules_run` records the normalized rule order.
+
+```bash
+excel-cli check report.xlsx
+excel-cli check report.xlsx --sheet 客户 --rules blank_headers,duplicate_headers
+excel-cli check report.xlsx --rules null_ratio,duplicate_values,type_drift --severity-threshold warning
+```
 
 ### Exit Codes
 

@@ -13,7 +13,9 @@ impl AppState<'_> {
              NAVIGATION:\n\
              :[cell]     - Jump to cell (e.g., :B10)\n\
              :preview, :pv - Show read-only preview of current sheet data\n\
+             :findings, :issues - Open workbook findings panel\n\
              hjkl        - Move cursor (left, down, up, right)\n\
+             f           - Open or refresh findings panel\n\
              0           - Jump to first column\n\
              ^           - Jump to first non-empty column\n\
              $           - Jump to last column\n\
@@ -36,6 +38,12 @@ impl AppState<'_> {
              n           - Jump to next search result\n\
              N           - Jump to previous search result\n\
              :nohlsearch, :noh - Disable search highlighting\n\n\
+             FINDINGS PANEL:\n\
+             j/k, ↑/↓    - Move findings selection\n\
+             Enter       - Jump to selected finding location\n\
+             r or f      - Refresh findings\n\
+             Esc or q    - Close findings panel\n\n\
+\
              COLUMN OPERATIONS:\n\
              :cw fit     - Adjust width of current column to fit its content\n\
              :cw fit all - Adjust width of all columns to fit their content\n\
