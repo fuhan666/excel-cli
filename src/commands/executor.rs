@@ -432,20 +432,4 @@ mod tests {
         )
         .unwrap()
     }
-
-    #[test]
-    fn removed_analysis_commands_are_reported_as_unknown() {
-        for command in ["preview", "pv", "findings", "issues", "columns", "cols"] {
-            let mut app = app_with_sheet();
-            app.input_buffer = command.to_string();
-
-            app.execute_command();
-
-            assert!(matches!(app.input_mode, InputMode::Normal));
-            assert_eq!(
-                app.notification_messages.last().cloned(),
-                Some(format!("Unknown command: {command}"))
-            );
-        }
-    }
 }

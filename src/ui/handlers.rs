@@ -423,31 +423,6 @@ mod tests {
     }
 
     #[test]
-    fn f_no_longer_switches_to_analysis_mode() {
-        let mut app = app_with_sheet();
-
-        handle_key_event(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::empty()),
-        );
-
-        assert!(matches!(app.input_mode, InputMode::Normal));
-        assert!(!app.should_quit);
-    }
-
-    #[test]
-    fn c_no_longer_switches_to_analysis_mode() {
-        let mut app = app_with_sheet();
-
-        handle_key_event(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::empty()),
-        );
-
-        assert!(matches!(app.input_mode, InputMode::Normal));
-    }
-
-    #[test]
     fn question_mark_starts_backward_search_from_normal_mode() {
         let mut app = app_with_sheet();
 

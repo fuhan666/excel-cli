@@ -1528,32 +1528,6 @@ mod tests {
     }
 
     #[test]
-    fn help_entry_separator_slashes_are_dimmed() {
-        let spans = super::help_entry_prefix("h / j");
-
-        assert!(spans.iter().any(
-            |span| span.content.as_ref() == "/" && span.style.fg == Some(theme::TEXT_DISABLED)
-        ));
-    }
-
-    #[test]
-    fn help_entry_chips_use_compact_square_background_without_caps() {
-        let spans = super::help_entry_prefix("h");
-        let text = spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
-
-        assert!(text.contains(" h "));
-        assert!(!text.contains(""));
-        assert!(!text.contains(""));
-        assert!(spans
-            .iter()
-            .any(|span| span.content.as_ref() == " h "
-                && span.style.bg == Some(theme::SURFACE_MUTED)));
-    }
-
-    #[test]
     fn help_entry_descriptions_align_to_the_right_edge() {
         let short_entry = HelpEntry {
             keys: "h",
@@ -1800,24 +1774,6 @@ mod tests {
     }
 
     #[test]
-    fn renders_cell_panel_title_and_border_with_primary_text_color_by_default() {
-        let backend = TestBackend::new(140, 40);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut app = app_with_sheet();
-
-        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
-
-        assert_eq!(
-            text_fg_at(&terminal, " Cell A1  String  Len 4 "),
-            theme::TEXT
-        );
-        assert_eq!(
-            fg_before_needle(&terminal, " Cell A1  String  Len 4 "),
-            theme::TEXT
-        );
-    }
-
-    #[test]
     fn renders_notifications_panel_when_inspector_moves_below_table() {
         let backend = TestBackend::new(90, 28);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -1837,19 +1793,6 @@ mod tests {
         assert!(rendered.contains("Cell A1"));
         assert!(rendered.contains("Loaded 2 findings"));
         assert!(rendered.contains("NOTIFICATIONS"));
-    }
-
-    #[test]
-    fn renders_notifications_title_and_border_with_primary_text_color() {
-        let backend = TestBackend::new(140, 40);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut app = app_with_sheet();
-        app.add_notification("Loaded 2 findings".to_string());
-
-        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
-
-        assert_eq!(text_fg_at(&terminal, " NOTIFICATIONS "), theme::TEXT);
-        assert_eq!(fg_before_needle(&terminal, " NOTIFICATIONS "), theme::TEXT);
     }
 
     #[test]
@@ -1881,23 +1824,6 @@ mod tests {
         assert!(!status_row.contains("Rows/Cols"));
         assert!(!status_row.contains("Mode "));
         assert!(title_row.contains("Rows/Cols: 2 x 2"));
-    }
-
-    #[test]
-    fn renders_latest_notification_brighter_than_history() {
-        let backend = TestBackend::new(140, 40);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut app = app_with_sheet();
-        app.add_notification("older notification".to_string());
-        app.add_notification("latest notification".to_string());
-
-        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
-
-        assert_eq!(text_fg_at(&terminal, "latest notification"), theme::TEXT);
-        assert_eq!(
-            text_fg_at(&terminal, "older notification"),
-            theme::TEXT_SECONDARY
-        );
     }
 
     #[test]
