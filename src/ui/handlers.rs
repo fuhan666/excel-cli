@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_textarea::{Input, Key, TextArea};
 
-use crate::app::{AppState, InputMode};
+use crate::app::{help_reference_line_count, AppState, InputMode};
 
 pub fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
     match app_state.input_mode {
@@ -20,8 +20,6 @@ pub fn handle_key_event(app_state: &mut AppState, key: KeyEvent) {
         InputMode::SearchForward => handle_search_mode(app_state, key.code),
         InputMode::SearchBackward => handle_search_mode(app_state, key.code),
         InputMode::Help => handle_help_mode(app_state, key.code),
-        InputMode::Preview => handle_preview_mode(app_state, key.code),
-        InputMode::Findings => handle_findings_mode(app_state, key.code),
         InputMode::LazyLoading => handle_lazy_loading_mode(app_state, key.code),
     }
 }
@@ -87,13 +85,6 @@ fn handle_command_in_lazy_loading_mode(app_state: &mut AppState, key_code: KeyCo
         }
         KeyCode::Backspace => app_state.delete_char_from_input(),
         KeyCode::Char(c) => app_state.add_char_to_input(c),
-        _ => {}
-    }
-}
-
-fn handle_preview_mode(app_state: &mut AppState, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => app_state.close_query_preview(),
         _ => {}
     }
 }
@@ -204,10 +195,6 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
             app_state.g_pressed = false;
             app_state.start_command_mode();
         }
-        KeyCode::Char('f') => {
-            app_state.g_pressed = false;
-            app_state.show_findings();
-        }
         KeyCode::Char('/') => {
             app_state.g_pressed = false;
             app_state.start_search_forward();
@@ -261,17 +248,6 @@ fn handle_normal_mode(app_state: &mut AppState, key_code: KeyCode) {
         _ => {
             app_state.g_pressed = false;
         }
-    }
-}
-
-fn handle_findings_mode(app_state: &mut AppState, key_code: KeyCode) {
-    match key_code {
-        KeyCode::Char('j') | KeyCode::Down => app_state.select_next_finding(),
-        KeyCode::Char('k') | KeyCode::Up => app_state.select_prev_finding(),
-        KeyCode::Enter => app_state.activate_selected_finding(),
-        KeyCode::Char('r') | KeyCode::Char('f') => app_state.refresh_findings(),
-        KeyCode::Esc | KeyCode::Char('q') => app_state.close_findings(),
-        _ => {}
     }
 }
 
@@ -386,30 +362,30 @@ fn handle_lazy_loading_mode(app_state: &mut AppState, key_code: KeyCode) {
 }
 
 fn handle_help_mode(app_state: &mut AppState, key_code: KeyCode) {
-    let line_count = app_state.help_text.lines().count();
-
-    let visible_lines = app_state.help_visible_lines;
-
+    let line_count = app_state.help_total_lines.max(help_reference_line_count());
+    let visible_lines = app_state.help_visible_lines.max(1);
     let max_scroll = line_count.saturating_sub(visible_lines);
 
     match key_code {
-        KeyCode::Enter | KeyCode::Esc => {
+        KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') => {
             app_state.input_mode = InputMode::Normal;
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            // Scroll down, but not beyond the last line
             app_state.help_scroll = (app_state.help_scroll + 1).min(max_scroll);
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            // Scroll up
             app_state.help_scroll = app_state.help_scroll.saturating_sub(1);
         }
+        KeyCode::PageDown => {
+            app_state.help_scroll = (app_state.help_scroll + visible_lines).min(max_scroll);
+        }
+        KeyCode::PageUp => {
+            app_state.help_scroll = app_state.help_scroll.saturating_sub(visible_lines);
+        }
         KeyCode::Home => {
-            // Scroll to the top
             app_state.help_scroll = 0;
         }
         KeyCode::End => {
-            // Scroll to the bottom
             app_state.help_scroll = max_scroll;
         }
         _ => {}
@@ -425,7 +401,7 @@ mod tests {
     use crate::app::{AppState, InputMode};
     use crate::excel::{Cell, Sheet, Workbook};
 
-    fn app_with_preview() -> AppState<'static> {
+    fn app_with_sheet() -> AppState<'static> {
         let mut data = vec![vec![Cell::empty(); 3]; 3];
         data[1][1] = Cell::new("Name".to_string(), false);
         data[1][2] = Cell::new("Name".to_string(), false);
@@ -438,29 +414,67 @@ mod tests {
             max_cols: 2,
             is_loaded: true,
         };
-        let mut app = AppState::new(
+        let app = AppState::new(
             Workbook::from_sheets_for_test(vec![sheet]),
             PathBuf::from("test.xlsx"),
         )
         .unwrap();
-        app.show_query_preview();
         app
     }
 
     #[test]
-    fn escape_closes_preview_without_quitting() {
-        let mut app = app_with_preview();
+    fn f_no_longer_switches_to_analysis_mode() {
+        let mut app = app_with_sheet();
 
-        handle_key_event(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()));
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::empty()),
+        );
 
         assert!(matches!(app.input_mode, InputMode::Normal));
-        assert!(app.query_preview.is_none());
         assert!(!app.should_quit);
     }
 
     #[test]
-    fn q_closes_preview_without_quitting() {
-        let mut app = app_with_preview();
+    fn c_no_longer_switches_to_analysis_mode() {
+        let mut app = app_with_sheet();
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::empty()),
+        );
+
+        assert!(matches!(app.input_mode, InputMode::Normal));
+    }
+
+    #[test]
+    fn question_mark_starts_backward_search_from_normal_mode() {
+        let mut app = app_with_sheet();
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('?'), KeyModifiers::empty()),
+        );
+
+        assert!(matches!(app.input_mode, InputMode::SearchBackward));
+    }
+
+    #[test]
+    fn chinese_question_mark_does_not_open_help_overlay_from_normal_mode() {
+        let mut app = app_with_sheet();
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('？'), KeyModifiers::empty()),
+        );
+
+        assert!(matches!(app.input_mode, InputMode::Normal));
+    }
+
+    #[test]
+    fn q_closes_help_overlay_without_quitting() {
+        let mut app = app_with_sheet();
+        app.show_help();
 
         handle_key_event(
             &mut app,
@@ -468,37 +482,54 @@ mod tests {
         );
 
         assert!(matches!(app.input_mode, InputMode::Normal));
-        assert!(app.query_preview.is_none());
         assert!(!app.should_quit);
     }
 
     #[test]
-    fn f_opens_findings_panel_from_normal_mode() {
-        let mut app = app_with_preview();
-        app.close_query_preview();
+    fn page_keys_scroll_help_overlay_by_visible_page() {
+        let mut app = app_with_sheet();
+        app.show_help();
+        app.help_visible_lines = 8;
 
         handle_key_event(
             &mut app,
-            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::empty()),
+            KeyEvent::new(KeyCode::PageDown, KeyModifiers::empty()),
         );
 
-        assert!(matches!(app.input_mode, InputMode::Findings));
-        assert!(!app.findings.items.is_empty());
+        assert_eq!(app.help_scroll, 8);
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::PageUp, KeyModifiers::empty()),
+        );
+
+        assert_eq!(app.help_scroll, 0);
     }
 
     #[test]
-    fn j_moves_selected_finding_in_findings_mode() {
-        let mut app = app_with_preview();
-        app.close_query_preview();
-        app.show_findings();
+    fn end_key_scrolls_help_overlay_to_full_reference_bottom() {
+        let mut app = app_with_sheet();
+        app.show_help();
+        app.help_visible_lines = 8;
 
-        let initial = app.findings.selected;
+        handle_key_event(&mut app, KeyEvent::new(KeyCode::End, KeyModifiers::empty()));
 
-        handle_key_event(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::empty()),
-        );
+        let full_reference_bottom = crate::app::help_reference_text()
+            .lines()
+            .count()
+            .saturating_sub(app.help_visible_lines);
+        assert_eq!(app.help_scroll, full_reference_bottom);
+    }
 
-        assert!(app.findings.selected >= initial);
+    #[test]
+    fn end_key_uses_rendered_help_total_lines_when_available() {
+        let mut app = app_with_sheet();
+        app.show_help();
+        app.help_visible_lines = 8;
+        app.help_total_lines = 120;
+
+        handle_key_event(&mut app, KeyEvent::new(KeyCode::End, KeyModifiers::empty()));
+
+        assert_eq!(app.help_scroll, 112);
     }
 }

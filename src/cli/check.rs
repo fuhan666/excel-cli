@@ -944,14 +944,6 @@ impl Severity {
             SeverityThreshold::Error => Severity::Error,
         }
     }
-
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            Severity::Info => "info",
-            Severity::Warning => "warning",
-            Severity::Error => "error",
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize)]

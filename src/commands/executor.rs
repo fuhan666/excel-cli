@@ -52,8 +52,6 @@ impl AppState<'_> {
             }
             "nohlsearch" | "noh" => self.disable_search_highlight(),
             "help" => self.show_help(),
-            "preview" | "pv" => self.show_query_preview(),
-            "findings" | "issues" => self.show_findings(),
             "delsheet" => self.delete_current_sheet(),
             "addsheet" => self.add_notification("Usage: :addsheet <name>".to_string()),
             _ => {
@@ -436,51 +434,18 @@ mod tests {
     }
 
     #[test]
-    fn preview_command_populates_preview_state() {
-        let mut app = app_with_sheet();
-        app.input_buffer = "preview".to_string();
+    fn removed_analysis_commands_are_reported_as_unknown() {
+        for command in ["preview", "pv", "findings", "issues", "columns", "cols"] {
+            let mut app = app_with_sheet();
+            app.input_buffer = command.to_string();
 
-        app.execute_command();
+            app.execute_command();
 
-        assert!(matches!(app.input_mode, InputMode::Preview));
-        assert_eq!(
-            app.query_preview
-                .as_ref()
-                .map(|preview| preview.sheet_name.as_str()),
-            Some("Data")
-        );
-    }
-
-    #[test]
-    fn preview_alias_populates_preview_state() {
-        let mut app = app_with_sheet();
-        app.input_buffer = "pv".to_string();
-
-        app.execute_command();
-
-        assert!(matches!(app.input_mode, InputMode::Preview));
-        assert!(app.query_preview.is_some());
-    }
-
-    #[test]
-    fn findings_command_opens_findings_panel() {
-        let mut app = app_with_sheet();
-        app.input_buffer = "findings".to_string();
-
-        app.execute_command();
-
-        assert!(matches!(app.input_mode, InputMode::Findings));
-        assert!(!app.findings.items.is_empty());
-    }
-
-    #[test]
-    fn issues_alias_opens_findings_panel() {
-        let mut app = app_with_sheet();
-        app.input_buffer = "issues".to_string();
-
-        app.execute_command();
-
-        assert!(matches!(app.input_mode, InputMode::Findings));
-        assert!(!app.findings.items.is_empty());
+            assert!(matches!(app.input_mode, InputMode::Normal));
+            assert_eq!(
+                app.notification_messages.last().cloned(),
+                Some(format!("Unknown command: {command}"))
+            );
+        }
     }
 }
