@@ -22,7 +22,7 @@ chrono = "0.4"
 indexmap = { version = "2.0", features = ["serde"] }
 tui-textarea = "0.4.0"
 quick-xml = "0.37.5"
-zip = "2.5.0"
+zip = { version = "2.5.0", default-features = false, features = ["deflate"] }
 regex = "1"
 
 [profile.release]
