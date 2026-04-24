@@ -43,7 +43,11 @@ pub(super) fn lookup_formula_in_xlsx(
                 let mut inner_buf = Vec::new();
                 loop {
                     match reader.read_event_into(&mut inner_buf).ok()? {
-                        Event::Text(text) => formula.push_str(&text.unescape().ok()?),
+                        Event::Text(text) => {
+                            let decoded = text.decode().ok()?;
+                            let unescaped = quick_xml::escape::unescape(decoded.as_ref()).ok()?;
+                            formula.push_str(&unescaped);
+                        }
                         Event::End(end_event)
                             if end_event.name().as_ref() == end_tag.as_slice() =>
                         {

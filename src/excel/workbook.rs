@@ -18,7 +18,7 @@ use sheet_parse::create_sheet_from_range;
 
 pub enum CalamineWorkbook {
     Xlsx(Box<Xlsx<BufReader<File>>>),
-    Xls(Xls<BufReader<File>>),
+    Xls(Box<Xls<BufReader<File>>>),
     None,
 }
 
@@ -125,7 +125,7 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
                 if let Ok(file) = File::open(&path) {
                     let reader = BufReader::new(file);
                     if let Ok(xls_workbook) = Xls::new(reader) {
-                        calamine_workbook = CalamineWorkbook::Xls(xls_workbook);
+                        calamine_workbook = CalamineWorkbook::Xls(Box::new(xls_workbook));
                     }
                 }
             }
@@ -133,9 +133,12 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
     } else {
         // For formats that don't support lazy loading or if lazy loading is disabled,
         for name in &sheet_names {
-            let range = workbook
-                .worksheet_range(name)
-                .with_context(|| format!("Unable to read worksheet: {}", name))?;
+            let range = workbook.worksheet_range(name).with_context(|| {
+                format!(
+                    "Unable to parse Excel file: {} (unable to read worksheet: {})",
+                    path_str, name
+                )
+            })?;
 
             let formula_range = workbook.worksheet_formula(name).ok();
             let mut sheet = create_sheet_from_range(name, range, formula_range);
