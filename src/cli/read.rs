@@ -1,14 +1,14 @@
-use anyhow::Context;
 use regex::Regex;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
 use crate::cli::args::{OutputFormat, OutputShape, ReadCommands};
+use crate::cli::common::{file_format, format_bounds, sheet_by_index};
 use crate::cli::envelope;
 use crate::cli::error::AppError;
 use crate::cli::sheet_query::{
     load_target_sheet, read_header_values, resolve_bounds, resolve_optional_header_row,
-    stable_record_keys, SheetBounds,
+    stable_record_keys,
 };
 use crate::excel::{open_workbook, CellType, Sheet};
 use crate::utils::{index_to_col_name, parse_cell_reference};
@@ -94,13 +94,6 @@ pub fn handle(cmd: ReadCommands) -> Result<Value, AppError> {
     }
 }
 
-fn file_format(path: &std::path::Path) -> String {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .unwrap_or_else(|| "unknown".to_string())
-}
-
 fn read_cell(
     file: std::path::PathBuf,
     sheet: Option<String>,
@@ -123,10 +116,7 @@ fn read_cell(
         .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_obj = workbook
-        .get_sheet_by_index(resolved_sheet.index)
-        .with_context(|| format!("Sheet '{}' not found", resolved_sheet.name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
 
     let cell_ref = cell.to_ascii_uppercase();
     let in_bounds = row < sheet_obj.data.len() && col < sheet_obj.data[row].len();
@@ -242,16 +232,6 @@ fn invalid_query(message: impl Into<String>) -> AppError {
     AppError::InvalidQuery {
         message: message.into(),
     }
-}
-
-fn format_bounds(bounds: SheetBounds) -> String {
-    format!(
-        "{}{}:{}{}",
-        index_to_col_name(bounds.start_col),
-        bounds.start_row,
-        index_to_col_name(bounds.end_col),
-        bounds.end_row
-    )
 }
 
 fn sheet_row_values(sheet: &Sheet, row: usize, bounds: RowBounds) -> Option<Vec<Value>> {
@@ -531,10 +511,7 @@ fn read_range(
         .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_obj = workbook
-        .get_sheet_by_index(resolved_sheet.index)
-        .with_context(|| format!("Sheet '{}' not found", resolved_sheet.name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
     let bounds = resolve_bounds(&workbook, sheet_obj, resolved_sheet.index, Some(&range))?;
 
     let mut rows = Vec::new();
@@ -607,10 +584,7 @@ fn read_rows(
         .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_obj = workbook
-        .get_sheet_by_index(resolved_sheet.index)
-        .with_context(|| format!("Sheet '{}' not found", resolved_sheet.name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
     let requested_bounds =
         resolve_bounds(&workbook, sheet_obj, resolved_sheet.index, range.as_deref())?;
     let resolved_header =

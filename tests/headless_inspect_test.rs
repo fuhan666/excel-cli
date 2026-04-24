@@ -700,6 +700,37 @@ fn test_read_range_preserves_typed_values() {
 }
 
 #[test]
+fn test_read_range_text_preserves_cell_rendering_contract() {
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join("excel_cli_test_read_range_typed_text.xlsx");
+    create_read_contract_workbook(&file_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("read")
+        .arg("range")
+        .arg(&file_path)
+        .arg("--sheet")
+        .arg("TypedCells")
+        .arg("--range")
+        .arg("A2:F2")
+        .arg("--format")
+        .arg("text")
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    assert!(output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "Expected empty stderr on success. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "hello\t42.5\t2024-02-03\ttrue\t85\t\n"
+    );
+}
+
+#[test]
 fn test_read_rows_json() {
     let temp_dir = std::env::temp_dir();
     let file_path = temp_dir.join("excel_cli_test_read_rows.xlsx");

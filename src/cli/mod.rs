@@ -1,5 +1,6 @@
 pub mod args;
 pub mod check;
+pub mod common;
 pub mod dispatch;
 pub mod envelope;
 pub mod error;

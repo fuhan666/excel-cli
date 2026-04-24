@@ -1,8 +1,8 @@
-use anyhow::Context;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
 use crate::cli::args::InspectCommands;
+use crate::cli::common::{file_format, format_range, sheet_by_index};
 use crate::cli::envelope;
 use crate::cli::error::AppError;
 use crate::cli::sheet_query::{
@@ -41,13 +41,6 @@ pub fn handle(cmd: InspectCommands) -> Result<Value, AppError> {
             format: _,
         } => inspect_tables(file, sheet),
     }
-}
-
-fn file_format(path: &std::path::Path) -> String {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn inspect_workbook(file: std::path::PathBuf) -> Result<Value, AppError> {
@@ -108,10 +101,7 @@ fn inspect_sheet(
         .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_obj = workbook
-        .get_sheet_by_index(resolved_sheet.index)
-        .with_context(|| format!("Sheet '{}' not found", resolved_sheet.name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
 
     let used_range = workbook
         .get_used_range(resolved_sheet.index)
@@ -171,10 +161,7 @@ fn inspect_sample(
         .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_obj = workbook
-        .get_sheet_by_index(resolved_sheet.index)
-        .with_context(|| format!("Sheet '{}' not found", resolved_sheet.name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
     let bounds = resolve_bounds(&workbook, sheet_obj, resolved_sheet.index, range.as_deref())?;
 
     // Apply row limit
@@ -190,12 +177,11 @@ fn inspect_sample(
         "rows"
     };
 
-    let range_str = format!(
-        "{}{}:{}{}",
-        index_to_col_name(bounds.start_col),
+    let range_str = format_range(
         bounds.start_row,
-        index_to_col_name(bounds.end_col),
-        sample_end_row
+        bounds.start_col,
+        sample_end_row,
+        bounds.end_col,
     );
 
     let data = if let Some(header_row_idx) = resolved_header {
@@ -297,16 +283,10 @@ fn inspect_columns(
         .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_obj = workbook
-        .get_sheet_by_index(resolved_sheet.index)
-        .with_context(|| format!("Sheet '{}' not found", resolved_sheet.name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
     let resolved_header =
         resolve_header_row(&workbook, sheet_obj, resolved_sheet.index, &header_row)?;
-    let sheet_obj = workbook
-        .get_sheet_by_index(resolved_sheet.index)
-        .with_context(|| format!("Sheet '{}' not found", resolved_sheet.name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
 
     let header_names = column_header_names(sheet_obj, resolved_header);
     let duplicate_flags = duplicate_header_flags(&header_names);
@@ -375,10 +355,7 @@ fn inspect_tables(file: std::path::PathBuf, sheet: String) -> Result<Value, AppE
         .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_obj = workbook
-        .get_sheet_by_index(resolved_sheet.index)
-        .with_context(|| format!("Sheet '{}' not found", resolved_sheet.name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
 
     let candidates = detect_table_candidates(sheet_obj);
     let candidate_count = candidates.len();
@@ -610,12 +587,11 @@ fn detect_table_candidates(sheet: &Sheet) -> Vec<Value> {
     candidates
         .into_iter()
         .map(|candidate| {
-            let range = format!(
-                "{}{}:{}{}",
-                index_to_col_name(candidate.start_col),
+            let range = format_range(
                 candidate.start_row,
-                index_to_col_name(candidate.end_col),
-                candidate.end_row
+                candidate.start_col,
+                candidate.end_row,
+                candidate.end_col,
             );
             json!({
                 "range": range,

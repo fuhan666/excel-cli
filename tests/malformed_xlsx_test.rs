@@ -87,3 +87,31 @@ fn malformed_xlsx_read_cell_returns_controlled_error() {
         stderr
     );
 }
+
+#[test]
+fn missing_workbook_returns_file_error() {
+    let missing_path = std::env::temp_dir().join("excel_cli_missing_workbook_file_error.xlsx");
+    let _ = std::fs::remove_file(&missing_path);
+
+    let output = Command::new(excel_cli_bin())
+        .arg("inspect")
+        .arg("workbook")
+        .arg(&missing_path)
+        .output()
+        .expect("Failed to execute excel-cli");
+
+    assert!(
+        !output.status.success(),
+        "Expected missing workbook failure"
+    );
+    assert_eq!(output.status.code(), Some(3));
+    assert!(
+        output.stdout.is_empty(),
+        "stdout should be empty: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let stderr: serde_json::Value =
+        serde_json::from_slice(&output.stderr).expect("stderr should be valid JSON");
+    assert_eq!(stderr["error"]["code"], "file_error");
+}
