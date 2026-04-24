@@ -12,6 +12,8 @@ use crate::utils::index_to_col_name;
 
 use super::display_width;
 
+const TABLE_COLUMN_SPACING: usize = 1;
+
 /// Update the visible area of the spreadsheet based on the available space
 pub(super) fn update_visible_area(app_state: &mut AppState, area: Rect) {
     // Calculate visible rows based on available height (subtract header and borders)
@@ -24,40 +26,78 @@ pub(super) fn update_visible_area(app_state: &mut AppState, area: Rect) {
     app_state.update_row_number_width();
 
     // Calculate available width for columns (subtract row numbers and borders)
-    let available_width = (area.width as usize).saturating_sub(app_state.row_number_width + 2); // row_number_width + 2 for borders
+    let available_width = data_columns_available_width(app_state, area);
+    ensure_selected_column_fully_visible(app_state, available_width);
+    let visible_cols = visible_data_column_widths(app_state, available_width).len();
 
-    // Calculate how many columns can fit in the available width
-    let mut visible_cols = 0;
+    // Ensure at least one column is visible
+    app_state.visible_cols = visible_cols.max(1);
+}
+
+fn data_columns_available_width(app_state: &AppState, area: Rect) -> usize {
+    (area.width as usize).saturating_sub(app_state.row_number_width + 2 + TABLE_COLUMN_SPACING)
+}
+
+fn ensure_selected_column_fully_visible(app_state: &mut AppState, available_width: usize) {
+    let selected_col = app_state.selected_cell.1;
+
+    if selected_col < app_state.start_col {
+        app_state.start_col = selected_col;
+    }
+
+    while app_state.start_col < selected_col
+        && columns_width(app_state, app_state.start_col, selected_col) > available_width
+    {
+        app_state.start_col += 1;
+    }
+}
+
+fn columns_width(app_state: &AppState, start_col: usize, end_col: usize) -> usize {
+    let col_count = end_col.saturating_sub(start_col) + 1;
+    let content_width = (start_col..=end_col)
+        .map(|col| app_state.get_column_width(col))
+        .sum::<usize>();
+
+    content_width + TABLE_COLUMN_SPACING * col_count.saturating_sub(1)
+}
+
+fn visible_data_column_widths(app_state: &AppState, available_width: usize) -> Vec<usize> {
+    let sheet = app_state.workbook.get_current_sheet();
+    let max_col = sheet.max_cols.max(app_state.start_col);
+    let mut widths = Vec::new();
     let mut width_used = 0;
 
-    // Iterate through columns starting from the leftmost visible column
-    for col_idx in app_state.start_col.. {
+    for col_idx in app_state.start_col..=max_col {
         let col_width = app_state.get_column_width(col_idx);
-
-        if col_idx == app_state.start_col {
-            // Always include the first column even if it's wider than available space
-            width_used += col_width;
-            visible_cols += 1;
-
-            if width_used >= available_width {
-                break;
-            }
-        } else if width_used + col_width <= available_width {
-            // Add columns that fit completely
-            width_used += col_width;
-            visible_cols += 1;
-        } else if width_used < available_width {
-            // Excel-like behavior: include one partially visible column
-            visible_cols += 1;
-            break;
+        let spacing = if widths.is_empty() {
+            0
         } else {
-            // No more space available
+            TABLE_COLUMN_SPACING
+        };
+
+        if width_used + spacing >= available_width {
+            break;
+        }
+
+        let remaining_width = available_width - width_used - spacing;
+        let render_width = col_width.min(remaining_width);
+        widths.push(render_width);
+        width_used += spacing + render_width;
+
+        if render_width < col_width {
             break;
         }
     }
 
-    // Ensure at least one column is visible
-    app_state.visible_cols = visible_cols.max(1);
+    if widths.is_empty() {
+        widths.push(
+            app_state
+                .get_column_width(app_state.start_col)
+                .min(available_width),
+        );
+    }
+
+    widths
 }
 
 pub(super) fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
@@ -65,13 +105,16 @@ pub(super) fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) 
     let start_row = app_state.start_row;
     let end_row = start_row + app_state.visible_rows - 1;
     let start_col = app_state.start_col;
-    let end_col = start_col + app_state.visible_cols - 1;
+    let data_column_widths =
+        visible_data_column_widths(app_state, data_columns_available_width(app_state, area));
+    let visible_cols = data_column_widths.len().max(1);
+    let end_col = start_col + visible_cols - 1;
 
-    let mut constraints = Vec::with_capacity(app_state.visible_cols + 1);
+    let mut constraints = Vec::with_capacity(visible_cols + 1);
     constraints.push(Constraint::Length(app_state.row_number_width as u16)); // Dynamic row header width
 
-    for col in start_col..=end_col {
-        constraints.push(Constraint::Length(app_state.get_column_width(col) as u16));
+    for width in data_column_widths {
+        constraints.push(Constraint::Length(width as u16));
     }
 
     // Set table style based on current mode
@@ -207,10 +250,11 @@ pub(super) fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) 
     let table = Table::new(
         // Combine header and data rows
         std::iter::once(header).chain(rows),
+        constraints,
     )
     .block(table_block)
-    .style(cell_style)
-    .widths(&constraints);
+    .column_spacing(TABLE_COLUMN_SPACING as u16)
+    .style(cell_style);
 
     f.render_widget(table, area);
 }

@@ -10,8 +10,8 @@ categories = ["command-line-interface", "command-line-utilities", "development-t
 exclude = ["/.tests", "/.github", "AGENTS.md", "CHANGELOG.md", ".gitignore"]
 
 [dependencies]
-ratatui = "0.24.0"
-crossterm = "0.27.0"
+ratatui = "0.29.0"
+crossterm = "0.28.1"
 calamine = "0.34.0"
 anyhow = "1.0.79"
 clap = { version = "4.5.0", features = ["derive"] }
@@ -20,7 +20,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = "0.4"
 indexmap = { version = "2.0", features = ["serde"] }
-tui-textarea = "0.4.0"
+tui-textarea = "0.7.0"
 quick-xml = "0.39.2"
 zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
 regex = "1"

@@ -77,8 +77,9 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 }
 
 fn ui(f: &mut Frame, app_state: &mut AppState) {
-    f.render_widget(Clear, f.size());
-    let status_bar_height = status_bar_height(app_state, f.size().width);
+    let area = f.area();
+    f.render_widget(Clear, area);
+    let status_bar_height = status_bar_height(app_state, area.width);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -88,7 +89,7 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
             Constraint::Length(app_state.info_panel_height as u16),
             Constraint::Length(status_bar_height),
         ])
-        .split(f.size());
+        .split(area);
 
     draw_title_with_tabs(f, app_state, chunks[0]);
 
@@ -101,7 +102,7 @@ fn ui(f: &mut Frame, app_state: &mut AppState) {
 
     // If in help mode, draw the help popup over everything else
     if let InputMode::Help = app_state.input_mode {
-        draw_help_popup(f, app_state, f.size());
+        draw_help_popup(f, app_state, area);
     }
 
     // If in lazy loading mode or CommandInLazyLoading mode and the current sheet is not loaded, draw the lazy loading overlay
@@ -182,7 +183,7 @@ fn draw_editing_panel(f: &mut Frame, app_state: &AppState, area: Rect) {
     };
 
     f.render_widget(input_block, area);
-    f.render_widget(app_state.text_area.widget(), padded_area);
+    f.render_widget(&app_state.text_area, padded_area);
 }
 
 fn draw_notifications(f: &mut Frame, app_state: &AppState, area: Rect) {

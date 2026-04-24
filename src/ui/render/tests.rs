@@ -50,6 +50,51 @@ fn app_with_many_sheets() -> AppState<'static> {
     .unwrap()
 }
 
+fn app_with_long_c22_cell() -> AppState<'static> {
+    let mut data = vec![vec![Cell::empty(); 5]; 24];
+    data[20][1] = Cell::new("分类甲".to_string(), false);
+    data[20][2] = Cell::new("示例能源服务股份有限公司".to_string(), false);
+    data[20][3] = Cell::new("Example Energy Services Company Limited".to_string(), false);
+    data[20][4] = Cell::new(
+        "示例省示例市示例区示例路100号示例大厦A座10层、20层、30层".to_string(),
+        false,
+    );
+    data[21][1] = Cell::new("分类甲".to_string(), false);
+    data[21][2] = Cell::new("示例一致服务集团股份有限公司".to_string(), false);
+    data[21][3] = Cell::new(
+        "Example Unified Services Corporation Limited".to_string(),
+        false,
+    );
+    data[21][4] = Cell::new(
+        "示例省示例市示例区样例四路15号示例服务大厦".to_string(),
+        false,
+    );
+    data[22][1] = Cell::new("分类甲".to_string(), false);
+    data[22][2] = Cell::new("示例跨区域资产服务集团股份有限公司".to_string(), false);
+    data[22][3] = Cell::new(
+        "Example International Research Operations and Holdings Company Limited".to_string(),
+        false,
+    );
+    data[22][4] = Cell::new(
+        "示例省示例市示例区样例南路示例广场45-48楼".to_string(),
+        false,
+    );
+
+    let sheet = Sheet {
+        name: "示例表".to_string(),
+        data,
+        max_rows: 23,
+        max_cols: 4,
+        is_loaded: true,
+    };
+
+    AppState::new(
+        Workbook::from_sheets_for_test(vec![sheet]),
+        PathBuf::from("sample.xlsx"),
+    )
+    .unwrap()
+}
+
 fn rendered_lines(terminal: &Terminal<TestBackend>) -> Vec<String> {
     let buffer = terminal.backend().buffer();
     let width = buffer.area.width as usize;
@@ -57,7 +102,7 @@ fn rendered_lines(terminal: &Terminal<TestBackend>) -> Vec<String> {
     buffer
         .content
         .chunks(width)
-        .map(|row| row.iter().map(|cell| cell.symbol.as_str()).collect())
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect())
         .collect()
 }
 
@@ -91,7 +136,74 @@ fn bg_at(terminal: &Terminal<TestBackend>, row: usize, col: usize) -> Color {
 fn symbol_at(terminal: &Terminal<TestBackend>, row: usize, col: usize) -> String {
     let buffer = terminal.backend().buffer();
     let width = buffer.area.width as usize;
-    buffer.content[row * width + col].symbol.clone()
+    buffer.content[row * width + col].symbol().to_string()
+}
+
+#[test]
+fn auto_fit_all_renders_full_long_cell_content() {
+    let backend = TestBackend::new(100, 36);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut app = app_with_long_c22_cell();
+    let expected = "Example International Research Operations and Holdings Company Limited";
+
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+    app.input_buffer = "cw fit all".to_string();
+    app.execute_command();
+    app.input_buffer = "C22".to_string();
+    app.execute_command();
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+    let lines = rendered_lines(&terminal);
+    let row = lines
+        .iter()
+        .find(|line| line.contains("│22"))
+        .unwrap_or_else(|| panic!("expected row 22 to render:\n{}", lines.join("\n")));
+
+    assert!(row.contains(expected), "{row}");
+}
+
+#[test]
+fn auto_fit_all_does_not_shrink_visible_fitted_columns() {
+    let backend = TestBackend::new(148, 59);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut app = app_with_long_c22_cell();
+    let expected = "Example International Research Operations and Holdings Company Limited";
+
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+    app.input_buffer = "cw fit all".to_string();
+    app.execute_command();
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+    let lines = rendered_lines(&terminal);
+    let row = lines
+        .iter()
+        .find(|line| line.contains("│22"))
+        .unwrap_or_else(|| panic!("expected row 22 to render:\n{}", lines.join("\n")));
+
+    assert!(row.contains(expected), "{row}");
+}
+
+#[test]
+fn auto_fit_all_shows_partial_next_column_without_shrinking_fitted_columns() {
+    let backend = TestBackend::new(148, 59);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut app = app_with_long_c22_cell();
+    let full_c_cell = "Example International Research Operations and Holdings Company Limited";
+    let partial_d_cell = "示 例 省 示 例 市";
+
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+    app.input_buffer = "cw fit all".to_string();
+    app.execute_command();
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+    let lines = rendered_lines(&terminal);
+    let row = lines
+        .iter()
+        .find(|line| line.contains("│22"))
+        .unwrap_or_else(|| panic!("expected row 22 to render:\n{}", lines.join("\n")));
+
+    assert!(row.contains(full_c_cell), "{row}");
+    assert!(row.contains(partial_d_cell), "{row}");
 }
 
 fn line_index(lines: &[String], needle: &str) -> usize {
@@ -318,7 +430,7 @@ fn renders_visual_refresh_shell_with_inspector_and_short_status() {
         .buffer()
         .content
         .iter()
-        .map(|cell| cell.symbol.as_str())
+        .map(|cell| cell.symbol())
         .collect::<String>();
 
     assert!(matches!(app.input_mode, InputMode::Normal));
@@ -409,7 +521,7 @@ fn renders_cell_details_with_dynamic_title_and_compact_fields() {
         .buffer()
         .content
         .iter()
-        .map(|cell| cell.symbol.as_str())
+        .map(|cell| cell.symbol())
         .collect::<String>();
 
     assert!(matches!(app.input_mode, InputMode::Normal));
@@ -438,7 +550,7 @@ fn renders_notifications_panel_when_inspector_moves_below_table() {
         .buffer()
         .content
         .iter()
-        .map(|cell| cell.symbol.as_str())
+        .map(|cell| cell.symbol())
         .collect::<String>();
 
     assert!(rendered.contains("Cell A1"));
@@ -490,7 +602,7 @@ fn removed_analysis_modes_do_not_appear_in_rendered_ui() {
         .buffer()
         .content
         .iter()
-        .map(|cell| cell.symbol.as_str())
+        .map(|cell| cell.symbol())
         .collect::<String>();
 
     assert!(rendered.contains("Cell A1"));
