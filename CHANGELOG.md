@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-04-24
+
+### Added
+
+- TUI `:help` command — opens a scrollable, structured key-reference overlay with all navigation, editing, and command-mode shortcuts.
+
+### Changed
+
+- TUI visual refresh: cleaner title bar with branding and inline row/column stats, single-line status bar, and a consistent dark theme across panels.
+- `check` scans are more efficient and report findings with A1-style cell ranges.
+
 ## [1.3.0] - 2026-04-22
 
 ### Added
@@ -201,10 +212,11 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.3.0...HEAD
-[1.3.0]: https://github.com/fuhan666/excel-cli/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/fuhan666/excel-cli/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/fuhan666/excel-cli/compare/v1.0.0...v1.1.0
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/fuhan666/excel-cli/releases/tag/v1.3.1
+[1.3.0]: https://github.com/fuhan666/excel-cli/releases/tag/v1.3.0
+[1.2.0]: https://github.com/fuhan666/excel-cli/releases/tag/v1.2.0
+[1.1.0]: https://github.com/fuhan666/excel-cli/releases/tag/v1.1.0
 [1.0.0]: https://github.com/fuhan666/excel-cli/releases/tag/v1.0.0
 [0.5.2]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.2
 [0.5.1]: https://github.com/fuhan666/excel-cli/releases/tag/v0.5.1

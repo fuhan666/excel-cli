@@ -12,8 +12,6 @@ An Excel CLI for AI, scripting, and terminal users. Inspect and read headlessly 
 - Run workbook and sheet quality checks with stable JSON findings
 - Delete rows and columns
 - Search functionality with highlighting
-- Read-only query preview in the TUI
-- Review quality-check findings inside the TUI
 - Command mode for advanced operations
 
 ## Installation & Uninstallation
@@ -404,8 +402,7 @@ The JSON files are saved in the same directory as the original Excel file.
 ### Other Commands
 
 - `:nohlsearch` or `:noh` - Disable search highlighting
-- `:help` - Show available commands
-- `:preview` or `:pv` - Show a read-only preview of the current sheet target and sample rows
+- `:help` - Show all keyboard-shortcut reference
 
 ## File Saving Logic
 
