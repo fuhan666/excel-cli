@@ -2,11 +2,13 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::cli::args::SeverityThreshold;
+use crate::cli::common::{file_format, format_range};
 use crate::cli::envelope;
 use crate::cli::error::{AppError, EXIT_CHECK_FINDINGS, EXIT_SUCCESS};
+use crate::cli::sheet_query::{cell_at, cell_has_formula, cell_is_present, header_value};
 use crate::excel::{open_workbook, Cell, CellType, Sheet, Workbook};
 use crate::utils::{cell_reference, index_to_col_name};
 
@@ -113,13 +115,6 @@ pub(crate) fn run_check_report(
     })
 }
 
-fn file_format(path: &Path) -> String {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .unwrap_or_else(|| "unknown".to_string())
-}
-
 fn parse_rules(value: Option<&str>) -> Result<Vec<CheckRuleId>, AppError> {
     let Some(value) = value else {
         return Ok(RULES.to_vec());
@@ -208,6 +203,91 @@ struct SheetCheckContext<'a> {
     used_range: String,
     data_start_row: usize,
     data_row_count: usize,
+    facts: SheetFacts,
+}
+
+struct SheetFacts {
+    row_has_present: Vec<bool>,
+    column_has_present: Vec<bool>,
+    data_column_has_present: Vec<bool>,
+    data_column_null_rows: Vec<Vec<usize>>,
+    data_column_type_counts: Vec<BTreeMap<&'static str, usize>>,
+    data_column_cells_by_type: Vec<BTreeMap<&'static str, Vec<String>>>,
+    formula_cells: Vec<FormulaFact>,
+    formula_bounds: Option<(usize, usize, usize, usize)>,
+}
+
+struct FormulaFact {
+    cell: String,
+    formula: String,
+}
+
+impl SheetFacts {
+    fn new(sheet: &Sheet, data_start_row: usize, data_row_count: usize) -> Self {
+        let mut facts = Self {
+            row_has_present: vec![false; sheet.max_rows + 1],
+            column_has_present: vec![false; sheet.max_cols + 1],
+            data_column_has_present: vec![false; sheet.max_cols + 1],
+            data_column_null_rows: vec![Vec::new(); sheet.max_cols + 1],
+            data_column_type_counts: vec![BTreeMap::new(); sheet.max_cols + 1],
+            data_column_cells_by_type: vec![BTreeMap::new(); sheet.max_cols + 1],
+            formula_cells: Vec::new(),
+            formula_bounds: None,
+        };
+
+        for row in 1..=sheet.max_rows {
+            for col in 1..=sheet.max_cols {
+                let cell = cell_at(sheet, row, col);
+                let present = cell_is_present(cell);
+
+                facts.row_has_present[row] |= present;
+                facts.column_has_present[col] |= present;
+
+                if data_row_count == 0 || row < data_start_row {
+                    continue;
+                }
+
+                facts.data_column_has_present[col] |= present;
+                if !present {
+                    facts.data_column_null_rows[col].push(row);
+                }
+
+                let Some(cell) = cell else {
+                    continue;
+                };
+
+                if let Some(kind) = cell_kind(cell) {
+                    *facts.data_column_type_counts[col].entry(kind).or_default() += 1;
+                    facts.data_column_cells_by_type[col]
+                        .entry(kind)
+                        .or_default()
+                        .push(cell_reference((row, col)));
+                }
+
+                if cell_has_formula(cell) {
+                    facts.add_formula(row, col, cell);
+                }
+            }
+        }
+
+        facts
+    }
+
+    fn add_formula(&mut self, row: usize, col: usize, cell: &Cell) {
+        self.formula_bounds = Some(match self.formula_bounds {
+            Some((min_row, min_col, max_row, max_col)) => (
+                min_row.min(row),
+                min_col.min(col),
+                max_row.max(row),
+                max_col.max(col),
+            ),
+            None => (row, col, row, col),
+        });
+        self.formula_cells.push(FormulaFact {
+            cell: cell_reference((row, col)),
+            formula: cell.formula.clone().unwrap_or_else(|| cell.value.clone()),
+        });
+    }
 }
 
 impl<'a> SheetCheckContext<'a> {
@@ -230,6 +310,7 @@ impl<'a> SheetCheckContext<'a> {
         } else {
             0
         };
+        let facts = SheetFacts::new(sheet, data_start_row, data_row_count);
 
         Ok(Self {
             sheet,
@@ -237,6 +318,7 @@ impl<'a> SheetCheckContext<'a> {
             used_range,
             data_start_row,
             data_row_count,
+            facts,
         })
     }
 
@@ -253,12 +335,11 @@ impl<'a> SheetCheckContext<'a> {
         if self.data_row_count == 0 {
             None
         } else {
-            Some(format!(
-                "{}{}:{}{}",
-                index_to_col_name(col),
+            Some(format_range(
                 self.data_start_row,
-                index_to_col_name(col),
-                self.sheet.max_rows
+                col,
+                self.sheet.max_rows,
+                col,
             ))
         }
     }
@@ -358,12 +439,9 @@ fn find_blank_rows(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> {
     }
 
     (1..=context.sheet.max_rows)
-        .filter(|row| {
-            (1..=context.sheet.max_cols).all(|col| is_blank_cell(cell_at(context.sheet, *row, col)))
-        })
+        .filter(|row| !context.facts.row_has_present[*row])
         .map(|row| {
-            let end_col = index_to_col_name(context.sheet.max_cols);
-            let range = format!("A{row}:{end_col}{row}");
+            let range = format_range(row, 1, row, context.sheet.max_cols);
             CheckFinding {
                 rule_id: CheckRuleId::BlankRows,
                 severity: Severity::Warning,
@@ -388,12 +466,10 @@ fn find_blank_columns(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> {
     }
 
     (1..=context.sheet.max_cols)
-        .filter(|col| {
-            (1..=context.sheet.max_rows).all(|row| is_blank_cell(cell_at(context.sheet, row, *col)))
-        })
+        .filter(|col| !context.facts.column_has_present[*col])
         .map(|col| {
             let column_label = index_to_col_name(col);
-            let range = format!("{column_label}1:{column_label}{}", context.sheet.max_rows);
+            let range = format_range(1, col, context.sheet.max_rows, col);
             CheckFinding {
                 rule_id: CheckRuleId::BlankColumns,
                 severity: Severity::Warning,
@@ -423,10 +499,7 @@ fn check_null_ratio(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> {
 
     let mut findings = Vec::new();
     for col in 1..=context.sheet.max_cols {
-        let null_rows: Vec<usize> = (context.data_start_row..=context.sheet.max_rows)
-            .filter(|row| !cell_is_present(cell_at(context.sheet, *row, col)))
-            .collect();
-
+        let null_rows = &context.facts.data_column_null_rows[col];
         if null_rows.is_empty() {
             continue;
         }
@@ -537,14 +610,14 @@ fn default_duplicate_candidate(context: &SheetCheckContext<'_>) -> Option<(usize
             let has_header = cell_at(context.sheet, header_row, col)
                 .map(|cell| !cell.value.trim().is_empty())
                 .unwrap_or(false);
-            if has_header && data_column_has_value(context, col) {
+            if has_header && context.facts.data_column_has_present[col] {
                 return Some((col, "first non-empty header data column"));
             }
         }
     }
 
     (1..=context.sheet.max_cols)
-        .find(|col| data_column_has_value(context, *col))
+        .find(|col| context.facts.data_column_has_present[*col])
         .map(|col| (col, "first data column with values"))
 }
 
@@ -555,30 +628,14 @@ fn check_type_drift(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> {
 
     let mut findings = Vec::new();
     for col in 1..=context.sheet.max_cols {
-        let mut type_counts: BTreeMap<&'static str, usize> = BTreeMap::new();
-        let mut cells_by_type: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
-
-        for row in context.data_start_row..=context.sheet.max_rows {
-            let Some(cell) = cell_at(context.sheet, row, col) else {
-                continue;
-            };
-            let Some(kind) = cell_kind(cell) else {
-                continue;
-            };
-
-            *type_counts.entry(kind).or_default() += 1;
-            cells_by_type
-                .entry(kind)
-                .or_default()
-                .push(cell_reference((row, col)));
-        }
-
+        let type_counts = &context.facts.data_column_type_counts[col];
+        let cells_by_type = &context.facts.data_column_cells_by_type[col];
         if type_counts.len() < 2 {
             continue;
         }
 
-        let dominant_type = dominant_type(&type_counts);
-        let Some((drift_type, drift_count)) = first_drift_type(&type_counts, dominant_type) else {
+        let dominant_type = dominant_type(type_counts);
+        let Some((drift_type, drift_count)) = first_drift_type(type_counts, dominant_type) else {
             continue;
         };
         let Some(first_drift_cell) = cells_by_type
@@ -588,7 +645,8 @@ fn check_type_drift(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> {
         else {
             continue;
         };
-        let Some((first_drift_row, _)) = parse_cell_for_row(&first_drift_cell) else {
+        let Some((first_drift_row, _)) = crate::utils::parse_cell_reference(&first_drift_cell)
+        else {
             continue;
         };
         let column_name = context.column_name(col);
@@ -628,39 +686,27 @@ fn check_formula_presence(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> 
         return Vec::new();
     }
 
-    let mut formulas = Vec::new();
-    let mut min_row = usize::MAX;
-    let mut min_col = usize::MAX;
-    let mut max_row = 0;
-    let mut max_col = 0;
-
-    for row in context.data_start_row..=context.sheet.max_rows {
-        for col in 1..=context.sheet.max_cols {
-            let Some(cell) = cell_at(context.sheet, row, col) else {
-                continue;
-            };
-            if !cell_has_formula(cell) {
-                continue;
-            }
-
-            min_row = min_row.min(row);
-            min_col = min_col.min(col);
-            max_row = max_row.max(row);
-            max_col = max_col.max(col);
-            formulas.push(json!({
-                "cell": cell_reference((row, col)),
-                "formula": cell.formula.clone().unwrap_or_else(|| cell.value.clone())
-            }));
-        }
-    }
-
-    if formulas.is_empty() {
+    if context.facts.formula_cells.is_empty() {
         return Vec::new();
     }
 
-    let formula_count = formulas.len();
+    let formula_count = context.facts.formula_cells.len();
     let formula_ratio = rounded_ratio(formula_count, context.data_row_count);
-    formulas.truncate(5);
+    let formulas: Vec<Value> = context
+        .facts
+        .formula_cells
+        .iter()
+        .take(5)
+        .map(|formula| {
+            json!({
+                "cell": formula.cell.clone(),
+                "formula": formula.formula.clone(),
+            })
+        })
+        .collect();
+    let Some((min_row, min_col, max_row, max_col)) = context.facts.formula_bounds else {
+        return Vec::new();
+    };
 
     vec![CheckFinding {
         rule_id: CheckRuleId::FormulaPresence,
@@ -668,13 +714,7 @@ fn check_formula_presence(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> 
         sheet: context.sheet.name.clone(),
         row: Some(min_row),
         column: Some(min_col),
-        range: Some(format!(
-            "{}{}:{}{}",
-            index_to_col_name(min_col),
-            min_row,
-            index_to_col_name(max_col),
-            max_row
-        )),
+        range: Some(format_range(min_row, min_col, max_row, max_col)),
         message: format!(
             "Sheet '{}' contains {} formula cells.",
             context.sheet.name, formula_count
@@ -688,34 +728,9 @@ fn check_formula_presence(context: &SheetCheckContext<'_>) -> Vec<CheckFinding> 
     }]
 }
 
-fn cell_at(sheet: &Sheet, row: usize, col: usize) -> Option<&Cell> {
-    sheet.data.get(row).and_then(|row_data| row_data.get(col))
-}
-
-fn header_value(sheet: &Sheet, row: usize, col: usize) -> String {
-    cell_at(sheet, row, col)
-        .filter(|cell| !cell_has_formula(cell))
-        .map(|cell| cell.value.trim().to_string())
-        .unwrap_or_default()
-}
-
 fn is_blank_cell(cell: Option<&Cell>) -> bool {
     cell.map(|cell| !cell_has_formula(cell) && cell.value.trim().is_empty())
         .unwrap_or(true)
-}
-
-fn cell_has_formula(cell: &Cell) -> bool {
-    cell.is_formula || cell.formula.is_some()
-}
-
-fn cell_is_present(cell: Option<&Cell>) -> bool {
-    cell.map(|cell| !cell.value.trim().is_empty() || cell_has_formula(cell))
-        .unwrap_or(false)
-}
-
-fn data_column_has_value(context: &SheetCheckContext<'_>, col: usize) -> bool {
-    (context.data_start_row..=context.sheet.max_rows)
-        .any(|row| cell_is_present(cell_at(context.sheet, row, col)))
 }
 
 fn cell_kind(cell: &Cell) -> Option<&'static str> {
@@ -757,10 +772,6 @@ fn first_drift_type(
                 .then_with(|| left_type.cmp(right_type))
         })
         .map(|(kind, count)| (*kind, *count))
-}
-
-fn parse_cell_for_row(cell: &str) -> Option<(usize, usize)> {
-    crate::utils::parse_cell_reference(cell)
 }
 
 fn rounded_ratio(numerator: usize, denominator: usize) -> f64 {
@@ -942,14 +953,6 @@ impl Severity {
             SeverityThreshold::Info => Severity::Info,
             SeverityThreshold::Warning => Severity::Warning,
             SeverityThreshold::Error => Severity::Error,
-        }
-    }
-
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            Severity::Info => "info",
-            Severity::Warning => "warning",
-            Severity::Error => "error",
         }
     }
 }

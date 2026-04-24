@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 use crate::cli::args::OutputFormat;
+use crate::cli::common::tab_separated_values;
 use crate::cli::error::AppError;
 
 /// Write a success value to stdout.
@@ -109,26 +110,9 @@ fn write_text_sheet(value: &Value) -> Result<(), AppError> {
 fn write_text_sample(value: &Value) -> Result<(), AppError> {
     let data = &value["data"];
     if let Some(rows) = data["rows"].as_array() {
-        for row in rows {
-            if let Some(cells) = row.as_array() {
-                let line: Vec<String> = cells
-                    .iter()
-                    .map(|c| match c {
-                        Value::Null => String::new(),
-                        Value::String(s) => s.clone(),
-                        _ => c.to_string(),
-                    })
-                    .collect();
-                println!("{}", line.join("\t"));
-            }
-        }
+        write_row_arrays(rows);
     } else if let Some(records) = data["records"].as_array() {
-        for record in records {
-            if let Some(obj) = record.as_object() {
-                let parts: Vec<String> = obj.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
-                println!("{}", parts.join("\t"));
-            }
-        }
+        write_record_objects(records);
     }
     Ok(())
 }
@@ -199,19 +183,7 @@ fn write_text_cell(value: &Value) -> Result<(), AppError> {
 fn write_text_range(value: &Value) -> Result<(), AppError> {
     let data = &value["data"];
     if let Some(rows) = data["rows"].as_array() {
-        for row in rows {
-            if let Some(cells) = row.as_array() {
-                let line: Vec<String> = cells
-                    .iter()
-                    .map(|c| match c {
-                        Value::Null => String::new(),
-                        Value::String(s) => s.clone(),
-                        _ => c.to_string(),
-                    })
-                    .collect();
-                println!("{}", line.join("\t"));
-            }
-        }
+        write_row_arrays(rows);
     }
     Ok(())
 }
@@ -219,26 +191,26 @@ fn write_text_range(value: &Value) -> Result<(), AppError> {
 fn write_text_rows(value: &Value) -> Result<(), AppError> {
     let data = &value["data"];
     if let Some(rows) = data["rows"].as_array() {
-        for row in rows {
-            if let Some(cells) = row.as_array() {
-                let line: Vec<String> = cells
-                    .iter()
-                    .map(|c| match c {
-                        Value::Null => String::new(),
-                        Value::String(s) => s.clone(),
-                        _ => c.to_string(),
-                    })
-                    .collect();
-                println!("{}", line.join("\t"));
-            }
-        }
+        write_row_arrays(rows);
     } else if let Some(records) = data["records"].as_array() {
-        for record in records {
-            if let Some(obj) = record.as_object() {
-                let parts: Vec<String> = obj.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
-                println!("{}", parts.join("\t"));
-            }
-        }
+        write_record_objects(records);
     }
     Ok(())
+}
+
+fn write_row_arrays(rows: &[Value]) {
+    for row in rows {
+        if let Some(cells) = row.as_array() {
+            println!("{}", tab_separated_values(cells));
+        }
+    }
+}
+
+fn write_record_objects(records: &[Value]) {
+    for record in records {
+        if let Some(obj) = record.as_object() {
+            let parts: Vec<String> = obj.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+            println!("{}", parts.join("\t"));
+        }
+    }
 }

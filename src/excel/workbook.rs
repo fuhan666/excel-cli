@@ -1,19 +1,24 @@
 use anyhow::{Context, Result};
-use calamine::{open_workbook_auto, Data, Reader, Xls, Xlsx};
-use chrono::Local;
-use rust_xlsxwriter::{Format, Workbook as XlsxWorkbook};
+use calamine::{open_workbook_auto, Reader, Xls, Xlsx};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufReader;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
-use crate::excel::{Cell, CellType, DataTypeInfo, Sheet};
-use crate::utils::index_to_col_name;
+use crate::excel::{Cell, CellType, Sheet};
+use crate::utils::{index_to_col_name, parse_cell_reference};
+
+mod formula_lookup;
+mod save;
+mod sheet_parse;
+
+use formula_lookup::lookup_formula_in_xlsx;
+use sheet_parse::create_sheet_from_range;
 
 pub enum CalamineWorkbook {
     Xlsx(Box<Xlsx<BufReader<File>>>),
-    Xls(Xls<BufReader<File>>),
+    Xls(Box<Xls<BufReader<File>>>),
     None,
 }
 
@@ -120,7 +125,7 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
                 if let Ok(file) = File::open(&path) {
                     let reader = BufReader::new(file);
                     if let Ok(xls_workbook) = Xls::new(reader) {
-                        calamine_workbook = CalamineWorkbook::Xls(xls_workbook);
+                        calamine_workbook = CalamineWorkbook::Xls(Box::new(xls_workbook));
                     }
                 }
             }
@@ -128,9 +133,12 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
     } else {
         // For formats that don't support lazy loading or if lazy loading is disabled,
         for name in &sheet_names {
-            let range = workbook
-                .worksheet_range(name)
-                .with_context(|| format!("Unable to read worksheet: {}", name))?;
+            let range = workbook.worksheet_range(name).with_context(|| {
+                format!(
+                    "Unable to parse Excel file: {} (unable to read worksheet: {})",
+                    path_str, name
+                )
+            })?;
 
             let formula_range = workbook.worksheet_formula(name).ok();
             let mut sheet = create_sheet_from_range(name, range, formula_range);
@@ -160,119 +168,6 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
         lazy_loading: supports_lazy_loading,
         loaded_sheets,
     })
-}
-
-fn create_sheet_from_range(
-    name: &str,
-    range: calamine::Range<Data>,
-    formula_range: Option<calamine::Range<String>>,
-) -> Sheet {
-    let (height, width) = range.get_size();
-
-    // Create a data grid with empty cells, adding 1 to dimensions for 1-based indexing
-    let mut data = vec![vec![Cell::empty(); width + 1]; height + 1];
-
-    // Process only non-empty cells
-    for (row_idx, col_idx, cell) in range.used_cells() {
-        // Extract value, cell_type, and original_type from the Data
-        let (value, cell_type, original_type) = match cell {
-            Data::Empty => (String::new(), CellType::Empty, Some(DataTypeInfo::Empty)),
-
-            Data::String(s) => {
-                let value = s.clone();
-                (value, CellType::Text, Some(DataTypeInfo::String))
-            }
-
-            Data::Float(f) => {
-                let value = if *f == (*f as i64) as f64 && f.abs() < 1e10 {
-                    (*f as i64).to_string()
-                } else {
-                    f.to_string()
-                };
-                (value, CellType::Number, Some(DataTypeInfo::Float(*f)))
-            }
-
-            Data::Int(i) => (i.to_string(), CellType::Number, Some(DataTypeInfo::Int(*i))),
-
-            Data::Bool(b) => (
-                if *b {
-                    "TRUE".to_string()
-                } else {
-                    "FALSE".to_string()
-                },
-                CellType::Boolean,
-                Some(DataTypeInfo::Bool(*b)),
-            ),
-
-            Data::Error(e) => {
-                let mut value = String::with_capacity(15);
-                value.push_str("Error: ");
-                value.push_str(&format!("{:?}", e));
-                (value, CellType::Text, Some(DataTypeInfo::Error))
-            }
-
-            Data::DateTime(dt) => (
-                dt.to_string(),
-                CellType::Date,
-                Some(DataTypeInfo::DateTime(dt.as_f64())),
-            ),
-
-            Data::DateTimeIso(s) => {
-                let value = s.clone();
-                (
-                    value.clone(),
-                    CellType::Date,
-                    Some(DataTypeInfo::DateTimeIso(value)),
-                )
-            }
-
-            Data::DurationIso(s) => {
-                let value = s.clone();
-                (
-                    value.clone(),
-                    CellType::Text,
-                    Some(DataTypeInfo::DurationIso(value)),
-                )
-            }
-        };
-
-        let is_formula = !value.is_empty() && value.starts_with('=');
-
-        // Store the cell in data grid (using 1-based indexing)
-        data[row_idx + 1][col_idx + 1] =
-            Cell::new_with_type(value, is_formula, cell_type, original_type);
-    }
-
-    if let Some(formulas) = formula_range {
-        let (start_row, start_col) = formulas.start().unwrap_or((0, 0));
-        for (row_idx, col_idx, formula) in formulas.used_cells() {
-            if formula.is_empty() {
-                continue;
-            }
-
-            let normalized = if formula.starts_with('=') {
-                formula.to_string()
-            } else {
-                format!("={formula}")
-            };
-
-            let row = start_row as usize + row_idx + 1;
-            let col = start_col as usize + col_idx + 1;
-            if row < data.len() && col < data[row].len() {
-                let cell = &mut data[row][col];
-                cell.is_formula = true;
-                cell.formula = Some(normalized);
-            }
-        }
-    }
-
-    Sheet {
-        name: name.to_string(),
-        data,
-        max_rows: height,
-        max_cols: width,
-        is_loaded: true,
-    }
 }
 
 impl Workbook {
@@ -356,6 +251,24 @@ impl Workbook {
 
     pub fn get_sheet_by_name(&self, name: &str) -> Option<&Sheet> {
         self.sheets.iter().find(|s| s.name == name)
+    }
+
+    pub(crate) fn formula_for_cell(
+        &self,
+        sheet_index: usize,
+        sheet_name: &str,
+        cell_ref: &str,
+    ) -> Option<String> {
+        let (row, col) = parse_cell_reference(cell_ref)?;
+        let loaded_formula = self
+            .sheets
+            .get(sheet_index)
+            .and_then(|sheet| sheet.data.get(row))
+            .and_then(|cells| cells.get(col))
+            .and_then(|cell| cell.formula.clone());
+
+        loaded_formula
+            .or_else(|| lookup_formula_in_xlsx(Path::new(&self.file_path), sheet_name, cell_ref))
     }
 
     /// Resolve a sheet specifier (name or 0-based index) to a sheet index.
@@ -791,111 +704,6 @@ impl Workbook {
         self.sheets[sheet_index].is_loaded
     }
 
-    pub fn save(&mut self) -> Result<()> {
-        if !self.is_modified {
-            println!("No changes to save.");
-            return Ok(());
-        }
-
-        self.ensure_all_sheets_loaded()?;
-
-        // Create a new workbook with rust_xlsxwriter
-        let mut workbook = XlsxWorkbook::new();
-
-        let now = Local::now();
-        let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
-        let path = Path::new(&self.file_path);
-        let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("sheet");
-        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("xlsx");
-        let parent_dir = path.parent().unwrap_or_else(|| Path::new(""));
-        let new_filename = format!("{}_{}.{}", file_stem, timestamp, extension);
-        let new_filepath = parent_dir.join(new_filename);
-
-        // Create formats
-        let number_format = Format::new().set_num_format("General");
-        let date_format = Format::new().set_num_format("yyyy-mm-dd");
-
-        // Process each sheet
-        for sheet in &self.sheets {
-            let worksheet = workbook.add_worksheet().set_name(&sheet.name)?;
-
-            // Set column widths
-            for col in 0..sheet.max_cols {
-                worksheet.set_column_width(col as u16, 15)?;
-            }
-
-            // Write cell data
-            for row in 1..sheet.data.len() {
-                if row <= sheet.max_rows {
-                    for col in 1..sheet.data[0].len() {
-                        if col <= sheet.max_cols {
-                            let cell = &sheet.data[row][col];
-
-                            // Skip empty cells
-                            if cell.value.is_empty() {
-                                continue;
-                            }
-
-                            let row_idx = (row - 1) as u32;
-                            let col_idx = (col - 1) as u16;
-
-                            if cell.is_formula {
-                                let formula_text =
-                                    cell.formula.as_deref().unwrap_or(cell.value.as_str());
-                                let formula = rust_xlsxwriter::Formula::new(formula_text);
-                                worksheet.write_formula(row_idx, col_idx, formula)?;
-                                if !cell.value.is_empty() && cell.value != formula_text {
-                                    worksheet.set_formula_result(row_idx, col_idx, &cell.value);
-                                }
-                                continue;
-                            }
-
-                            // Write cell based on its type
-                            match cell.cell_type {
-                                CellType::Number => {
-                                    if let Ok(num) = cell.value.parse::<f64>() {
-                                        worksheet.write_number_with_format(
-                                            row_idx,
-                                            col_idx,
-                                            num,
-                                            &number_format,
-                                        )?;
-                                    } else {
-                                        worksheet.write_string(row_idx, col_idx, &cell.value)?;
-                                    }
-                                }
-                                CellType::Date => {
-                                    worksheet.write_string_with_format(
-                                        row_idx,
-                                        col_idx,
-                                        &cell.value,
-                                        &date_format,
-                                    )?;
-                                }
-                                CellType::Boolean => {
-                                    if let Ok(b) = cell.value.parse::<bool>() {
-                                        worksheet.write_boolean(row_idx, col_idx, b)?;
-                                    } else {
-                                        worksheet.write_string(row_idx, col_idx, &cell.value)?;
-                                    }
-                                }
-                                CellType::Text => {
-                                    worksheet.write_string(row_idx, col_idx, &cell.value)?;
-                                }
-                                CellType::Empty => {}
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        workbook.save(&new_filepath)?;
-        self.is_modified = false;
-
-        Ok(())
-    }
-
     pub fn insert_sheet_at_index(&mut self, sheet: Sheet, index: usize) -> Result<()> {
         if index > self.sheets.len() {
             anyhow::bail!(
@@ -1020,102 +828,4 @@ impl Workbook {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::Workbook;
-    use crate::excel::Sheet;
-
-    fn blank_sheet(name: &str) -> Sheet {
-        Sheet::blank(name.to_string())
-    }
-
-    #[test]
-    fn adds_blank_sheet_after_current_sheet() {
-        let mut workbook =
-            Workbook::from_sheets_for_test(vec![blank_sheet("Sheet1"), blank_sheet("Sheet2")]);
-
-        let sheet_name = workbook.add_sheet("Added", 1).unwrap();
-
-        assert_eq!(sheet_name, "Added");
-        assert_eq!(
-            workbook.get_sheet_names(),
-            vec!["Sheet1", "Added", "Sheet2"]
-        );
-
-        let added_sheet = workbook.get_sheet_by_index(1).unwrap();
-        assert_eq!(added_sheet.name, "Added");
-        assert_eq!(added_sheet.max_rows, 1);
-        assert_eq!(added_sheet.max_cols, 1);
-        assert!(added_sheet.is_loaded);
-        assert_eq!(added_sheet.data.len(), 2);
-        assert_eq!(added_sheet.data[1].len(), 2);
-    }
-
-    #[test]
-    fn rejects_duplicate_sheet_names_case_insensitively() {
-        let mut workbook = Workbook::from_sheets_for_test(vec![blank_sheet("Summary")]);
-
-        let error = workbook.add_sheet("summary", 1).unwrap_err().to_string();
-
-        assert!(error.contains("already exists"));
-    }
-
-    #[test]
-    fn rejects_invalid_sheet_names() {
-        let mut workbook = Workbook::from_sheets_for_test(vec![blank_sheet("Sheet1")]);
-
-        assert!(workbook.add_sheet("", 1).is_err());
-        assert!(workbook.add_sheet("Bad/Name", 1).is_err());
-        assert!(workbook.add_sheet("'quoted", 1).is_err());
-        assert!(workbook
-            .add_sheet("this-sheet-name-is-definitely-too-long", 1)
-            .is_err());
-    }
-
-    #[test]
-    fn counts_sheet_name_length_by_characters() {
-        let mut workbook = Workbook::from_sheets_for_test(vec![blank_sheet("Sheet1")]);
-        let valid_name = "表".repeat(31);
-        let invalid_name = "表".repeat(32);
-
-        assert!(workbook.add_sheet(&valid_name, 1).is_ok());
-        assert!(workbook.add_sheet(&invalid_name, 2).is_err());
-    }
-
-    #[test]
-    fn resolves_sheet_by_index_and_name() {
-        let workbook = Workbook::from_sheets_for_test(vec![
-            blank_sheet("Sheet1"),
-            blank_sheet("Orders"),
-            blank_sheet("客户"),
-        ]);
-
-        assert_eq!(workbook.resolve_sheet("0").unwrap(), 0);
-        assert_eq!(workbook.resolve_sheet("2").unwrap(), 2);
-        assert_eq!(workbook.resolve_sheet("Sheet1").unwrap(), 0);
-        assert_eq!(workbook.resolve_sheet("Orders").unwrap(), 1);
-        assert_eq!(workbook.resolve_sheet("客户").unwrap(), 2);
-
-        assert!(workbook.resolve_sheet("99").is_err());
-        assert!(workbook.resolve_sheet("Missing").is_err());
-    }
-
-    #[test]
-    fn computes_used_range_for_sheet() {
-        let mut sheet = Sheet::blank("Test".to_string());
-        sheet.max_rows = 10;
-        sheet.max_cols = 5;
-        let workbook = Workbook::from_sheets_for_test(vec![sheet]);
-
-        assert_eq!(workbook.get_used_range(0).unwrap(), "A1:E10");
-        assert!(workbook.get_used_range(99).is_err());
-    }
-
-    #[test]
-    fn empty_sheet_has_no_used_range() {
-        let mut sheet = Sheet::blank("Empty".to_string());
-        sheet.max_rows = 0;
-        sheet.max_cols = 0;
-        let workbook = Workbook::from_sheets_for_test(vec![sheet]);
-        assert_eq!(workbook.get_used_range(0).unwrap(), "");
-    }
-}
+mod tests;

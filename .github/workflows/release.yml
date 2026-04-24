@@ -41,8 +41,13 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
 
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
       - name: Build for target
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Rename binary (Linux/macOS)
         if: runner.os != 'Windows'

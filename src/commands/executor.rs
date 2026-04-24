@@ -52,8 +52,6 @@ impl AppState<'_> {
             }
             "nohlsearch" | "noh" => self.disable_search_highlight(),
             "help" => self.show_help(),
-            "preview" | "pv" => self.show_query_preview(),
-            "findings" | "issues" => self.show_findings(),
             "delsheet" => self.delete_current_sheet(),
             "addsheet" => self.add_notification("Usage: :addsheet <name>".to_string()),
             _ => {
@@ -395,11 +393,7 @@ fn parse_cell_reference(input: &str) -> Option<(usize, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::parse_cell_reference;
-    use crate::app::{AppState, InputMode};
-    use crate::excel::{Cell, Sheet, Workbook};
 
     #[test]
     fn parses_valid_cell_references() {
@@ -411,76 +405,5 @@ mod tests {
     fn ignores_commands_with_non_ascii_arguments() {
         assert_eq!(parse_cell_reference("addsheet 测试1"), None);
         assert_eq!(parse_cell_reference("测试1"), None);
-    }
-
-    fn app_with_sheet() -> AppState<'static> {
-        let mut data = vec![vec![Cell::empty(); 3]; 3];
-        data[1][1] = Cell::new("Name".to_string(), false);
-        data[1][2] = Cell::new("Name".to_string(), false);
-        data[2][1] = Cell::new("Ada".to_string(), false);
-        data[2][2] = Cell::new("10".to_string(), false);
-
-        let sheet = Sheet {
-            name: "Data".to_string(),
-            data,
-            max_rows: 2,
-            max_cols: 2,
-            is_loaded: true,
-        };
-
-        AppState::new(
-            Workbook::from_sheets_for_test(vec![sheet]),
-            PathBuf::from("scores.xlsx"),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn preview_command_populates_preview_state() {
-        let mut app = app_with_sheet();
-        app.input_buffer = "preview".to_string();
-
-        app.execute_command();
-
-        assert!(matches!(app.input_mode, InputMode::Preview));
-        assert_eq!(
-            app.query_preview
-                .as_ref()
-                .map(|preview| preview.sheet_name.as_str()),
-            Some("Data")
-        );
-    }
-
-    #[test]
-    fn preview_alias_populates_preview_state() {
-        let mut app = app_with_sheet();
-        app.input_buffer = "pv".to_string();
-
-        app.execute_command();
-
-        assert!(matches!(app.input_mode, InputMode::Preview));
-        assert!(app.query_preview.is_some());
-    }
-
-    #[test]
-    fn findings_command_opens_findings_panel() {
-        let mut app = app_with_sheet();
-        app.input_buffer = "findings".to_string();
-
-        app.execute_command();
-
-        assert!(matches!(app.input_mode, InputMode::Findings));
-        assert!(!app.findings.items.is_empty());
-    }
-
-    #[test]
-    fn issues_alias_opens_findings_panel() {
-        let mut app = app_with_sheet();
-        app.input_buffer = "issues".to_string();
-
-        app.execute_command();
-
-        assert!(matches!(app.input_mode, InputMode::Findings));
-        assert!(!app.findings.items.is_empty());
     }
 }

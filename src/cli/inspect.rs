@@ -1,12 +1,15 @@
-use anyhow::Context;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
-use crate::cli::args::{resolve_sheet_target, InspectCommands};
+use crate::cli::args::InspectCommands;
+use crate::cli::common::{file_format, format_range, sheet_by_index};
 use crate::cli::envelope;
 use crate::cli::error::AppError;
+use crate::cli::sheet_query::{
+    cell_at, load_target_sheet, resolve_bounds, resolve_header_row, resolve_optional_header_row,
+};
 use crate::excel::{open_workbook, Cell, CellType, Sheet};
-use crate::utils::{index_to_col_name, parse_range};
+use crate::utils::index_to_col_name;
 
 pub fn handle(cmd: InspectCommands) -> Result<Value, AppError> {
     match cmd {
@@ -38,13 +41,6 @@ pub fn handle(cmd: InspectCommands) -> Result<Value, AppError> {
             format: _,
         } => inspect_tables(file, sheet),
     }
-}
-
-fn file_format(path: &std::path::Path) -> String {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn inspect_workbook(file: std::path::PathBuf) -> Result<Value, AppError> {
@@ -99,36 +95,32 @@ fn inspect_sheet(
     let mut workbook =
         open_workbook(&file, false).map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let index = resolve_sheet_target(&workbook, &sheet, &sheet_index)?;
-    let sheet_name = workbook.get_sheet_names()[index].clone();
+    let resolved_sheet = load_target_sheet(&workbook, &sheet, &sheet_index)?;
 
     workbook
-        .ensure_sheet_loaded(index, &sheet_name)
+        .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_obj = workbook
-        .get_sheet_by_index(index)
-        .with_context(|| format!("Sheet '{}' not found", sheet_name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
 
     let used_range = workbook
-        .get_used_range(index)
+        .get_used_range(resolved_sheet.index)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
     let non_empty_rows = workbook
-        .count_non_empty_rows(index)
+        .count_non_empty_rows(resolved_sheet.index)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
     let non_empty_cols = workbook
-        .count_non_empty_cols(index)
+        .count_non_empty_cols(resolved_sheet.index)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
     let (header_candidates, recommended_header_row) = workbook
-        .find_header_candidates(index)
+        .find_header_candidates(resolved_sheet.index)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
     let data = json!({
         "name": sheet_obj.name,
-        "index": index,
+        "index": resolved_sheet.index,
         "used_range": used_range,
         "max_rows": sheet_obj.max_rows,
         "max_cols": sheet_obj.max_cols,
@@ -142,7 +134,7 @@ fn inspect_sheet(
         "inspect.sheet",
         &path_str,
         &format_str,
-        envelope::target_sheet(&sheet_name, index),
+        envelope::target_sheet(&resolved_sheet.name, resolved_sheet.index),
         json!({}),
         data,
         vec![],
@@ -163,61 +155,21 @@ fn inspect_sample(
     let mut workbook =
         open_workbook(&file, false).map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let index = resolve_sheet_target(&workbook, &sheet, &sheet_index)?;
-    let sheet_name = workbook.get_sheet_names()[index].clone();
+    let resolved_sheet = load_target_sheet(&workbook, &sheet, &sheet_index)?;
 
     workbook
-        .ensure_sheet_loaded(index, &sheet_name)
+        .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_obj = workbook
-        .get_sheet_by_index(index)
-        .with_context(|| format!("Sheet '{}' not found", sheet_name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
-
-    let used_range = workbook.get_used_range(index).unwrap_or_default();
-
-    // Determine the sample range
-    let ((mut start_row, mut start_col), (mut end_row, mut end_col)) = if let Some(ref r) = range {
-        parse_range(r).ok_or_else(|| AppError::InvalidQuery {
-            message: format!("Invalid range format: {}", r),
-        })?
-    } else if !used_range.is_empty() {
-        parse_range(&used_range).unwrap_or(((1, 1), (1, 1)))
-    } else {
-        ((1, 1), (1, 1))
-    };
-
-    // Clamp to actual bounds
-    let max_row = sheet_obj.max_rows.max(1);
-    let max_col = sheet_obj.max_cols.max(1);
-    start_row = start_row.min(max_row);
-    start_col = start_col.min(max_col);
-    end_row = end_row.min(max_row);
-    end_col = end_col.min(max_col);
-    if start_row > end_row {
-        std::mem::swap(&mut start_row, &mut end_row);
-    }
-    if start_col > end_col {
-        std::mem::swap(&mut start_col, &mut end_col);
-    }
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
+    let bounds = resolve_bounds(&workbook, sheet_obj, resolved_sheet.index, range.as_deref())?;
 
     // Apply row limit
     let row_limit = rows.unwrap_or(10);
-    let sample_end_row = (start_row + row_limit.saturating_sub(1)).min(end_row);
+    let sample_end_row = (bounds.start_row + row_limit.saturating_sub(1)).min(bounds.end_row);
 
-    // Resolve header row
-    let resolved_header = if header_row == "auto" {
-        let (_, recommended) = workbook
-            .find_header_candidates(index)
-            .map_err(crate::cli::error::anyhow_to_app_error)?;
-        recommended
-    } else {
-        header_row
-            .parse::<usize>()
-            .ok()
-            .filter(|&r| r >= 1 && r <= sheet_obj.max_rows)
-    };
+    let resolved_header =
+        resolve_optional_header_row(&workbook, sheet_obj, resolved_sheet.index, &header_row)?;
 
     let sample_mode = if resolved_header.is_some() {
         "records"
@@ -225,19 +177,18 @@ fn inspect_sample(
         "rows"
     };
 
-    let range_str = format!(
-        "{}{}:{}{}",
-        index_to_col_name(start_col),
-        start_row,
-        index_to_col_name(end_col),
-        sample_end_row
+    let range_str = format_range(
+        bounds.start_row,
+        bounds.start_col,
+        sample_end_row,
+        bounds.end_col,
     );
 
     let data = if let Some(header_row_idx) = resolved_header {
         // Build records with headers
         let mut headers = Vec::new();
         if header_row_idx < sheet_obj.data.len() {
-            for col in start_col..=end_col {
+            for col in bounds.start_col..=bounds.end_col {
                 let val = if col < sheet_obj.data[header_row_idx].len() {
                     sheet_obj.data[header_row_idx][col].value.clone()
                 } else {
@@ -248,7 +199,7 @@ fn inspect_sample(
         }
 
         let mut records = Vec::new();
-        for row in start_row..=sample_end_row {
+        for row in bounds.start_row..=sample_end_row {
             if row == header_row_idx {
                 continue;
             }
@@ -256,7 +207,7 @@ fn inspect_sample(
                 break;
             }
             let mut record = serde_json::Map::new();
-            for (col_idx, col) in (start_col..=end_col).enumerate() {
+            for (col_idx, col) in (bounds.start_col..=bounds.end_col).enumerate() {
                 let key = headers.get(col_idx).cloned().unwrap_or_default();
                 let key = if key.is_empty() {
                     format!("col_{}", col_idx + 1)
@@ -281,12 +232,12 @@ fn inspect_sample(
     } else {
         // Raw rows
         let mut row_values = Vec::new();
-        for row in start_row..=sample_end_row {
+        for row in bounds.start_row..=sample_end_row {
             if row >= sheet_obj.data.len() {
                 break;
             }
             let mut cols = Vec::new();
-            for col in start_col..=end_col {
+            for col in bounds.start_col..=bounds.end_col {
                 let value = if col < sheet_obj.data[row].len() {
                     crate::json_export::process_cell_value(&sheet_obj.data[row][col])
                 } else {
@@ -308,7 +259,7 @@ fn inspect_sample(
         "inspect.sample",
         &path_str,
         &format_str,
-        envelope::target_range(&sheet_name, index, &range_str),
+        envelope::target_range(&resolved_sheet.name, resolved_sheet.index, &range_str),
         json!({}),
         data,
         vec![],
@@ -326,22 +277,16 @@ fn inspect_columns(
     let mut workbook =
         open_workbook(&file, false).map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let index = workbook
-        .resolve_sheet_by_name(&sheet)
-        .map_err(|e| AppError::TargetNotFound {
-            message: e.to_string(),
-        })?;
-    let sheet_name = workbook.get_sheet_names()[index].clone();
+    let resolved_sheet = load_target_sheet(&workbook, &Some(sheet), &None)?;
 
     workbook
-        .ensure_sheet_loaded(index, &sheet_name)
+        .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let resolved_header = resolve_columns_header_row(&workbook, index, &header_row)?;
-    let sheet_obj = workbook
-        .get_sheet_by_index(index)
-        .with_context(|| format!("Sheet '{}' not found", sheet_name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
+    let resolved_header =
+        resolve_header_row(&workbook, sheet_obj, resolved_sheet.index, &header_row)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
 
     let header_names = column_header_names(sheet_obj, resolved_header);
     let duplicate_flags = duplicate_header_flags(&header_names);
@@ -383,7 +328,7 @@ fn inspect_columns(
         "inspect.columns",
         &path_str,
         &format_str,
-        envelope::target_sheet(&sheet_name, index),
+        envelope::target_sheet(&resolved_sheet.name, resolved_sheet.index),
         json!({
             "header_row_mode": header_row,
             "resolved_header_row": resolved_header,
@@ -404,18 +349,13 @@ fn inspect_tables(file: std::path::PathBuf, sheet: String) -> Result<Value, AppE
     let mut workbook =
         open_workbook(&file, false).map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_target = Some(sheet);
-    let index = resolve_sheet_target(&workbook, &sheet_target, &None)?;
-    let sheet_name = workbook.get_sheet_names()[index].clone();
+    let resolved_sheet = load_target_sheet(&workbook, &Some(sheet), &None)?;
 
     workbook
-        .ensure_sheet_loaded(index, &sheet_name)
+        .ensure_sheet_loaded(resolved_sheet.index, &resolved_sheet.name)
         .map_err(crate::cli::error::anyhow_to_app_error)?;
 
-    let sheet_obj = workbook
-        .get_sheet_by_index(index)
-        .with_context(|| format!("Sheet '{}' not found", sheet_name))
-        .map_err(crate::cli::error::anyhow_to_app_error)?;
+    let sheet_obj = sheet_by_index(&workbook, resolved_sheet.index, &resolved_sheet.name)?;
 
     let candidates = detect_table_candidates(sheet_obj);
     let candidate_count = candidates.len();
@@ -424,7 +364,7 @@ fn inspect_tables(file: std::path::PathBuf, sheet: String) -> Result<Value, AppE
         "inspect.tables",
         &path_str,
         &format_str,
-        envelope::target_sheet(&sheet_name, index),
+        envelope::target_sheet(&resolved_sheet.name, resolved_sheet.index),
         json!({
             "candidate_count": candidate_count,
         }),
@@ -433,43 +373,6 @@ fn inspect_tables(file: std::path::PathBuf, sheet: String) -> Result<Value, AppE
         }),
         vec![],
     ))
-}
-
-fn resolve_columns_header_row(
-    workbook: &crate::excel::Workbook,
-    sheet_index: usize,
-    header_row: &str,
-) -> Result<Option<usize>, AppError> {
-    if header_row == "auto" {
-        let (_, recommended) = workbook
-            .find_header_candidates(sheet_index)
-            .map_err(crate::cli::error::anyhow_to_app_error)?;
-        return Ok(recommended);
-    }
-
-    let row = header_row
-        .parse::<usize>()
-        .map_err(|_| AppError::InvalidQuery {
-            message: format!("Invalid header row: {}", header_row),
-        })?;
-
-    let sheet =
-        workbook
-            .get_sheet_by_index(sheet_index)
-            .ok_or_else(|| AppError::TargetNotFound {
-                message: "Sheet index out of range".to_string(),
-            })?;
-
-    if row < 1 || row > sheet.max_rows {
-        return Err(AppError::InvalidQuery {
-            message: format!(
-                "Header row {} is outside the used row range 1..={}",
-                row, sheet.max_rows
-            ),
-        });
-    }
-
-    Ok(Some(row))
 }
 
 fn column_header_names(sheet: &Sheet, resolved_header: Option<usize>) -> Vec<String> {
@@ -605,10 +508,6 @@ fn analyze_column(
     }
 }
 
-fn cell_at(sheet: &Sheet, row: usize, col: usize) -> Option<&Cell> {
-    sheet.data.get(row).and_then(|row_data| row_data.get(col))
-}
-
 fn is_non_null(cell: &Cell) -> bool {
     !cell.value.is_empty()
 }
@@ -688,12 +587,11 @@ fn detect_table_candidates(sheet: &Sheet) -> Vec<Value> {
     candidates
         .into_iter()
         .map(|candidate| {
-            let range = format!(
-                "{}{}:{}{}",
-                index_to_col_name(candidate.start_col),
+            let range = format_range(
                 candidate.start_row,
-                index_to_col_name(candidate.end_col),
-                candidate.end_row
+                candidate.start_col,
+                candidate.end_row,
+                candidate.end_col,
             );
             json!({
                 "range": range,

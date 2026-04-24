@@ -42,8 +42,14 @@ pub trait ActionExecutor {
 
 // Command interface for actions that can be executed and undone
 pub trait Command {
-    fn execute(&self) -> anyhow::Result<()>;
-    fn undo(&self) -> anyhow::Result<()>;
+    fn execute(&self) -> anyhow::Result<()> {
+        unimplemented!("Requires an ActionExecutor implementation")
+    }
+
+    fn undo(&self) -> anyhow::Result<()> {
+        unimplemented!("Requires an ActionExecutor implementation")
+    }
+
     fn action_type(&self) -> ActionType;
 }
 

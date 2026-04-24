@@ -142,5 +142,8 @@ fn version_prints_to_stdout_and_exits_zero() {
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.trim(), "excel-cli 1.3.0");
+    assert_eq!(
+        stdout.trim(),
+        format!("excel-cli {}", env!("CARGO_PKG_VERSION"))
+    );
 }

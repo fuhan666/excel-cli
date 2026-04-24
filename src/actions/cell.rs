@@ -1,6 +1,5 @@
 use super::{ActionType, Command};
 use crate::excel::Cell;
-use anyhow::Result;
 
 #[derive(Clone)]
 pub struct CellAction {
@@ -37,14 +36,6 @@ impl CellAction {
 }
 
 impl Command for CellAction {
-    fn execute(&self) -> Result<()> {
-        unimplemented!("Requires an ActionExecutor implementation")
-    }
-
-    fn undo(&self) -> Result<()> {
-        unimplemented!("Requires an ActionExecutor implementation")
-    }
-
     fn action_type(&self) -> ActionType {
         self.action_type.clone()
     }

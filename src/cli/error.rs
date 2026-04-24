@@ -87,7 +87,12 @@ pub fn anyhow_to_app_error(err: anyhow::Error) -> AppError {
     let msg = err.to_string();
     let lower = msg.to_lowercase();
 
-    if lower.contains("unable to parse excel file")
+    if err
+        .chain()
+        .any(|cause| cause.downcast_ref::<std::io::Error>().is_some())
+    {
+        AppError::FileError { message: msg }
+    } else if lower.contains("unable to parse excel file")
         || lower.contains("parser panic: malformed workbook data")
         || lower.contains("no worksheets found")
     {
