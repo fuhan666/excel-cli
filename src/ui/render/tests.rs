@@ -100,9 +100,9 @@ fn app_with_long_c22_cell() -> AppState<'static> {
 
 fn app_with_frozen_grid() -> AppState<'static> {
     let mut data = vec![vec![Cell::empty(); 9]; 9];
-    for row in 1..=8 {
-        for col in 1..=8 {
-            data[row][col] = Cell::new(format!("R{row}C{col}"), false);
+    for (row_idx, row) in data.iter_mut().enumerate().take(9).skip(1) {
+        for (col_idx, cell) in row.iter_mut().enumerate().take(9).skip(1) {
+            *cell = Cell::new(format!("R{row_idx}C{col_idx}"), false);
         }
     }
 
