@@ -76,14 +76,17 @@ pub(super) fn lookup_formula_in_xlsx(
     None
 }
 
-fn read_zip_entry<R: Read + Seek>(archive: &mut ZipArchive<R>, entry_name: &str) -> Option<String> {
+pub(super) fn read_zip_entry<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    entry_name: &str,
+) -> Option<String> {
     let mut entry = archive.by_name(entry_name).ok()?;
     let mut contents = String::new();
     entry.read_to_string(&mut contents).ok()?;
     Some(contents)
 }
 
-fn attr_value(
+pub(super) fn attr_value(
     reader: &quick_xml::Reader<&[u8]>,
     event: &quick_xml::events::BytesStart<'_>,
     key: &[u8],
@@ -99,7 +102,7 @@ fn attr_value(
     None
 }
 
-fn resolve_xlsx_sheet_path<R: Read + Seek>(
+pub(super) fn resolve_xlsx_sheet_path<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     sheet_name: &str,
 ) -> Option<String> {

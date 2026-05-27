@@ -1,6 +1,6 @@
 use calamine::{Data, Range};
 
-use crate::excel::{Cell, CellType, DataTypeInfo, Sheet};
+use crate::excel::{Cell, CellType, DataTypeInfo, FreezePanes, Sheet};
 
 pub(super) fn create_sheet_from_range(
     name: &str,
@@ -26,6 +26,7 @@ pub(super) fn create_sheet_from_range(
         max_rows: height,
         max_cols: width,
         is_loaded: true,
+        freeze_panes: FreezePanes::none(),
     }
 }
 

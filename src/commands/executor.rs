@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::app::AppState;
 use crate::json_export::{export_all_sheets_json, export_json, HeaderDirection};
-use crate::utils::col_name_to_index;
+use crate::utils::{cell_reference, col_name_to_index, parse_cell_reference};
 
 impl AppState<'_> {
     pub fn execute_command(&mut self) {
@@ -53,6 +53,8 @@ impl AppState<'_> {
             "nohlsearch" | "noh" => self.disable_search_highlight(),
             "help" => self.show_help(),
             "delsheet" => self.delete_current_sheet(),
+            "freeze" => self.freeze_at_cell(self.selected_cell),
+            "unfreeze" => self.clear_freeze_panes(),
             "addsheet" => self.add_notification("Usage: :addsheet <name>".to_string()),
             _ => {
                 // Handle commands with parameters
@@ -69,11 +71,41 @@ impl AppState<'_> {
                     self.handle_delete_row_command(&command);
                 } else if command.starts_with("dc") {
                     self.handle_delete_column_command(&command);
+                } else if let Some(cell_ref) = command.strip_prefix("freeze ") {
+                    self.handle_freeze_command(cell_ref.trim());
                 } else {
                     self.add_notification(format!("Unknown command: {}", command));
                 }
             }
         }
+    }
+
+    fn handle_freeze_command(&mut self, cell_ref: &str) {
+        let Some(cell) = parse_cell_reference(cell_ref) else {
+            self.add_notification("Usage: :freeze [cell]".to_string());
+            return;
+        };
+
+        self.freeze_at_cell(cell);
+    }
+
+    fn freeze_at_cell(&mut self, cell: (usize, usize)) {
+        let (row, col) = cell;
+        if row == 1 && col == 1 {
+            self.clear_freeze_panes();
+            return;
+        }
+
+        self.workbook
+            .set_freeze_panes(row.saturating_sub(1), col.saturating_sub(1));
+        self.handle_scrolling();
+        self.add_notification(format!("Frozen panes at {}", cell_reference(cell)));
+    }
+
+    fn clear_freeze_panes(&mut self) {
+        self.workbook.clear_freeze_panes();
+        self.handle_scrolling();
+        self.add_notification("Freeze panes cleared".to_string());
     }
 
     fn handle_column_width_command(&mut self, cmd: &str) {
@@ -346,14 +378,7 @@ impl AppState<'_> {
         }
 
         self.selected_cell = (row, col);
-        // Handle scrolling
-        if self.selected_cell.0 < self.start_row {
-            self.start_row = self.selected_cell.0;
-        } else if self.selected_cell.0 >= self.start_row + self.visible_rows {
-            self.start_row = self.selected_cell.0 - self.visible_rows + 1;
-        }
-
-        self.ensure_column_visible(self.selected_cell.1);
+        self.handle_scrolling();
 
         self.add_notification(format!(
             "Jumped to cell {}{}",
@@ -363,37 +388,34 @@ impl AppState<'_> {
     }
 }
 
-// Parse a cell reference like "A1", "B10", etc.
-fn parse_cell_reference(input: &str) -> Option<(usize, usize)> {
-    // Cell references should have at least 2 characters (e.g., A1)
-    if input.chars().count() < 2 {
-        return None;
-    }
-
-    // Find the first digit to separate column and row parts
-    let col_end = input
-        .char_indices()
-        .find(|(_, c)| c.is_ascii_digit())
-        .map(|(index, _)| index)?;
-
-    if col_end == 0 {
-        return None; // No digits found
-    }
-
-    let (col_part, row_part) = input.split_at(col_end);
-
-    // Convert column letters to index
-    let col = col_name_to_index(&col_part.to_uppercase())?;
-
-    // Parse row number
-    let row = row_part.parse::<usize>().ok()?;
-
-    Some((row, col))
-}
-
 #[cfg(test)]
 mod tests {
     use super::parse_cell_reference;
+    use crate::app::AppState;
+    use crate::excel::{Cell, FreezePanes, Sheet, Workbook};
+    use std::path::PathBuf;
+
+    fn app_with_sheet() -> AppState<'static> {
+        let mut data = vec![vec![Cell::empty(); 3]; 3];
+        data[1][1] = Cell::new("Name".to_string(), false);
+        data[1][2] = Cell::new("Name".to_string(), false);
+        data[2][1] = Cell::new("Ada".to_string(), false);
+        data[2][2] = Cell::new("10".to_string(), false);
+        let sheet = Sheet {
+            name: "Data".to_string(),
+            data,
+            max_rows: 2,
+            max_cols: 2,
+            is_loaded: true,
+            freeze_panes: FreezePanes::none(),
+        };
+
+        AppState::new(
+            Workbook::from_sheets_for_test(vec![sheet]),
+            PathBuf::from("test.xlsx"),
+        )
+        .unwrap()
+    }
 
     #[test]
     fn parses_valid_cell_references() {
@@ -405,5 +427,47 @@ mod tests {
     fn ignores_commands_with_non_ascii_arguments() {
         assert_eq!(parse_cell_reference("addsheet 测试1"), None);
         assert_eq!(parse_cell_reference("测试1"), None);
+    }
+
+    #[test]
+    fn freeze_command_uses_current_cell_and_marks_workbook_modified() {
+        let mut app = app_with_sheet();
+        app.selected_cell = (2, 2);
+        app.input_buffer = "freeze".to_string();
+
+        app.execute_command();
+
+        let sheet = app.workbook.get_current_sheet();
+        assert_eq!(sheet.freeze_panes.rows, 1);
+        assert_eq!(sheet.freeze_panes.cols, 1);
+        assert!(app.workbook.is_modified());
+        assert!(app.undo_history.all_undone());
+    }
+
+    #[test]
+    fn freeze_command_accepts_explicit_cell_and_a1_clears() {
+        let mut app = app_with_sheet();
+
+        app.input_buffer = "freeze B2".to_string();
+        app.execute_command();
+        assert_eq!(
+            app.workbook.get_current_sheet().freeze_panes.split_cell(),
+            (2, 2)
+        );
+
+        app.input_buffer = "freeze A1".to_string();
+        app.execute_command();
+        assert!(!app.workbook.get_current_sheet().freeze_panes.is_frozen());
+    }
+
+    #[test]
+    fn unfreeze_command_clears_freeze_panes() {
+        let mut app = app_with_sheet();
+        app.workbook.set_freeze_panes(1, 1);
+
+        app.input_buffer = "unfreeze".to_string();
+        app.execute_command();
+
+        assert!(!app.workbook.get_current_sheet().freeze_panes.is_frozen());
     }
 }

@@ -6,14 +6,16 @@ use std::io::BufReader;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
-use crate::excel::{Cell, CellType, Sheet};
+use crate::excel::{Cell, CellType, FreezePanes, Sheet};
 use crate::utils::{index_to_col_name, parse_cell_reference};
 
 mod formula_lookup;
+mod freeze_panes;
 mod save;
 mod sheet_parse;
 
 use formula_lookup::lookup_formula_in_xlsx;
+use freeze_panes::lookup_freeze_panes_in_xlsx;
 use sheet_parse::create_sheet_from_range;
 
 pub enum CalamineWorkbook {
@@ -90,6 +92,15 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
         .with_context(|| format!("Unable to parse Excel file: {}", path_str))?;
 
     let sheet_names = workbook.sheet_names().to_vec();
+    let freeze_panes_by_name = sheet_names
+        .iter()
+        .map(|name| {
+            (
+                name.clone(),
+                lookup_freeze_panes_in_xlsx(path_ref, name).unwrap_or_default(),
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
 
     // Pre-allocate with the right capacity
     let mut sheets = Vec::with_capacity(sheet_names.len());
@@ -108,6 +119,7 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
                 max_rows: 0,
                 max_cols: 0,
                 is_loaded: false,
+                freeze_panes: freeze_panes_by_name.get(name).cloned().unwrap_or_default(),
             };
 
             sheets.push(sheet);
@@ -143,6 +155,7 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
             let formula_range = workbook.worksheet_formula(name).ok();
             let mut sheet = create_sheet_from_range(name, range, formula_range);
             sheet.is_loaded = true;
+            sheet.freeze_panes = freeze_panes_by_name.get(name).cloned().unwrap_or_default();
             sheets.push(sheet);
         }
     }
@@ -170,6 +183,28 @@ fn open_workbook_impl<P: AsRef<Path>>(path: P, enable_lazy_loading: bool) -> Res
     })
 }
 
+fn shrink_freeze_rows(freeze_panes: &mut FreezePanes, start_row: usize, end_row: usize) -> bool {
+    if freeze_panes.rows == 0 || start_row > end_row || start_row > freeze_panes.rows {
+        return false;
+    }
+
+    let affected_end = end_row.min(freeze_panes.rows);
+    let deleted_frozen_rows = affected_end - start_row + 1;
+    freeze_panes.rows = freeze_panes.rows.saturating_sub(deleted_frozen_rows);
+    true
+}
+
+fn shrink_freeze_cols(freeze_panes: &mut FreezePanes, start_col: usize, end_col: usize) -> bool {
+    if freeze_panes.cols == 0 || start_col > end_col || start_col > freeze_panes.cols {
+        return false;
+    }
+
+    let affected_end = end_col.min(freeze_panes.cols);
+    let deleted_frozen_cols = affected_end - start_col + 1;
+    freeze_panes.cols = freeze_panes.cols.saturating_sub(deleted_frozen_cols);
+    true
+}
+
 impl Workbook {
     pub fn get_current_sheet(&self) -> &Sheet {
         &self.sheets[self.current_sheet_index]
@@ -194,9 +229,11 @@ impl Workbook {
                 match result {
                     Ok(Ok(range)) => {
                         let formula_range = xlsx.worksheet_formula(sheet_name).ok();
+                        let freeze_panes = self.sheets[sheet_index].freeze_panes.clone();
                         let mut sheet = create_sheet_from_range(sheet_name, range, formula_range);
                         let original_name = self.sheets[sheet_index].name.clone();
                         sheet.name = original_name;
+                        sheet.freeze_panes = freeze_panes;
                         self.sheets[sheet_index] = sheet;
                         self.loaded_sheets.insert(sheet_index);
                     }
@@ -218,9 +255,11 @@ impl Workbook {
                 match result {
                     Ok(Ok(range)) => {
                         let formula_range = xls.worksheet_formula(sheet_name).ok();
+                        let freeze_panes = self.sheets[sheet_index].freeze_panes.clone();
                         let mut sheet = create_sheet_from_range(sheet_name, range, formula_range);
                         let original_name = self.sheets[sheet_index].name.clone();
                         sheet.name = original_name;
+                        sheet.freeze_panes = freeze_panes;
                         self.sheets[sheet_index] = sheet;
                         self.loaded_sheets.insert(sheet_index);
                     }
@@ -472,6 +511,19 @@ impl Workbook {
         Ok(())
     }
 
+    pub fn set_freeze_panes(&mut self, rows: usize, cols: usize) {
+        let sheet = &mut self.sheets[self.current_sheet_index];
+
+        if sheet.freeze_panes.rows != rows || sheet.freeze_panes.cols != cols {
+            sheet.freeze_panes = FreezePanes { rows, cols };
+            self.is_modified = true;
+        }
+    }
+
+    pub fn clear_freeze_panes(&mut self) {
+        self.set_freeze_panes(0, 0);
+    }
+
     pub fn get_sheet_names(&self) -> Vec<String> {
         let mut names = Vec::with_capacity(self.sheets.len());
         for sheet in &self.sheets {
@@ -545,10 +597,16 @@ impl Workbook {
             return Ok(());
         }
 
+        let freeze_changed = shrink_freeze_rows(&mut sheet.freeze_panes, row, row);
+
         // Only remove the row if it exists in the data
         if row < sheet.data.len() {
             sheet.data.remove(row);
             self.recalculate_max_cols();
+            self.is_modified = true;
+        }
+
+        if freeze_changed {
             self.is_modified = true;
         }
 
@@ -579,6 +637,9 @@ impl Workbook {
             adjusted_end_row
         };
 
+        let freeze_changed =
+            shrink_freeze_rows(&mut sheet.freeze_panes, start_row, effective_end_row);
+
         // Only proceed if there are rows to delete
         if start_row <= effective_end_row && start_row < sheet.data.len() {
             // Remove rows in reverse order to avoid index shifting issues
@@ -589,6 +650,10 @@ impl Workbook {
             }
 
             self.recalculate_max_cols();
+            self.is_modified = true;
+        }
+
+        if freeze_changed {
             self.is_modified = true;
         }
 
@@ -608,6 +673,7 @@ impl Workbook {
             return Ok(());
         }
 
+        let freeze_changed = shrink_freeze_cols(&mut sheet.freeze_panes, col, col);
         let mut has_data = false;
         for row in &sheet.data {
             if col < row.len() && !row[col].value.is_empty() {
@@ -625,7 +691,7 @@ impl Workbook {
         self.recalculate_max_cols();
         self.recalculate_max_rows();
 
-        if has_data {
+        if has_data || freeze_changed {
             self.is_modified = true;
         }
 
@@ -649,6 +715,8 @@ impl Workbook {
         // If start_col is valid but end_col exceeds max_cols, adjust end_col to max_cols
         let effective_end_col = end_col.min(sheet.max_cols);
 
+        let freeze_changed =
+            shrink_freeze_cols(&mut sheet.freeze_panes, start_col, effective_end_col);
         let mut has_data = false;
         for row in &sheet.data {
             for col in start_col..=effective_end_col {
@@ -673,7 +741,7 @@ impl Workbook {
         self.recalculate_max_cols();
         self.recalculate_max_rows();
 
-        if has_data {
+        if has_data || freeze_changed {
             self.is_modified = true;
         }
 

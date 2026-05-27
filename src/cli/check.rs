@@ -1046,6 +1046,7 @@ mod tests {
             max_rows,
             max_cols,
             is_loaded: true,
+            freeze_panes: crate::excel::FreezePanes::none(),
         }
     }
 

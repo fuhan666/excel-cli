@@ -4,6 +4,7 @@ pub const BACKGROUND: Color = Color::Rgb(11, 16, 32);
 pub const SURFACE: Color = Color::Rgb(17, 24, 39);
 pub const SURFACE_MUTED: Color = Color::Rgb(31, 41, 55);
 pub const GRID: Color = Color::Rgb(55, 65, 81);
+pub const FROZEN_BACKGROUND: Color = Color::Rgb(20, 54, 78);
 pub const TEXT: Color = Color::Rgb(229, 231, 235);
 pub const TEXT_SECONDARY: Color = Color::Rgb(156, 163, 175);
 pub const TEXT_DISABLED: Color = Color::Rgb(107, 114, 128);

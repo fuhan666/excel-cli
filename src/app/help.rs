@@ -115,6 +115,14 @@ pub const LEFT_HELP_SECTIONS: &[HelpSection] = &[
                 keys: ":dc <start> <end>",
                 description: "Delete column range",
             },
+            HelpEntry {
+                keys: ":freeze [cell]",
+                description: "Freeze panes at cell",
+            },
+            HelpEntry {
+                keys: ":unfreeze",
+                description: "Clear frozen panes",
+            },
         ],
     },
 ];
