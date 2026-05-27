@@ -122,9 +122,11 @@ fn parse_command(input: &str) -> Vec<Span<'_>> {
         "help",
         "addsheet",
         "delsheet",
+        "freeze",
+        "unfreeze",
     ];
 
-    let commands_with_params = ["cw", "ej", "eja", "sheet", "dr", "dc", "addsheet"];
+    let commands_with_params = ["cw", "ej", "eja", "sheet", "dr", "dc", "addsheet", "freeze"];
 
     let special_keywords = ["fit", "min", "all", "h", "v", "horizontal", "vertical"];
 

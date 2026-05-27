@@ -47,8 +47,9 @@ pub fn parse_cell_reference(reference: &str) -> Option<(usize, usize)> {
     }
 
     let first_digit_pos = reference
-        .chars()
-        .position(|c| c.is_ascii_digit())
+        .char_indices()
+        .find(|(_, c)| c.is_ascii_digit())
+        .map(|(index, _)| index)
         .unwrap_or(reference.len());
 
     if first_digit_pos == 0 || first_digit_pos == reference.len() {

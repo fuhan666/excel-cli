@@ -399,7 +399,7 @@ mod tests {
 
     use super::handle_key_event;
     use crate::app::{AppState, InputMode};
-    use crate::excel::{Cell, Sheet, Workbook};
+    use crate::excel::{Cell, FreezePanes, Sheet, Workbook};
 
     fn app_with_sheet() -> AppState<'static> {
         let mut data = vec![vec![Cell::empty(); 3]; 3];
@@ -413,6 +413,7 @@ mod tests {
             max_rows: 2,
             max_cols: 2,
             is_loaded: true,
+            freeze_panes: FreezePanes::none(),
         };
         let app = AppState::new(
             Workbook::from_sheets_for_test(vec![sheet]),

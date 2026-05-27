@@ -28,7 +28,7 @@ pub(super) fn update_visible_area(app_state: &mut AppState, area: Rect) {
     // Calculate available width for columns (subtract row numbers and borders)
     let available_width = data_columns_available_width(app_state, area);
     ensure_selected_column_fully_visible(app_state, available_width);
-    let visible_cols = visible_data_column_widths(app_state, available_width).len();
+    let visible_cols = visible_data_columns(app_state, available_width).len();
 
     // Ensure at least one column is visible
     app_state.visible_cols = visible_cols.max(1);
@@ -40,15 +40,26 @@ fn data_columns_available_width(app_state: &AppState, area: Rect) -> usize {
 
 fn ensure_selected_column_fully_visible(app_state: &mut AppState, available_width: usize) {
     let selected_col = app_state.selected_cell.1;
+    let frozen_cols = app_state.workbook.get_current_sheet().freeze_panes.cols;
+
+    if selected_col <= frozen_cols {
+        return;
+    }
+
+    let scroll_start_min = frozen_cols + 1;
 
     if selected_col < app_state.start_col {
-        app_state.start_col = selected_col;
+        app_state.start_col = selected_col.max(scroll_start_min);
     }
 
     while app_state.start_col < selected_col
         && columns_width(app_state, app_state.start_col, selected_col) > available_width
     {
         app_state.start_col += 1;
+    }
+
+    if app_state.start_col < scroll_start_min {
+        app_state.start_col = scroll_start_min;
     }
 }
 
@@ -61,60 +72,121 @@ fn columns_width(app_state: &AppState, start_col: usize, end_col: usize) -> usiz
     content_width + TABLE_COLUMN_SPACING * col_count.saturating_sub(1)
 }
 
-fn visible_data_column_widths(app_state: &AppState, available_width: usize) -> Vec<usize> {
+fn visible_data_columns(app_state: &AppState, available_width: usize) -> Vec<(usize, usize)> {
     let sheet = app_state.workbook.get_current_sheet();
-    let max_col = sheet.max_cols.max(app_state.start_col);
-    let mut widths = Vec::new();
+    let frozen_cols = sheet.freeze_panes.cols.min(sheet.max_cols);
+    let scroll_start = app_state.start_col.max(frozen_cols + 1);
+    let max_col = sheet.max_cols.max(scroll_start);
+    let has_scroll_cols = scroll_start <= max_col;
+    let frozen_available_width = if has_scroll_cols && available_width > 1 {
+        available_width - 1
+    } else {
+        available_width
+    };
+
+    let mut columns = Vec::new();
     let mut width_used = 0;
 
-    for col_idx in app_state.start_col..=max_col {
-        let col_width = app_state.get_column_width(col_idx);
-        let spacing = if widths.is_empty() {
-            0
-        } else {
-            TABLE_COLUMN_SPACING
-        };
-
-        if width_used + spacing >= available_width {
-            break;
-        }
-
-        let remaining_width = available_width - width_used - spacing;
-        let render_width = col_width.min(remaining_width);
-        widths.push(render_width);
-        width_used += spacing + render_width;
-
-        if render_width < col_width {
+    for col_idx in 1..=frozen_cols {
+        if !push_visible_column(
+            app_state,
+            &mut columns,
+            &mut width_used,
+            col_idx,
+            frozen_available_width,
+        ) {
             break;
         }
     }
 
-    if widths.is_empty() {
-        widths.push(
+    for col_idx in scroll_start..=max_col {
+        if !push_visible_column(
+            app_state,
+            &mut columns,
+            &mut width_used,
+            col_idx,
+            available_width,
+        ) {
+            break;
+        }
+    }
+
+    if columns.is_empty() {
+        columns.push((
+            scroll_start,
             app_state
-                .get_column_width(app_state.start_col)
+                .get_column_width(scroll_start)
                 .min(available_width),
-        );
+        ));
     }
 
-    widths
+    columns
+}
+
+fn push_visible_column(
+    app_state: &AppState,
+    columns: &mut Vec<(usize, usize)>,
+    width_used: &mut usize,
+    col_idx: usize,
+    available_width: usize,
+) -> bool {
+    let col_width = app_state.get_column_width(col_idx);
+    let spacing = if columns.is_empty() {
+        0
+    } else {
+        TABLE_COLUMN_SPACING
+    };
+
+    if *width_used + spacing >= available_width {
+        return false;
+    }
+
+    let remaining_width = available_width - *width_used - spacing;
+    let render_width = col_width.min(remaining_width);
+    columns.push((col_idx, render_width));
+    *width_used += spacing + render_width;
+
+    render_width == col_width
+}
+
+fn visible_data_rows(app_state: &AppState) -> Vec<usize> {
+    let sheet = app_state.workbook.get_current_sheet();
+    let max_row = sheet.max_rows.max(app_state.start_row);
+    let frozen_rows = sheet.freeze_panes.rows.min(sheet.max_rows);
+    let scroll_start = app_state.start_row.max(frozen_rows + 1);
+    let has_scroll_rows = scroll_start <= max_row;
+    let available_rows = app_state.visible_rows;
+    let frozen_rows_visible = if has_scroll_rows && available_rows > 1 {
+        frozen_rows.min(available_rows - 1)
+    } else {
+        frozen_rows.min(available_rows)
+    };
+
+    let mut rows = Vec::with_capacity(available_rows);
+    rows.extend(1..=frozen_rows_visible);
+
+    let scroll_rows_available = available_rows.saturating_sub(rows.len());
+    rows.extend((scroll_start..=max_row).take(scroll_rows_available));
+
+    if rows.is_empty() && available_rows > 0 {
+        rows.push(scroll_start);
+    }
+
+    rows
 }
 
 pub(super) fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) {
     // Calculate visible row and column ranges
-    let start_row = app_state.start_row;
-    let end_row = start_row + app_state.visible_rows - 1;
-    let start_col = app_state.start_col;
-    let data_column_widths =
-        visible_data_column_widths(app_state, data_columns_available_width(app_state, area));
-    let visible_cols = data_column_widths.len().max(1);
-    let end_col = start_col + visible_cols - 1;
+    let data_columns =
+        visible_data_columns(app_state, data_columns_available_width(app_state, area));
+    let visible_rows = visible_data_rows(app_state);
+    let visible_cols = data_columns.len().max(1);
 
     let mut constraints = Vec::with_capacity(visible_cols + 1);
     constraints.push(Constraint::Length(app_state.row_number_width as u16)); // Dynamic row header width
 
-    for width in data_column_widths {
-        constraints.push(Constraint::Length(width as u16));
+    for (_, width) in &data_columns {
+        constraints.push(Constraint::Length(*width as u16));
     }
 
     // Set table style based on current mode
@@ -141,27 +213,43 @@ pub(super) fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) 
     } else {
         theme::base()
     };
+    let sheet = app_state.workbook.get_current_sheet();
+    let frozen_rows = sheet.freeze_panes.rows.min(sheet.max_rows);
+    let frozen_cols = sheet.freeze_panes.cols.min(sheet.max_cols);
     // Create header row
     let mut header_cells = Vec::with_capacity(app_state.visible_cols + 1);
-    header_cells.push(Cell::from("").style(header_style));
+    header_cells.push(Cell::from("").style(frozen_header_style(
+        header_style,
+        is_editing,
+        frozen_rows > 0 || frozen_cols > 0,
+    )));
 
     // Add column headers
-    for col in start_col..=end_col {
-        let col_name = index_to_col_name(col);
-        header_cells.push(Cell::from(col_name).style(header_style));
+    for (col, _) in &data_columns {
+        let col_name = index_to_col_name(*col);
+        header_cells.push(Cell::from(col_name).style(frozen_header_style(
+            header_style,
+            is_editing,
+            *col <= frozen_cols,
+        )));
     }
 
     let header = Row::new(header_cells).height(1);
 
     // Create data rows
-    let rows = (start_row..=end_row).map(|row| {
+    let rows = visible_rows.into_iter().map(|row| {
         let mut cells = Vec::with_capacity(app_state.visible_cols + 1);
 
         // Add row header
-        cells.push(Cell::from(row.to_string()).style(header_style));
+        cells.push(Cell::from(row.to_string()).style(frozen_header_style(
+            header_style,
+            is_editing,
+            row <= frozen_rows,
+        )));
 
         // Add cells for this row
-        for col in start_col..=end_col {
+        for (col, _) in &data_columns {
+            let col = *col;
             let content = if app_state.selected_cell == (row, col)
                 && matches!(app_state.input_mode, InputMode::Editing)
             {
@@ -236,6 +324,8 @@ pub(super) fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) 
             } else if app_state.highlight_enabled && app_state.search_results.contains(&(row, col))
             {
                 Style::default().bg(theme::SEARCH).fg(Color::Black)
+            } else if row <= frozen_rows || col <= frozen_cols {
+                frozen_cell_style(is_editing)
             } else {
                 cell_style
             };
@@ -257,6 +347,30 @@ pub(super) fn draw_spreadsheet(f: &mut Frame, app_state: &AppState, area: Rect) 
     .style(cell_style);
 
     f.render_widget(table, area);
+}
+
+fn frozen_cell_style(is_editing: bool) -> Style {
+    let foreground = if is_editing {
+        theme::TEXT_DISABLED
+    } else {
+        theme::TEXT
+    };
+
+    Style::default().bg(theme::FROZEN_BACKGROUND).fg(foreground)
+}
+
+fn frozen_header_style(base_style: Style, is_editing: bool, is_frozen: bool) -> Style {
+    if !is_frozen {
+        return base_style;
+    }
+
+    let foreground = if is_editing {
+        theme::TEXT_DISABLED
+    } else {
+        theme::TEXT_SECONDARY
+    };
+
+    Style::default().bg(theme::FROZEN_BACKGROUND).fg(foreground)
 }
 
 pub(super) fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Rect) {
@@ -417,5 +531,14 @@ pub(super) fn draw_title_with_tabs(f: &mut Frame, app_state: &AppState, area: Re
 
 fn sheet_rows_cols(app_state: &AppState) -> String {
     let sheet = app_state.workbook.get_current_sheet();
-    format!("{} x {}", sheet.max_rows, sheet.max_cols)
+    if sheet.freeze_panes.is_frozen() {
+        format!(
+            "{} x {}  Frozen: {}",
+            sheet.max_rows,
+            sheet.max_cols,
+            sheet.freeze_panes.split_cell_ref()
+        )
+    } else {
+        format!("{} x {}", sheet.max_rows, sheet.max_cols)
+    }
 }

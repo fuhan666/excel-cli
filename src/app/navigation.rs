@@ -16,10 +16,27 @@ impl AppState<'_> {
     }
 
     pub fn handle_scrolling(&mut self) {
-        if self.selected_cell.0 < self.start_row {
-            self.start_row = self.selected_cell.0;
-        } else if self.selected_cell.0 >= self.start_row + self.visible_rows {
-            self.start_row = self.selected_cell.0 - self.visible_rows + 1;
+        let frozen_rows = self.workbook.get_current_sheet().freeze_panes.rows;
+        let min_scroll_row = frozen_rows + 1;
+
+        if frozen_rows > 0 && self.start_row < min_scroll_row {
+            self.start_row = min_scroll_row;
+        }
+
+        if self.selected_cell.0 > frozen_rows {
+            let frozen_rows_visible = if self.visible_rows > 1 {
+                frozen_rows.min(self.visible_rows - 1)
+            } else {
+                0
+            };
+            let scroll_rows_visible = self.visible_rows.saturating_sub(frozen_rows_visible).max(1);
+
+            if self.selected_cell.0 < self.start_row {
+                self.start_row = self.selected_cell.0.max(min_scroll_row);
+            } else if self.selected_cell.0 >= self.start_row + scroll_rows_visible {
+                self.start_row =
+                    (self.selected_cell.0 - scroll_rows_visible + 1).max(min_scroll_row);
+            }
         }
 
         self.handle_column_scrolling();
@@ -138,17 +155,34 @@ impl AppState<'_> {
     }
 
     pub fn ensure_column_visible(&mut self, column: usize) {
-        // If column is to the left of visible area, adjust start_col
-        if column < self.start_col {
-            self.start_col = column;
+        let frozen_cols = self.workbook.get_current_sheet().freeze_panes.cols;
+        let min_scroll_col = frozen_cols + 1;
+
+        if frozen_cols > 0 && self.start_col < min_scroll_col {
+            self.start_col = min_scroll_col;
+        }
+
+        if column <= frozen_cols {
             return;
         }
 
-        let last_visible_col = self.start_col + self.visible_cols - 1;
+        // If column is to the left of visible area, adjust start_col
+        if column < self.start_col {
+            self.start_col = column.max(min_scroll_col);
+            return;
+        }
+
+        let frozen_cols_visible = if self.visible_cols > 1 {
+            frozen_cols.min(self.visible_cols - 1)
+        } else {
+            0
+        };
+        let scroll_cols_visible = self.visible_cols.saturating_sub(frozen_cols_visible).max(1);
+        let last_visible_col = self.start_col + scroll_cols_visible - 1;
 
         // If column is to the right of visible area, adjust start_col to make it visible
         if column > last_visible_col {
-            self.start_col = (column - self.visible_cols + 1).max(1);
+            self.start_col = (column - scroll_cols_visible + 1).max(min_scroll_col);
             return;
         }
 
@@ -157,10 +191,10 @@ impl AppState<'_> {
         let max_col = sheet.max_cols;
 
         // Only apply margin logic if not at the max column
-        if column < max_col && column == last_visible_col && self.visible_cols > 1 {
+        if column < max_col && column == last_visible_col && scroll_cols_visible > 1 {
             // Adjust start column to show more columns to the left
             // This creates a margin on the right
-            self.start_col = (column - (self.visible_cols - 2)).max(1);
+            self.start_col = (column - (scroll_cols_visible - 2)).max(min_scroll_col);
         }
     }
 }

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use super::{theme, ui};
 use crate::app::{AppState, HelpEntry, InputMode};
-use crate::excel::{Cell, Sheet, Workbook};
+use crate::excel::{Cell, FreezePanes, Sheet, Workbook};
 
 fn app_with_sheet() -> AppState<'static> {
     let mut data = vec![vec![Cell::empty(); 3]; 3];
@@ -18,6 +18,7 @@ fn app_with_sheet() -> AppState<'static> {
         max_rows: 2,
         max_cols: 2,
         is_loaded: true,
+        freeze_panes: FreezePanes::none(),
     };
     let app = AppState::new(
         Workbook::from_sheets_for_test(vec![sheet]),
@@ -34,6 +35,7 @@ fn app_with_many_sheets() -> AppState<'static> {
         max_rows: 1,
         max_cols: 1,
         is_loaded: true,
+        freeze_panes: FreezePanes::none(),
     };
 
     AppState::new(
@@ -86,11 +88,36 @@ fn app_with_long_c22_cell() -> AppState<'static> {
         max_rows: 23,
         max_cols: 4,
         is_loaded: true,
+        freeze_panes: FreezePanes::none(),
     };
 
     AppState::new(
         Workbook::from_sheets_for_test(vec![sheet]),
         PathBuf::from("sample.xlsx"),
+    )
+    .unwrap()
+}
+
+fn app_with_frozen_grid() -> AppState<'static> {
+    let mut data = vec![vec![Cell::empty(); 9]; 9];
+    for (row_idx, row) in data.iter_mut().enumerate().take(9).skip(1) {
+        for (col_idx, cell) in row.iter_mut().enumerate().take(9).skip(1) {
+            *cell = Cell::new(format!("R{row_idx}C{col_idx}"), false);
+        }
+    }
+
+    let sheet = Sheet {
+        name: "Frozen".to_string(),
+        data,
+        max_rows: 8,
+        max_cols: 8,
+        is_loaded: true,
+        freeze_panes: FreezePanes { rows: 1, cols: 1 },
+    };
+
+    AppState::new(
+        Workbook::from_sheets_for_test(vec![sheet]),
+        PathBuf::from("frozen.xlsx"),
     )
     .unwrap()
 }
@@ -119,6 +146,21 @@ fn text_fg_at(terminal: &Terminal<TestBackend>, needle: &str) -> Color {
     let buffer = terminal.backend().buffer();
     let width = buffer.area.width as usize;
     buffer.content[row * width + col + offset].fg
+}
+
+fn text_bg_at(terminal: &Terminal<TestBackend>, needle: &str) -> Color {
+    let lines = rendered_lines(terminal);
+    let row = line_index(&lines, needle);
+    let col = lines[row]
+        .find(needle)
+        .unwrap_or_else(|| panic!("expected rendered output to contain {needle}"));
+    let offset = needle
+        .chars()
+        .position(|ch| !ch.is_whitespace())
+        .unwrap_or(0);
+    let buffer = terminal.backend().buffer();
+    let width = buffer.area.width as usize;
+    buffer.content[row * width + col + offset].bg
 }
 
 fn fg_at(terminal: &Terminal<TestBackend>, row: usize, col: usize) -> Color {
@@ -160,6 +202,58 @@ fn auto_fit_all_renders_full_long_cell_content() {
         .unwrap_or_else(|| panic!("expected row 22 to render:\n{}", lines.join("\n")));
 
     assert!(row.contains(expected), "{row}");
+}
+
+#[test]
+fn frozen_panes_keep_top_row_and_left_column_visible_while_scrolled() {
+    let backend = TestBackend::new(100, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut app = app_with_frozen_grid();
+    app.start_row = 6;
+    app.start_col = 6;
+    app.selected_cell = (6, 6);
+
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+    let rendered = rendered_lines(&terminal).join("\n");
+    assert!(rendered.contains("Frozen: B2"), "{rendered}");
+    assert!(rendered.contains("R1C1"), "{rendered}");
+    assert!(rendered.contains("R1C6"), "{rendered}");
+    assert!(rendered.contains("R6C1"), "{rendered}");
+    assert!(rendered.contains("R6C6"), "{rendered}");
+}
+
+#[test]
+fn frozen_panes_style_frozen_regions_while_scrolled() {
+    let backend = TestBackend::new(100, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut app = app_with_frozen_grid();
+    app.start_row = 6;
+    app.start_col = 6;
+    app.selected_cell = (8, 8);
+
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+    assert_eq!(text_bg_at(&terminal, "R1C1"), theme::FROZEN_BACKGROUND);
+    assert_eq!(text_bg_at(&terminal, "R1C6"), theme::FROZEN_BACKGROUND);
+    assert_eq!(text_bg_at(&terminal, "R6C1"), theme::FROZEN_BACKGROUND);
+    assert_eq!(text_bg_at(&terminal, "R6C6"), theme::BACKGROUND);
+}
+
+#[test]
+fn selected_and_search_styles_override_frozen_region_style() {
+    let backend = TestBackend::new(100, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut app = app_with_frozen_grid();
+    app.start_row = 6;
+    app.start_col = 6;
+    app.selected_cell = (1, 1);
+    app.search_results.push((1, 6));
+
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+    assert_eq!(text_bg_at(&terminal, "R1C1"), Color::White);
+    assert_eq!(text_bg_at(&terminal, "R1C6"), theme::SEARCH);
 }
 
 #[test]

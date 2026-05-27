@@ -189,7 +189,7 @@ pub(crate) fn read_header_values(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::excel::{CellType, Sheet};
+    use crate::excel::{CellType, FreezePanes, Sheet};
 
     fn sheet_with_values(name: &str, values: &[&[&str]]) -> Sheet {
         let max_rows = values.len();
@@ -208,6 +208,7 @@ mod tests {
             max_rows,
             max_cols,
             is_loaded: true,
+            freeze_panes: FreezePanes::none(),
         }
     }
 

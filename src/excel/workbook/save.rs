@@ -48,6 +48,13 @@ fn write_sheet(
 ) -> Result<()> {
     let worksheet = workbook.add_worksheet().set_name(&sheet.name)?;
 
+    if sheet.freeze_panes.is_frozen() {
+        worksheet.set_freeze_panes(
+            sheet.freeze_panes.rows as u32,
+            sheet.freeze_panes.cols as u16,
+        )?;
+    }
+
     for col in 0..sheet.max_cols {
         worksheet.set_column_width(col as u16, 15)?;
     }

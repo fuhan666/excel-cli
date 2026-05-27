@@ -398,6 +398,9 @@ The JSON files are saved in the same directory as the original Excel file.
 - `:dc` - Delete the current column
 - `:dc [col]` - Delete a specific column (e.g., `:dc A` or `:dc a` or `:dc 1` all delete column A)
 - `:dc [start] [end]` - Delete a range of columns (e.g., `:dc A C` or `:dc a c` deletes columns A through C)
+- `:freeze` - Freeze rows above and columns left of the current cell
+- `:freeze [cell]` - Freeze panes at a specific cell (e.g., `:freeze B2` freezes row 1 and column A)
+- `:unfreeze` - Clear frozen panes for the current sheet
 
 ### Other Commands
 
