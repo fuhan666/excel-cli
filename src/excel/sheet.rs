@@ -1,6 +1,9 @@
 use crate::excel::Cell;
 use crate::utils::cell_reference;
 
+pub const EXCEL_MAX_COLS: usize = 16_384;
+pub const EXCEL_MAX_ROWS: usize = 1_048_576;
+
 #[derive(Clone)]
 pub struct FreezePanes {
     pub rows: usize,

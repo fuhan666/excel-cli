@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use crate::app::{AppState, InputMode};
+use crate::excel::{EXCEL_MAX_COLS, EXCEL_MAX_ROWS};
 use crate::ui::theme;
 use crate::utils::index_to_col_name;
 
@@ -76,7 +77,7 @@ fn visible_data_columns(app_state: &AppState, available_width: usize) -> Vec<(us
     let sheet = app_state.workbook.get_current_sheet();
     let frozen_cols = sheet.freeze_panes.cols.min(sheet.max_cols);
     let scroll_start = app_state.start_col.max(frozen_cols + 1);
-    let max_col = sheet.max_cols.max(scroll_start);
+    let max_col = EXCEL_MAX_COLS;
     let has_scroll_cols = scroll_start <= max_col;
     let frozen_available_width = if has_scroll_cols && available_width > 1 {
         available_width - 1
@@ -151,9 +152,9 @@ fn push_visible_column(
 
 fn visible_data_rows(app_state: &AppState) -> Vec<usize> {
     let sheet = app_state.workbook.get_current_sheet();
-    let max_row = sheet.max_rows.max(app_state.start_row);
+    let max_row = EXCEL_MAX_ROWS;
     let frozen_rows = sheet.freeze_panes.rows.min(sheet.max_rows);
-    let scroll_start = app_state.start_row.max(frozen_rows + 1);
+    let scroll_start = app_state.start_row.clamp(frozen_rows + 1, EXCEL_MAX_ROWS);
     let has_scroll_rows = scroll_start <= max_row;
     let available_rows = app_state.visible_rows;
     let frozen_rows_visible = if has_scroll_rows && available_rows > 1 {

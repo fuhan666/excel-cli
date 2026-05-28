@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use super::{theme, ui};
 use crate::app::{AppState, HelpEntry, InputMode};
-use crate::excel::{Cell, FreezePanes, Sheet, Workbook};
+use crate::excel::{Cell, FreezePanes, Sheet, Workbook, EXCEL_MAX_ROWS};
 
 fn app_with_sheet() -> AppState<'static> {
     let mut data = vec![vec![Cell::empty(); 3]; 3];
@@ -723,4 +723,79 @@ fn renders_rows_cols_in_top_right_with_overflow_hint_when_tabs_exceed_space() {
     assert!(title_row.trim_end().ends_with("... Rows/Cols: 1 x 1"));
     assert!(title_row.contains("Alpha"));
     assert!(!title_row.contains("Zeta"));
+}
+
+#[test]
+fn renders_blank_columns_beyond_used_range_to_fill_viewport() {
+    let backend = TestBackend::new(100, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut app = app_with_sheet();
+    app.selected_cell = (2, 3);
+    app.start_col = 3;
+
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+    let lines = rendered_lines(&terminal);
+    let rendered = lines.join("\n");
+    let header_row = lines
+        .iter()
+        .find(|line| line.contains("C") && line.contains("D") && line.contains("E"))
+        .unwrap_or_else(|| panic!("expected blank column headers C, D, and E:\n{rendered}"));
+
+    assert!(rendered.contains("Cell C2  Blank  Len 0"), "{rendered}");
+    assert!(header_row.contains("C"), "{header_row}");
+    assert!(header_row.contains("D"), "{header_row}");
+    assert!(header_row.contains("E"), "{header_row}");
+    assert!(rendered.contains("Rows/Cols: 2 x 2"), "{rendered}");
+}
+
+#[test]
+fn renders_blank_rows_beyond_used_range_to_fill_viewport() {
+    let backend = TestBackend::new(100, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut app = app_with_sheet();
+    app.selected_cell = (3, 1);
+    app.start_row = 3;
+
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+    let lines = rendered_lines(&terminal);
+    let rendered = lines.join("\n");
+    assert!(rendered.contains("Cell A3  Blank  Len 0"), "{rendered}");
+    assert!(rendered.contains("3"), "{rendered}");
+    assert!(rendered.contains("4"), "{rendered}");
+    assert!(rendered.contains("5"), "{rendered}");
+
+    let row_three = lines
+        .iter()
+        .position(|line| line.contains("3") && !line.contains("Cell A3"))
+        .unwrap_or_else(|| panic!("expected row 3 to render:\n{rendered}"));
+    let buffer = terminal.backend().buffer();
+    let width = buffer.area.width as usize;
+    let has_selected_style = (0..width).any(|col| {
+        let cell = &buffer.content[row_three * width + col];
+        cell.bg == Color::White && cell.fg == Color::Black
+    });
+    assert!(
+        has_selected_style,
+        "expected selected blank cell highlight:\n{rendered}"
+    );
+}
+
+#[test]
+fn renders_excel_max_row_number_when_selected_at_bottom_boundary() {
+    let backend = TestBackend::new(100, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut app = app_with_sheet();
+    app.selected_cell = (EXCEL_MAX_ROWS, 1);
+    app.start_row = EXCEL_MAX_ROWS;
+
+    terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+    let rendered = rendered_lines(&terminal).join("\n");
+    assert!(
+        rendered.contains("Cell A1048576  Blank  Len 0"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("1048576"), "{rendered}");
 }

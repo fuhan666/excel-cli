@@ -399,7 +399,8 @@ mod tests {
 
     use super::handle_key_event;
     use crate::app::{AppState, InputMode};
-    use crate::excel::{Cell, FreezePanes, Sheet, Workbook};
+    use crate::excel::{Cell, FreezePanes, Sheet, Workbook, EXCEL_MAX_COLS, EXCEL_MAX_ROWS};
+    use crate::utils::index_to_col_name;
 
     fn app_with_sheet() -> AppState<'static> {
         let mut data = vec![vec![Cell::empty(); 3]; 3];
@@ -445,6 +446,61 @@ mod tests {
         );
 
         assert!(matches!(app.input_mode, InputMode::Normal));
+    }
+
+    #[test]
+    fn right_movement_can_enter_blank_columns_beyond_used_range() {
+        let mut app = app_with_sheet();
+        app.selected_cell = (2, 2);
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('l'), KeyModifiers::empty()),
+        );
+
+        assert_eq!(app.selected_cell, (2, 3));
+        assert_eq!(app.get_cell_content(2, 3), "");
+    }
+
+    #[test]
+    fn down_movement_can_enter_blank_rows_beyond_used_range() {
+        let mut app = app_with_sheet();
+        app.selected_cell = (2, 2);
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::empty()),
+        );
+
+        assert_eq!(app.selected_cell, (3, 2));
+        assert_eq!(app.get_cell_content(3, 2), "");
+    }
+
+    #[test]
+    fn down_movement_stops_at_excel_row_limit() {
+        let mut app = app_with_sheet();
+        app.selected_cell = (EXCEL_MAX_ROWS, 2);
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::empty()),
+        );
+
+        assert_eq!(app.selected_cell, (EXCEL_MAX_ROWS, 2));
+    }
+
+    #[test]
+    fn right_movement_stops_at_excel_column_limit() {
+        let mut app = app_with_sheet();
+        app.selected_cell = (2, EXCEL_MAX_COLS);
+
+        handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('l'), KeyModifiers::empty()),
+        );
+
+        assert_eq!(app.selected_cell, (2, EXCEL_MAX_COLS));
+        assert_eq!(index_to_col_name(app.selected_cell.1), "XFD");
     }
 
     #[test]
