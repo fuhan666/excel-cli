@@ -12,25 +12,26 @@ jobs:
     strategy:
       matrix:
         include:
-          # --- Intel Targets ---
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: excel-cli
             asset_name: excel-cli-linux-amd64
+            use_cross: false
+          - os: ubuntu-latest
+            target: x86_64-apple-darwin
+            artifact_name: excel-cli
+            asset_name: excel-cli-macos-amd64
+            use_cross: true
+          - os: ubuntu-latest
+            target: aarch64-apple-darwin
+            artifact_name: excel-cli
+            asset_name: excel-cli-macos-arm64
+            use_cross: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: excel-cli.exe
             asset_name: excel-cli-windows-amd64.exe
-          # - os: macos-14-large
-          #   target: x86_64-apple-darwin
-          #   artifact_name: excel-cli
-          #   asset_name: excel-cli-macos-amd64
-
-          # --- Apple Silicon (ARM) Target ---
-          # - os: macos-14
-          #   target: aarch64-apple-darwin
-          #   artifact_name: excel-cli
-          #   asset_name: excel-cli-macos-arm64
+            use_cross: false
 
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +47,16 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Build for target
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build for target (cross)
+        if: matrix.use_cross
+        run: cross build --release --locked --target ${{ matrix.target }}
+
+      - name: Build for target (cargo)
+        if: ${{ !matrix.use_cross }}
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Rename binary (Linux/macOS)
