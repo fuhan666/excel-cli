@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-05-28
+
 ### Added
 
 - `:freeze` and `:unfreeze` commands to freeze and unfreeze rows and columns at the current or specified cell.
@@ -216,7 +218,8 @@ This is the initial release of excel-cli, a lightweight terminal-based Excel vie
 - Copy, cut, and paste functionality with `y`, `d`, and `p` keys
 - Support for pipe operator when exporting to JSON
 
-[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/fuhan666/excel-cli/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/fuhan666/excel-cli/releases/tag/v1.3.2
 [1.3.1]: https://github.com/fuhan666/excel-cli/releases/tag/v1.3.1
 [1.3.0]: https://github.com/fuhan666/excel-cli/releases/tag/v1.3.0
 [1.2.0]: https://github.com/fuhan666/excel-cli/releases/tag/v1.2.0

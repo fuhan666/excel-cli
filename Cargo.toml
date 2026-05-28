@@ -1,13 +1,14 @@
 [package]
 name = "excel-cli"
-version = "1.3.1"
+version = "1.3.2"
 edition = "2021"
 description = "Excel CLI for AI, scripting, and terminal users. Headless JSON API for automation, plus a Vim-like TUI for interactive browsing and editing."
 license = "MIT"
 repository = "https://github.com/fuhan666/excel-cli"
 keywords = ["excel", "cli", "ai", "tui", "spreadsheet"]
 categories = ["command-line-interface", "command-line-utilities", "development-tools", "parsing"]
-exclude = ["/.tests", "/.github", "AGENTS.md", "CHANGELOG.md", ".gitignore"]
+exclude = [ "/tests", "/.github", "AGENTS.md", "CHANGELOG.md", ".gitignore","CONTRIBUTING.md", "README_zh.md"
+]
 
 [dependencies]
 ratatui = "0.29.0"
