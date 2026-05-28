@@ -71,8 +71,14 @@ pub fn dispatch(cli: Cli) -> Result<(Value, OutputFormat, i32), AppError> {
                 });
             }
 
-            let (value, exit_code) =
-                crate::cli::grep::handle(query, paths, case_insensitive, regex, sheet, skip_errors)?;
+            let (value, exit_code) = crate::cli::grep::handle(
+                query,
+                paths,
+                case_insensitive,
+                regex,
+                sheet,
+                skip_errors,
+            )?;
             Ok((value, format, exit_code))
         }
     }
