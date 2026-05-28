@@ -5,7 +5,7 @@ use tui_textarea::TextArea;
 
 use crate::actions::UndoHistory;
 use crate::app::VimState;
-use crate::excel::Workbook;
+use crate::excel::{Workbook, EXCEL_MAX_COLS, EXCEL_MAX_ROWS};
 
 /// Represents a cell position in a sheet, including both the selected cell and view position
 #[derive(Clone, Copy)]
@@ -170,10 +170,26 @@ impl AppState<'_> {
 
     /// Updates the row number width based on the maximum row number in the current sheet
     pub fn update_row_number_width(&mut self) {
-        let max_rows = self.workbook.get_current_sheet().max_rows;
+        let max_rows = self
+            .workbook
+            .get_current_sheet()
+            .max_rows
+            .max(self.selected_cell.0)
+            .max(self.start_row)
+            .clamp(1, EXCEL_MAX_ROWS);
         let width = max_rows.to_string().len();
         // Ensure a minimum width of 4 for row numbers
         self.row_number_width = width.max(4);
+    }
+
+    pub fn clamp_cell_to_excel_bounds((row, col): (usize, usize)) -> (usize, usize) {
+        (row.clamp(1, EXCEL_MAX_ROWS), col.clamp(1, EXCEL_MAX_COLS))
+    }
+
+    pub fn clamp_selected_cell_to_excel_bounds(&mut self) {
+        self.selected_cell = Self::clamp_cell_to_excel_bounds(self.selected_cell);
+        self.start_row = self.start_row.clamp(1, EXCEL_MAX_ROWS);
+        self.start_col = self.start_col.clamp(1, EXCEL_MAX_COLS);
     }
 
     pub fn adjust_info_panel_height(&mut self, delta: isize) {

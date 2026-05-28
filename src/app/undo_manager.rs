@@ -16,14 +16,7 @@ impl AppState<'_> {
             self.workbook.recalculate_max_cols();
             self.ensure_column_widths();
 
-            // Update cursor position if it's outside the valid range
-            let sheet = self.workbook.get_current_sheet();
-            if self.selected_cell.0 > sheet.max_rows {
-                self.selected_cell.0 = sheet.max_rows.max(1);
-            }
-            if self.selected_cell.1 > sheet.max_cols {
-                self.selected_cell.1 = sheet.max_cols.max(1);
-            }
+            self.clamp_selected_cell_to_excel_bounds();
 
             if self.undo_history.all_undone() {
                 self.workbook.set_modified(false);
@@ -44,14 +37,7 @@ impl AppState<'_> {
             self.workbook.recalculate_max_cols();
             self.ensure_column_widths();
 
-            // Update cursor position if it's outside the valid range
-            let sheet = self.workbook.get_current_sheet();
-            if self.selected_cell.0 > sheet.max_rows {
-                self.selected_cell.0 = sheet.max_rows.max(1);
-            }
-            if self.selected_cell.1 > sheet.max_cols {
-                self.selected_cell.1 = sheet.max_cols.max(1);
-            }
+            self.clamp_selected_cell_to_excel_bounds();
 
             self.workbook.set_modified(true);
         } else {
@@ -175,9 +161,7 @@ impl AppState<'_> {
             sheet.data.remove(row_action.row);
             sheet.max_rows = sheet.max_rows.saturating_sub(1);
 
-            if self.selected_cell.0 > sheet.max_rows {
-                self.selected_cell.0 = sheet.max_rows.max(1);
-            }
+            self.clamp_selected_cell_to_excel_bounds();
 
             self.add_notification(format!("Redid row {} deletion", row_action.row));
         }
@@ -256,9 +240,7 @@ impl AppState<'_> {
                 self.column_widths.push(15);
             }
 
-            if self.selected_cell.1 > sheet.max_cols {
-                self.selected_cell.1 = sheet.max_cols.max(1);
-            }
+            self.clamp_selected_cell_to_excel_bounds();
 
             self.add_notification(format!("Redid column {} deletion", index_to_col_name(col)));
         }
@@ -309,14 +291,10 @@ impl AppState<'_> {
 
         // Restore saved cell position for the new current sheet or use default
         if let Some(saved_position) = self.sheet_cell_positions.get(&new_sheet_name) {
-            // Ensure the saved position is valid for the current sheet
-            let sheet = self.workbook.get_current_sheet();
-            let valid_row = saved_position.selected.0.min(sheet.max_rows.max(1));
-            let valid_col = saved_position.selected.1.min(sheet.max_cols.max(1));
-
-            self.selected_cell = (valid_row, valid_col);
+            self.selected_cell = Self::clamp_cell_to_excel_bounds(saved_position.selected);
             self.start_row = saved_position.view.0;
             self.start_col = saved_position.view.1;
+            self.clamp_selected_cell_to_excel_bounds();
 
             // Make sure the view position is valid relative to the selected cell
             self.handle_scrolling();
@@ -446,11 +424,7 @@ impl AppState<'_> {
         } else {
             self.workbook.delete_rows(start_row, end_row)?;
 
-            let sheet = self.workbook.get_current_sheet();
-
-            if self.selected_cell.0 > sheet.max_rows {
-                self.selected_cell.0 = sheet.max_rows.max(1);
-            }
+            self.clamp_selected_cell_to_excel_bounds();
 
             self.add_notification(format!("Redid rows {} to {} deletion", start_row, end_row));
         }
@@ -519,12 +493,9 @@ impl AppState<'_> {
         } else {
             self.workbook.delete_columns(start_col, end_col)?;
 
-            let sheet = self.workbook.get_current_sheet();
             Self::remove_column_widths(&mut self.column_widths, start_col, end_col);
 
-            if self.selected_cell.1 > sheet.max_cols {
-                self.selected_cell.1 = sheet.max_cols.max(1);
-            }
+            self.clamp_selected_cell_to_excel_bounds();
 
             self.add_notification(format!(
                 "Redid columns {} to {} deletion",

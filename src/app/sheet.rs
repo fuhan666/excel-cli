@@ -69,14 +69,10 @@ impl AppState<'_> {
 
         // Restore cell position and view position for the new sheet
         if let Some(saved_position) = self.sheet_cell_positions.get(&new_sheet_name) {
-            // Ensure the saved position is valid for the current sheet
-            let sheet = self.workbook.get_current_sheet();
-            let valid_row = saved_position.selected.0.min(sheet.max_rows.max(1));
-            let valid_col = saved_position.selected.1.min(sheet.max_cols.max(1));
-
-            self.selected_cell = (valid_row, valid_col);
+            self.selected_cell = Self::clamp_cell_to_excel_bounds(saved_position.selected);
             self.start_row = saved_position.view.0;
             self.start_col = saved_position.view.1;
+            self.clamp_selected_cell_to_excel_bounds();
 
             // Make sure the view position is valid relative to the selected cell
             self.handle_scrolling();
@@ -230,14 +226,10 @@ impl AppState<'_> {
 
                 // Restore saved cell position for the new current sheet or use default
                 if let Some(saved_position) = self.sheet_cell_positions.get(&new_sheet_name) {
-                    // Ensure the saved position is valid for the current sheet
-                    let sheet = self.workbook.get_current_sheet();
-                    let valid_row = saved_position.selected.0.min(sheet.max_rows.max(1));
-                    let valid_col = saved_position.selected.1.min(sheet.max_cols.max(1));
-
-                    self.selected_cell = (valid_row, valid_col);
+                    self.selected_cell = Self::clamp_cell_to_excel_bounds(saved_position.selected);
                     self.start_row = saved_position.view.0;
                     self.start_col = saved_position.view.1;
+                    self.clamp_selected_cell_to_excel_bounds();
 
                     // Make sure the view position is valid relative to the selected cell
                     self.handle_scrolling();
@@ -314,11 +306,7 @@ impl AppState<'_> {
 
         self.workbook.recalculate_max_rows();
         self.workbook.recalculate_max_cols();
-        let sheet = self.workbook.get_current_sheet();
-
-        if self.selected_cell.0 > sheet.max_rows {
-            self.selected_cell.0 = sheet.max_rows.max(1);
-        }
+        self.clamp_selected_cell_to_excel_bounds();
 
         self.handle_scrolling();
         self.search_results.clear();
@@ -360,11 +348,7 @@ impl AppState<'_> {
 
         self.workbook.recalculate_max_rows();
         self.workbook.recalculate_max_cols();
-        let sheet = self.workbook.get_current_sheet();
-
-        if self.selected_cell.0 > sheet.max_rows {
-            self.selected_cell.0 = sheet.max_rows.max(1);
-        }
+        self.clamp_selected_cell_to_excel_bounds();
 
         self.handle_scrolling();
         self.search_results.clear();
@@ -420,11 +404,7 @@ impl AppState<'_> {
 
         self.workbook.recalculate_max_rows();
         self.workbook.recalculate_max_cols();
-        let sheet = self.workbook.get_current_sheet();
-
-        if self.selected_cell.0 > sheet.max_rows {
-            self.selected_cell.0 = sheet.max_rows.max(1);
-        }
+        self.clamp_selected_cell_to_excel_bounds();
 
         self.handle_scrolling();
         self.search_results.clear();
@@ -477,21 +457,14 @@ impl AppState<'_> {
 
         self.workbook.recalculate_max_rows();
         self.workbook.recalculate_max_cols();
-        let sheet = self.workbook.get_current_sheet();
-
-        if col > sheet.max_cols {
-            self.selected_cell.1 = sheet.max_cols.max(1);
-        }
-
-        if self.selected_cell.0 > sheet.max_rows {
-            self.selected_cell.0 = sheet.max_rows.max(1);
-        }
+        let max_cols = self.workbook.get_current_sheet().max_cols;
+        self.clamp_selected_cell_to_excel_bounds();
 
         if self.column_widths.len() > col {
             self.column_widths.remove(col);
         }
 
-        self.adjust_column_widths(sheet.max_cols);
+        self.adjust_column_widths(max_cols);
 
         self.handle_scrolling();
         self.search_results.clear();
@@ -544,21 +517,14 @@ impl AppState<'_> {
 
         self.workbook.recalculate_max_rows();
         self.workbook.recalculate_max_cols();
-        let sheet = self.workbook.get_current_sheet();
-
-        if self.selected_cell.1 > sheet.max_cols {
-            self.selected_cell.1 = sheet.max_cols.max(1);
-        }
-
-        if self.selected_cell.0 > sheet.max_rows {
-            self.selected_cell.0 = sheet.max_rows.max(1);
-        }
+        let max_cols = self.workbook.get_current_sheet().max_cols;
+        self.clamp_selected_cell_to_excel_bounds();
 
         if self.column_widths.len() > col {
             self.column_widths.remove(col);
         }
 
-        self.adjust_column_widths(sheet.max_cols);
+        self.adjust_column_widths(max_cols);
 
         self.handle_scrolling();
         self.search_results.clear();
@@ -630,15 +596,8 @@ impl AppState<'_> {
 
         self.workbook.recalculate_max_rows();
         self.workbook.recalculate_max_cols();
-        let sheet = self.workbook.get_current_sheet();
-
-        if self.selected_cell.1 > sheet.max_cols {
-            self.selected_cell.1 = sheet.max_cols.max(1);
-        }
-
-        if self.selected_cell.0 > sheet.max_rows {
-            self.selected_cell.0 = sheet.max_rows.max(1);
-        }
+        let max_cols = self.workbook.get_current_sheet().max_cols;
+        self.clamp_selected_cell_to_excel_bounds();
 
         for col in (start_col..=effective_end_col).rev() {
             if self.column_widths.len() > col {
@@ -646,7 +605,7 @@ impl AppState<'_> {
             }
         }
 
-        self.adjust_column_widths(sheet.max_cols);
+        self.adjust_column_widths(max_cols);
 
         self.handle_scrolling();
         self.search_results.clear();

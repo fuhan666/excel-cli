@@ -1,12 +1,15 @@
 use crate::app::AppState;
+use crate::excel::{EXCEL_MAX_COLS, EXCEL_MAX_ROWS};
 use crate::utils::find_non_empty_cell;
 use crate::utils::Direction;
 
 impl AppState<'_> {
     pub fn move_cursor(&mut self, delta_row: isize, delta_col: isize) {
         // Calculate new position
-        let new_row = (self.selected_cell.0 as isize + delta_row).max(1) as usize;
-        let new_col = (self.selected_cell.1 as isize + delta_col).max(1) as usize;
+        let new_row =
+            (self.selected_cell.0 as isize + delta_row).clamp(1, EXCEL_MAX_ROWS as isize) as usize;
+        let new_col =
+            (self.selected_cell.1 as isize + delta_col).clamp(1, EXCEL_MAX_COLS as isize) as usize;
 
         // Update selected position
         self.selected_cell = (new_row, new_col);
@@ -155,6 +158,7 @@ impl AppState<'_> {
     }
 
     pub fn ensure_column_visible(&mut self, column: usize) {
+        let column = column.min(EXCEL_MAX_COLS);
         let frozen_cols = self.workbook.get_current_sheet().freeze_panes.cols;
         let min_scroll_col = frozen_cols + 1;
 
@@ -187,11 +191,8 @@ impl AppState<'_> {
         }
 
         // If the column is already visible but at the right edge, try to add a margin
-        let sheet = self.workbook.get_current_sheet();
-        let max_col = sheet.max_cols;
-
         // Only apply margin logic if not at the max column
-        if column < max_col && column == last_visible_col && scroll_cols_visible > 1 {
+        if column < EXCEL_MAX_COLS && column == last_visible_col && scroll_cols_visible > 1 {
             // Adjust start column to show more columns to the left
             // This creates a margin on the right
             self.start_col = (column - (scroll_cols_visible - 2)).max(min_scroll_col);
