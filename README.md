@@ -161,6 +161,37 @@ excel-cli read records report.xlsx --sheet Orders \
 excel-cli read records report.xlsx --sheet Orders --output-shape jsonl
 ```
 
+Note: `--output-shape jsonl` cannot be combined with `--format text` or `--format markdown`. Use the default JSON format or explicitly pass `-f json`.
+
+### Grep (Excel Search)
+
+`grep` searches cell values and formulas recursively across Excel files. It defaults to Markdown table output for human-readable use. For stable machine parsing, pass `-f json`.
+
+```bash
+# Search across the current directory (Markdown table by default)
+excel-cli grep "search_query"
+
+# Search in a specific directory
+excel-cli grep "search_query" path/to/files
+
+# Case-insensitive search
+excel-cli grep -i "alice" path/to/files
+
+# Regular expression search
+excel-cli grep -r "^INV-[0-9]+" path/to/files
+
+# Limit search to a specific sheet
+excel-cli grep -s Orders "search_query" path/to/files
+
+# JSON output for machine parsing
+excel-cli grep "search_query" path/to/files -f json
+
+# Skip worksheets that cannot be read instead of returning an error
+excel-cli grep "search_query" path/to/files --skip-errors
+```
+
+Supported formats: `-f markdown` (default), `-f json`. Text output (`-f text`) is not supported.
+
 Invalid selected columns, unknown filter columns, unsupported operators, malformed filters, invalid numeric comparisons, and invalid regular expressions return structured `invalid_query` errors with exit code `6`.
 
 ### Quality Checks

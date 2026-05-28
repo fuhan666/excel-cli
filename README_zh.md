@@ -161,6 +161,37 @@ excel-cli read records report.xlsx --sheet Orders \
 excel-cli read records report.xlsx --sheet Orders --output-shape jsonl
 ```
 
+注意：`--output-shape jsonl` 不能与 `--format text` 或 `--format markdown` 一起使用。请使用默认的 JSON 格式，或显式传入 `-f json`。
+
+### Grep（Excel 搜索）
+
+`grep` 可递归搜索 Excel 文件中的单元格值和公式。默认输出 Markdown 表格，方便人类阅读。如需稳定的机器解析接口，请使用 `-f json`。
+
+```bash
+# 在当前目录下搜索（默认输出 Markdown 表格）
+excel-cli grep "search_query"
+
+# 在指定目录下搜索
+excel-cli grep "search_query" path/to/files
+
+# 不区分大小写搜索
+excel-cli grep -i "alice" path/to/files
+
+# 正则表达式搜索
+excel-cli grep -r "^INV-[0-9]+" path/to/files
+
+# 只搜索指定工作表
+excel-cli grep -s Orders "search_query" path/to/files
+
+# JSON 输出，适合机器解析
+excel-cli grep "search_query" path/to/files -f json
+
+# 跳过无法读取的工作表，而不是返回错误
+excel-cli grep "search_query" path/to/files --skip-errors
+```
+
+支持的格式：`-f markdown`（默认）、`-f json`。不支持文本输出（`-f text`）。
+
 如果列名不存在、筛选列未知、操作符不支持、筛选条件格式错误、数值比较无效或正则表达式无效，会返回结构化的 `invalid_query` 错误，退出码为 `6`。
 
 ### 质量检查
