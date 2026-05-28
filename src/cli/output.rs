@@ -20,6 +20,9 @@ pub fn write_success(value: &Value, format: &OutputFormat) -> Result<(), AppErro
         OutputFormat::Text => {
             write_text(value)?;
         }
+        OutputFormat::Markdown => {
+            write_markdown(value)?;
+        }
     }
     Ok(())
 }
@@ -213,4 +216,179 @@ fn write_record_objects(records: &[Value]) {
             println!("{}", parts.join("\t"));
         }
     }
+}
+
+fn write_markdown(value: &Value) -> Result<(), AppError> {
+    let command = value["command"].as_str().unwrap_or("unknown");
+
+    match command {
+        "read.rows" | "read.records" | "inspect.sample" => {
+            let data = &value["data"];
+            let meta = &value["meta"];
+
+            if let Some(records) = data["records"].as_array() {
+                let selected_cols: Vec<String> =
+                    if let Some(cols) = meta["selected_columns"].as_array() {
+                        cols.iter()
+                            .map(|v| v.as_str().unwrap_or("").to_string())
+                            .collect()
+                    } else if !records.is_empty() {
+                        records[0]
+                            .as_object()
+                            .map(|obj| obj.keys().cloned().collect())
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+
+                if selected_cols.is_empty() {
+                    return Ok(());
+                }
+
+                let escaped_headers: Vec<String> = selected_cols
+                    .iter()
+                    .map(|s| escape_markdown_header(s))
+                    .collect();
+                print_markdown_row(&escaped_headers);
+                let delimiters: Vec<String> = vec!["---".to_string(); selected_cols.len()];
+                print_markdown_row(&delimiters);
+
+                for record in records {
+                    if let Some(obj) = record.as_object() {
+                        let row_vals: Vec<String> = selected_cols
+                            .iter()
+                            .map(|col| {
+                                let val = obj.get(col).unwrap_or(&Value::Null);
+                                format_markdown_cell(val)
+                            })
+                            .collect();
+                        print_markdown_row(&row_vals);
+                    }
+                }
+            } else if let Some(rows) = data["rows"].as_array() {
+                if rows.is_empty() {
+                    return Ok(());
+                }
+
+                let selected_cols: Vec<String> =
+                    if let Some(cols) = meta["selected_columns"].as_array() {
+                        cols.iter()
+                            .map(|v| v.as_str().unwrap_or("").to_string())
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+
+                if !selected_cols.is_empty() {
+                    let escaped_headers: Vec<String> = selected_cols
+                        .iter()
+                        .map(|s| escape_markdown_header(s))
+                        .collect();
+                    print_markdown_row(&escaped_headers);
+                    let delimiters: Vec<String> = vec!["---".to_string(); selected_cols.len()];
+                    print_markdown_row(&delimiters);
+                }
+
+                for row in rows {
+                    if let Some(cells) = row.as_array() {
+                        let row_vals: Vec<String> =
+                            cells.iter().map(format_markdown_cell).collect();
+                        print_markdown_row(&row_vals);
+                    }
+                }
+            }
+        }
+        "read.cell" => {
+            if let Some(v) = value["data"]["value"].as_str() {
+                println!("{}", v);
+            } else {
+                println!("{}", value["data"]["value"]);
+            }
+        }
+        "read.range" => {
+            let data = &value["data"];
+            if let Some(rows) = data["rows"].as_array() {
+                if rows.is_empty() {
+                    return Ok(());
+                }
+
+                if let Some(first_row) = rows[0].as_array() {
+                    let col_count = first_row.len();
+                    let headers: Vec<String> =
+                        (1..=col_count).map(|i| format!("Col {i}")).collect();
+                    print_markdown_row(&headers);
+
+                    let delimiters: Vec<String> = vec!["---".to_string(); col_count];
+                    print_markdown_row(&delimiters);
+                }
+
+                for row in rows {
+                    if let Some(cells) = row.as_array() {
+                        let row_vals: Vec<String> =
+                            cells.iter().map(format_markdown_cell).collect();
+                        print_markdown_row(&row_vals);
+                    }
+                }
+            }
+        }
+        "grep" => {
+            let headers = vec![
+                "file".to_string(),
+                "sheet".to_string(),
+                "cell".to_string(),
+                "content".to_string(),
+            ];
+            print_markdown_row(&headers);
+            let delimiters: Vec<String> = vec!["---".to_string(); 4];
+            print_markdown_row(&delimiters);
+
+            if let Some(matches) = value["data"]["matches"].as_array() {
+                for m in matches {
+                    let row_vals = vec![
+                        markdown_table_cell_text(m["file"].as_str().unwrap_or("")),
+                        markdown_table_cell_text(m["sheet"].as_str().unwrap_or("")),
+                        markdown_table_cell_text(m["cell"].as_str().unwrap_or("")),
+                        markdown_table_cell_text(m["content"].as_str().unwrap_or("")),
+                    ];
+                    print_markdown_row(&row_vals);
+                }
+            }
+        }
+        _ => {
+            write_text(value)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn print_markdown_row(vals: &[String]) {
+    println!("| {} |", vals.join(" | "));
+}
+
+/// Escape text for use inside a Markdown table cell.
+fn markdown_table_cell_text(s: &str) -> String {
+    s.replace('\r', "")
+        .replace('\n', "<br>")
+        .replace('|', "\\|")
+}
+
+fn format_markdown_cell(val: &Value) -> String {
+    match val {
+        Value::Null => String::new(),
+        Value::String(s) => markdown_table_cell_text(s),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => {
+            if *b {
+                "TRUE".to_string()
+            } else {
+                "FALSE".to_string()
+            }
+        }
+        other => markdown_table_cell_text(&other.to_string()),
+    }
+}
+
+fn escape_markdown_header(s: &str) -> String {
+    s.replace('\r', "").replace('\n', " ").replace('|', "\\|")
 }

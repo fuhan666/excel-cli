@@ -237,8 +237,12 @@ impl Workbook {
                         self.sheets[sheet_index] = sheet;
                         self.loaded_sheets.insert(sheet_index);
                     }
-                    Ok(Err(_)) => {
-                        // Non-panic parse error: leave sheet unloaded and continue
+                    Ok(Err(err)) => {
+                        return Err(anyhow::anyhow!(
+                            "Unable to read worksheet '{}': {}",
+                            sheet_name,
+                            err
+                        ));
                     }
                     Err(_) => {
                         self.calamine_workbook = CalamineWorkbook::None;
@@ -263,8 +267,12 @@ impl Workbook {
                         self.sheets[sheet_index] = sheet;
                         self.loaded_sheets.insert(sheet_index);
                     }
-                    Ok(Err(_)) => {
-                        // Non-panic parse error: leave sheet unloaded and continue
+                    Ok(Err(err)) => {
+                        return Err(anyhow::anyhow!(
+                            "Unable to read worksheet '{}': {}",
+                            sheet_name,
+                            err
+                        ));
                     }
                     Err(_) => {
                         self.calamine_workbook = CalamineWorkbook::None;
@@ -282,6 +290,111 @@ impl Workbook {
         }
 
         Ok(())
+    }
+
+    /// Try to load a sheet, returning Ok(true) on success, Ok(false) if the sheet
+    /// could not be read (and skip_errors is true), or Err if skip_errors is false.
+    pub fn ensure_sheet_loaded_or_skip(
+        &mut self,
+        sheet_index: usize,
+        sheet_name: &str,
+        skip_errors: bool,
+    ) -> Result<bool> {
+        if !self.lazy_loading || self.sheets[sheet_index].is_loaded {
+            return Ok(true);
+        }
+
+        // Load the sheet data from the calamine workbook
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        match &mut self.calamine_workbook {
+            CalamineWorkbook::Xlsx(xlsx) => {
+                let result = catch_unwind(AssertUnwindSafe(|| xlsx.worksheet_range(sheet_name)));
+                std::panic::set_hook(hook);
+                match result {
+                    Ok(Ok(range)) => {
+                        let formula_range = xlsx.worksheet_formula(sheet_name).ok();
+                        let freeze_panes = self.sheets[sheet_index].freeze_panes.clone();
+                        let mut sheet = create_sheet_from_range(sheet_name, range, formula_range);
+                        let original_name = self.sheets[sheet_index].name.clone();
+                        sheet.name = original_name;
+                        sheet.freeze_panes = freeze_panes;
+                        self.sheets[sheet_index] = sheet;
+                        self.loaded_sheets.insert(sheet_index);
+                        Ok(true)
+                    }
+                    Ok(Err(err)) => {
+                        if skip_errors {
+                            Ok(false)
+                        } else {
+                            Err(anyhow::anyhow!(
+                                "Unable to read worksheet '{}': {}",
+                                sheet_name,
+                                err
+                            ))
+                        }
+                    }
+                    Err(_) => {
+                        self.calamine_workbook = CalamineWorkbook::None;
+                        if skip_errors {
+                            Ok(false)
+                        } else {
+                            Err(anyhow::anyhow!(
+                                "Unable to read worksheet '{}': parser panic: malformed workbook data",
+                                sheet_name
+                            ))
+                        }
+                    }
+                }
+            }
+            CalamineWorkbook::Xls(xls) => {
+                let result = catch_unwind(AssertUnwindSafe(|| xls.worksheet_range(sheet_name)));
+                std::panic::set_hook(hook);
+                match result {
+                    Ok(Ok(range)) => {
+                        let formula_range = xls.worksheet_formula(sheet_name).ok();
+                        let freeze_panes = self.sheets[sheet_index].freeze_panes.clone();
+                        let mut sheet = create_sheet_from_range(sheet_name, range, formula_range);
+                        let original_name = self.sheets[sheet_index].name.clone();
+                        sheet.name = original_name;
+                        sheet.freeze_panes = freeze_panes;
+                        self.sheets[sheet_index] = sheet;
+                        self.loaded_sheets.insert(sheet_index);
+                        Ok(true)
+                    }
+                    Ok(Err(err)) => {
+                        if skip_errors {
+                            Ok(false)
+                        } else {
+                            Err(anyhow::anyhow!(
+                                "Unable to read worksheet '{}': {}",
+                                sheet_name,
+                                err
+                            ))
+                        }
+                    }
+                    Err(_) => {
+                        self.calamine_workbook = CalamineWorkbook::None;
+                        if skip_errors {
+                            Ok(false)
+                        } else {
+                            Err(anyhow::anyhow!(
+                                "Unable to read worksheet '{}': parser panic: malformed workbook data",
+                                sheet_name
+                            ))
+                        }
+                    }
+                }
+            }
+            CalamineWorkbook::None => {
+                std::panic::set_hook(hook);
+                if skip_errors {
+                    Ok(false)
+                } else {
+                    Err(anyhow::anyhow!("Cannot load sheet: no workbook available"))
+                }
+            }
+        }
     }
 
     pub fn get_sheet_by_index(&self, index: usize) -> Option<&Sheet> {

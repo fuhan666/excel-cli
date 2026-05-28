@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `excel-cli grep` command for recursive search across Excel files, with Markdown table (default) and JSON output.
+- Markdown table output for `read rows`, `read records`, `inspect sample`, `read range`, and `grep` commands.
+- `--skip-errors` option for `grep` command to skip worksheets that cannot be read instead of returning an error.
+
+### Changed
+
+- `grep` defaults to Markdown output and supports `-f markdown` and `-f json`; text output (`-f text`) is no longer supported.
+- `--output-shape jsonl` now rejects `--format text` and `--format markdown`; use the default JSON format or `-f json`.
+- Lazy-loaded worksheet read errors now return an error instead of silently skipping the sheet (unless `--skip-errors` is used).
+
 ## [1.3.2] - 2026-05-28
 
 ### Added

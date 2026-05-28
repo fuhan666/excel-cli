@@ -56,5 +56,30 @@ pub fn dispatch(cli: Cli) -> Result<(Value, OutputFormat, i32), AppError> {
                 EXIT_SUCCESS,
             ))
         }
+        Commands::Grep {
+            query,
+            paths,
+            case_insensitive,
+            regex,
+            sheet,
+            format,
+            skip_errors,
+        } => {
+            if matches!(format, OutputFormat::Text) {
+                return Err(AppError::InvalidArgs {
+                    message: "grep no longer supports --format text; use --format markdown for human-readable output or --format json for machine parsing".to_string(),
+                });
+            }
+
+            let (value, exit_code) = crate::cli::grep::handle(
+                query,
+                paths,
+                case_insensitive,
+                regex,
+                sheet,
+                skip_errors,
+            )?;
+            Ok((value, format, exit_code))
+        }
     }
 }

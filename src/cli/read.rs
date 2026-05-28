@@ -566,9 +566,10 @@ fn read_rows(
         format,
     } = request;
 
-    if output_shape == OutputShape::Jsonl && matches!(format, OutputFormat::Text) {
+    if output_shape == OutputShape::Jsonl && !matches!(format, OutputFormat::Json) {
         return Err(AppError::InvalidArgs {
-            message: "--output-shape jsonl cannot be combined with --format text".to_string(),
+            message: "--output-shape jsonl cannot be combined with --format text or markdown"
+                .to_string(),
         });
     }
 

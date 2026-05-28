@@ -56,6 +56,34 @@ pub enum Commands {
         /// Excel file path
         file: PathBuf,
     },
+    /// Search cell values recursively across Excel files
+    Grep {
+        /// Search pattern/query
+        query: String,
+
+        /// Files or directories to search
+        paths: Vec<PathBuf>,
+
+        /// Case-insensitive search
+        #[arg(short = 'i', long)]
+        case_insensitive: bool,
+
+        /// Treat query as a regular expression
+        #[arg(short = 'r', long)]
+        regex: bool,
+
+        /// Limit search to a specific sheet name
+        #[arg(short = 's', long)]
+        sheet: Option<String>,
+
+        /// Output format (default: markdown)
+        #[arg(short = 'f', long, value_enum, default_value = "markdown")]
+        format: OutputFormat,
+
+        /// Skip worksheets that cannot be read instead of returning an error
+        #[arg(long)]
+        skip_errors: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -66,7 +94,7 @@ pub enum InspectCommands {
         file: PathBuf,
 
         /// Output format
-        #[arg(long, value_enum, default_value = "json")]
+        #[arg(short = 'f', long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
     /// Inspect a single sheet
@@ -83,7 +111,7 @@ pub enum InspectCommands {
         sheet_index: Option<usize>,
 
         /// Output format
-        #[arg(long, value_enum, default_value = "json")]
+        #[arg(short = 'f', long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
     /// Sample data from a sheet
@@ -112,7 +140,7 @@ pub enum InspectCommands {
         header_row: String,
 
         /// Output format
-        #[arg(long, value_enum, default_value = "json")]
+        #[arg(short = 'f', long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
     /// Inspect column headers and inferred column metadata
@@ -129,7 +157,7 @@ pub enum InspectCommands {
         header_row: String,
 
         /// Output format
-        #[arg(long, value_enum, default_value = "json")]
+        #[arg(short = 'f', long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
     /// Detect table-like regions in a sheet
@@ -142,7 +170,7 @@ pub enum InspectCommands {
         sheet: String,
 
         /// Output format
-        #[arg(long, value_enum, default_value = "json")]
+        #[arg(short = 'f', long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
 }
@@ -167,7 +195,7 @@ pub enum ReadCommands {
         cell: String,
 
         /// Output format
-        #[arg(long, value_enum, default_value = "json")]
+        #[arg(short = 'f', long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
     /// Read a rectangular range
@@ -188,7 +216,7 @@ pub enum ReadCommands {
         range: String,
 
         /// Output format
-        #[arg(long, value_enum, default_value = "json")]
+        #[arg(short = 'f', long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
     /// Read rows from a sheet
@@ -237,7 +265,7 @@ pub enum ReadCommands {
         output_shape: OutputShape,
 
         /// Output format
-        #[arg(long, value_enum, default_value = "json")]
+        #[arg(short = 'f', long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
     /// Read records from a sheet using a resolved header row
@@ -286,7 +314,7 @@ pub enum ReadCommands {
         output_shape: OutputShape,
 
         /// Output format
-        #[arg(long, value_enum, default_value = "json")]
+        #[arg(short = 'f', long, value_enum, default_value = "json")]
         format: OutputFormat,
     },
 }
@@ -296,6 +324,7 @@ pub enum OutputFormat {
     #[default]
     Json,
     Text,
+    Markdown,
 }
 
 impl OutputFormat {
@@ -303,6 +332,7 @@ impl OutputFormat {
         match self {
             OutputFormat::Json => "json",
             OutputFormat::Text => "text",
+            OutputFormat::Markdown => "markdown",
         }
     }
 }

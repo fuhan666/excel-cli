@@ -4,6 +4,7 @@ pub mod common;
 pub mod dispatch;
 pub mod envelope;
 pub mod error;
+pub mod grep;
 pub mod inspect;
 pub mod output;
 pub mod read;
