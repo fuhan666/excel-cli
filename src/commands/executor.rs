@@ -1,8 +1,9 @@
 use std::path::Path;
 
 use crate::app::AppState;
+use crate::excel::{EXCEL_MAX_COLS, EXCEL_MAX_ROWS};
 use crate::json_export::{export_all_sheets_json, export_json, HeaderDirection};
-use crate::utils::{cell_reference, col_name_to_index, parse_cell_reference};
+use crate::utils::{cell_reference, col_name_to_index, index_to_col_name, parse_cell_reference};
 
 impl AppState<'_> {
     pub fn execute_command(&mut self) {
@@ -365,14 +366,10 @@ impl AppState<'_> {
     fn jump_to_cell(&mut self, cell_ref: (usize, usize)) {
         let (row, col) = cell_ref; // Fixed: cell_ref is already (row, col)
 
-        let sheet = self.workbook.get_current_sheet();
-
-        // Validate row and column
-        if row > sheet.max_rows || col > sheet.max_cols {
+        if row > EXCEL_MAX_ROWS || col > EXCEL_MAX_COLS {
             self.add_notification(format!(
-                "Cell reference out of range: {}{}",
-                crate::utils::index_to_col_name(col),
-                row
+                "Cell reference out of range: {}",
+                cell_reference(cell_ref)
             ));
             return;
         }
@@ -380,11 +377,7 @@ impl AppState<'_> {
         self.selected_cell = (row, col);
         self.handle_scrolling();
 
-        self.add_notification(format!(
-            "Jumped to cell {}{}",
-            crate::utils::index_to_col_name(col),
-            row
-        ));
+        self.add_notification(format!("Jumped to cell {}{}", index_to_col_name(col), row));
     }
 }
 
@@ -392,7 +385,7 @@ impl AppState<'_> {
 mod tests {
     use super::parse_cell_reference;
     use crate::app::AppState;
-    use crate::excel::{Cell, FreezePanes, Sheet, Workbook};
+    use crate::excel::{Cell, FreezePanes, Sheet, Workbook, EXCEL_MAX_COLS, EXCEL_MAX_ROWS};
     use std::path::PathBuf;
 
     fn app_with_sheet() -> AppState<'static> {
@@ -427,6 +420,46 @@ mod tests {
     fn ignores_commands_with_non_ascii_arguments() {
         assert_eq!(parse_cell_reference("addsheet 测试1"), None);
         assert_eq!(parse_cell_reference("测试1"), None);
+    }
+
+    #[test]
+    fn cell_reference_command_can_jump_to_blank_cell_beyond_used_range() {
+        let mut app = app_with_sheet();
+        app.input_buffer = "A3".to_string();
+
+        app.execute_command();
+
+        assert_eq!(app.selected_cell, (3, 1));
+        assert_eq!(app.get_cell_content(3, 1), "");
+        assert_eq!(
+            app.notification_messages.last().map(String::as_str),
+            Some("Jumped to cell A3")
+        );
+    }
+
+    #[test]
+    fn cell_reference_command_can_jump_to_excel_bottom_right_cell() {
+        let mut app = app_with_sheet();
+        app.input_buffer = "XFD1048576".to_string();
+
+        app.execute_command();
+
+        assert_eq!(app.selected_cell, (EXCEL_MAX_ROWS, EXCEL_MAX_COLS));
+        assert_eq!(app.get_cell_content(EXCEL_MAX_ROWS, EXCEL_MAX_COLS), "");
+    }
+
+    #[test]
+    fn cell_reference_command_rejects_cells_beyond_excel_bounds() {
+        let mut app = app_with_sheet();
+        app.input_buffer = "XFE1048577".to_string();
+
+        app.execute_command();
+
+        assert_eq!(app.selected_cell, (1, 1));
+        assert_eq!(
+            app.notification_messages.last().map(String::as_str),
+            Some("Cell reference out of range: XFE1048577")
+        );
     }
 
     #[test]
